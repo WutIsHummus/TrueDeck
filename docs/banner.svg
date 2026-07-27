@@ -29,18 +29,15 @@
     <path d="M213 0 V640 M426 0 V640 M640 0 V640 M853 0 V640 M1066 0 V640"/>
   </g>
 
-  <!-- logo mark -->
+  <!-- logo mark (Claude/Codex-vibe app icon) -->
   <g transform="translate(96,120)">
-    <rect width="96" height="96" rx="24" fill="#1a1a1c" stroke="#ffffff14" stroke-width="2"/>
-    <rect x="18" y="26" width="60" height="44" rx="8" fill="#161a22" stroke="#ffffff18"/>
-    <rect x="18" y="26" width="60" height="11" rx="8" fill="#ffffff0a"/>
-    <circle cx="26" cy="31.5" r="2" fill="#f07178"/>
-    <circle cx="33" cy="31.5" r="2" fill="#f0a050"/>
-    <circle cx="40" cy="31.5" r="2" fill="#7fd99a"/>
-    <text x="26" y="52" font-family="ui-monospace,Consolas,monospace" font-size="14" font-weight="700" fill="#f0a050">›_</text>
-    <rect x="42" y="46" width="20" height="3" rx="1.5" fill="#22d3ee"/>
-    <circle cx="72" cy="22" r="6" fill="none" stroke="#60a5fa" stroke-width="2"/>
-    <circle cx="72" cy="22" r="2" fill="#60a5fa"/>
+    <rect width="96" height="96" rx="26" fill="#1a1614" stroke="#ffffff12" stroke-width="2"/>
+    <rect x="22" y="28" width="32" height="8" rx="4" fill="#f0a050" opacity="0.35"/>
+    <rect x="22" y="42" width="36" height="8" rx="4" fill="#f0a050" opacity="0.65"/>
+    <rect x="22" y="56" width="28" height="8" rx="4" fill="#f0a050"/>
+    <circle cx="70" cy="46" r="12" fill="#0e0c12" stroke="#60a5fa" stroke-width="3.5"/>
+    <circle cx="70" cy="46" r="4.5" fill="#60a5fa"/>
+    <path d="M58 46 H62" stroke="#60a5fa" stroke-width="3" stroke-linecap="round"/>
   </g>
 
   <text x="220" y="168" font-family="Segoe UI,system-ui,sans-serif" font-size="64" font-weight="700" fill="#e8e8e8" letter-spacing="-1">TrueDeck</text>
