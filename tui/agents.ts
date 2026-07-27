@@ -23,14 +23,6 @@ function configPath(): string {
 export function defaultAgents(): AgentPreset[] {
   return [
     {
-      id: 'shell',
-      name: 'Shell',
-      command: process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash',
-      args: process.platform === 'win32' ? ['-NoLogo'] : [],
-      color: 'gray',
-      key: 's'
-    },
-    {
       id: 'grok',
       name: 'Grok',
       command: 'grok',
@@ -47,6 +39,14 @@ export function defaultAgents(): AgentPreset[] {
       key: 'x'
     },
     {
+      id: 'cursor',
+      name: 'Cursor',
+      command: process.platform === 'win32' ? 'cursor-agent' : 'cursor-agent',
+      args: [],
+      color: 'blue',
+      key: 'r' // c is Claude; r = cursoR
+    },
+    {
       id: 'claude',
       name: 'Claude',
       command: 'claude',
@@ -55,20 +55,20 @@ export function defaultAgents(): AgentPreset[] {
       key: 'c'
     },
     {
-      id: 'cursor',
-      name: 'Cursor',
-      command: process.platform === 'win32' ? 'cursor-agent' : 'cursor-agent',
-      args: [],
-      color: 'blue',
-      key: 'u'
-    },
-    {
       id: 'gemini',
       name: 'Gemini',
       command: 'gemini',
       args: [],
       color: 'yellow',
       key: 'e'
+    },
+    {
+      id: 'shell',
+      name: 'Shell',
+      command: process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash',
+      args: process.platform === 'win32' ? ['-NoLogo'] : [],
+      color: 'gray',
+      key: 's'
     }
   ]
 }

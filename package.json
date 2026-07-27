@@ -23,10 +23,12 @@
     "memory"
   ],
   "scripts": {
-    "start": "tsx tui/index.ts",
+    "start": "electron-vite dev",
+    "studio": "electron-vite dev",
     "tui": "tsx tui/index.ts",
     "gui": "electron-vite dev",
-    "dev": "tsx tui/index.ts",
+    "dev": "electron-vite dev",
+    "dev:tui": "tsx tui/index.ts",
     "dev:gui": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
