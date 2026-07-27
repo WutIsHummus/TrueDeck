@@ -64,6 +64,8 @@ function defaultSettings(): AppSettings {
     fontSize: 13,
     layoutMode: 'tabs',
     autoGrid: false,
+    showQuickAgents: true,
+    reopenLastProject: true,
     memoryProviders: defaultMemoryProviders()
   }
 }
@@ -329,6 +331,7 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('shell:openPath', (_e, p: string) => shell.openPath(p))
+  ipcMain.handle('shell:openExternal', (_e, url: string) => shell.openExternal(url))
   ipcMain.handle('shell:showItem', (_e, p: string) => {
     shell.showItemInFolder(p)
   })

@@ -99,6 +99,19 @@ export function TerminalPane({ sessionId, visible, fontSize = 13 }: Props): JSX.
     }
   }, [visible, sessionId])
 
+  // Live font size updates from Settings without remounting the PTY
+  useEffect(() => {
+    const term = termRef.current
+    if (!term) return
+    term.options.fontSize = fontSize
+    try {
+      fitRef.current?.fit()
+      window.truedeck.resizeSession(sessionId, term.cols, term.rows)
+    } catch {
+      // ignore
+    }
+  }, [fontSize, sessionId])
+
   return (
     <div
       className={`terminal-pane ${visible ? 'visible' : ''}`}

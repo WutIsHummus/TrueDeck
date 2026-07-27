@@ -186,6 +186,54 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+.quick-agents {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.quick-agent {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  background: #ffffff06;
+}
+
+.quick-agent:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: #ffffff10;
+}
+
+.quick-agent:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.quick-agent.quick-cursor {
+  border-color: #60a5fa55;
+  color: #93c5fd;
+}
+
+.quick-agent.quick-cursor:hover:not(:disabled) {
+  border-color: #60a5fa;
+  color: #dbeafe;
+  background: #60a5fa18;
+}
+
+.settings-gear {
+  font-size: 14px;
+  padding: 4px 8px;
+  color: var(--text-muted);
+}
+
+.settings-gear:hover {
+  color: var(--text);
+}
+
 /* Tabs — Codex-like strip */
 .tabbar {
   display: flex;
@@ -686,4 +734,170 @@ textarea:focus {
 .brand {
   padding: 10px;
   border-bottom: 1px solid var(--border);
+}
+
+/* ─── Settings menu ─── */
+.settings-backdrop {
+  place-items: center;
+  padding: 24px;
+}
+
+.settings-panel {
+  width: min(640px, 94vw);
+  max-height: min(560px, 90vh);
+  display: flex;
+  flex-direction: column;
+  background: #141414;
+  border: 1px solid var(--border-strong);
+  border-radius: 12px;
+  box-shadow: 0 28px 80px #000000cc;
+  overflow: hidden;
+}
+
+.settings-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-family: var(--mono);
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.settings-body {
+  display: grid;
+  grid-template-columns: 132px 1fr;
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.settings-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 8px;
+  border-right: 1px solid var(--border);
+  background: #0f0f0f;
+}
+
+.settings-nav button {
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.settings-nav button:hover {
+  color: var(--text);
+  background: #ffffff0a;
+}
+
+.settings-nav button.active {
+  color: var(--text);
+  background: #ffffff12;
+  border-color: transparent;
+}
+
+.settings-content {
+  padding: 14px 16px 18px;
+  overflow: auto;
+}
+
+.settings-section h3 {
+  margin: 0 0 12px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-family: var(--mono);
+}
+
+.settings-section + .settings-section {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 0;
+  font-size: 13px;
+}
+
+.settings-row.stacked {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.settings-row select {
+  background: #0a0a0a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: var(--text);
+  min-width: 140px;
+}
+
+.settings-row input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.settings-row input[type='range'] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.path-block {
+  display: block;
+  padding: 8px;
+  background: #0a0a0a;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+.settings-export {
+  width: 100%;
+  min-height: 140px;
+  margin-top: 10px;
+  font-size: 10px;
+  font-family: var(--mono);
+}
+
+.settings-link {
+  color: var(--accent-2);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.settings-link:hover {
+  text-decoration: underline;
+}
+
+/* Soft light theme token hook */
+html.theme-light {
+  --bg: #f4f4f5;
+  --bg-bar: #ececee;
+  --bg-elevated: #ffffff;
+  --border: #d4d4d8;
+  --border-strong: #a1a1aa;
+  --text: #18181b;
+  --text-muted: #71717a;
 }

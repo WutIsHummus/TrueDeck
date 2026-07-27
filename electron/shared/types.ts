@@ -101,6 +101,10 @@ export interface AppSettings {
   layoutMode: LayoutMode
   /** When true, opening a project auto-switches to grid if 2+ panes */
   autoGrid: boolean
+  /** Show Grok/Codex/Cursor/Claude chips in the title bar */
+  showQuickAgents: boolean
+  /** Restore last project on launch */
+  reopenLastProject: boolean
   /**
    * Memory backends. TrueMemory (files) is always present.
    * MemPalace defaults to native (no Docker).

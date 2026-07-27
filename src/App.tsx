@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDeck } from './store'
 import { TerminalPane } from './components/TerminalPane'
 import { OnOpenModal } from './components/OnOpenModal'
-import type { AgentPreset, ProjectConfig } from '../electron/shared/types'
+import { SettingsMenu } from './components/SettingsMenu'
+import type { AgentPreset, AppSettings, ProjectConfig } from '../electron/shared/types'
 
 /**
  * Studio layout — between Codex TUI and raw CLI.
@@ -30,9 +31,13 @@ export default function App(): JSX.Element {
   const [paletteQuery, setPaletteQuery] = useState('')
   const [paletteIndex, setPaletteIndex] = useState(0)
   const [onOpenProject, setOnOpenProject] = useState<ProjectConfig | null>(null)
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [splitId, setSplitId] = useState<string | null>(null)
   const [version, setVersion] = useState('')
   const [memLabel, setMemLabel] = useState('mem·auto')
+  const [fontSize, setFontSize] = useState(13)
+  const [showQuickAgents, setShowQuickAgents] = useState(true)
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark')
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) || null,
@@ -70,6 +75,13 @@ export default function App(): JSX.Element {
     [removeSession, setStatus, splitId]
   )
 
+  const applySettings = useCallback((s: AppSettings) => {
+    setFontSize(s.fontSize || 13)
+    setShowQuickAgents(s.showQuickAgents !== false)
+    setTheme(s.theme || 'dark')
+    document.documentElement.classList.toggle('theme-light', s.theme === 'light')
+  }, [])
+
   useEffect(() => {
     void (async () => {
       await refreshProjects()
@@ -77,6 +89,19 @@ export default function App(): JSX.Element {
       try {
         const v = await window.truedeck.version()
         setVersion(v)
+      } catch {
+        // ignore
+      }
+      try {
+        const s = await window.truedeck.getSettings()
+        applySettings(s)
+        if (s.reopenLastProject !== false) {
+          const list = await window.truedeck.listProjects()
+          if (list[0]) {
+            // soft-select last project without auto-spawning agents
+            setActiveProject(list[0].id)
+          }
+        }
       } catch {
         // ignore
       }
@@ -106,9 +131,17 @@ export default function App(): JSX.Element {
     const onKey = (e: KeyboardEvent): void => {
       const mod = e.ctrlKey || e.metaKey
 
+      // Ctrl+, — settings
+      if (mod && (e.key === ',' || e.key === '<')) {
+        e.preventDefault()
+        setSettingsOpen(true)
+        return
+      }
+
       // Ctrl+K — agent palette
       if (mod && e.key.toLowerCase() === 'k') {
         e.preventDefault()
+        setSettingsOpen(false)
         setPaletteOpen(true)
         setPaletteQuery('')
         setPaletteIndex(0)
@@ -120,6 +153,11 @@ export default function App(): JSX.Element {
         e.preventDefault()
         void addProject()
         return
+      }
+
+      if (e.key === 'Escape') {
+        setSettingsOpen(false)
+        setPaletteOpen(false)
       }
 
       // Ctrl+W — close tab
@@ -279,8 +317,40 @@ export default function App(): JSX.Element {
         <span className="meta no-drag" title="Memory is automatic — nothing to manage">
           {memLabel}
         </span>
+        {showQuickAgents && (
+          <div className="quick-agents no-drag">
+            {(
+              [
+                { id: 'grok', label: 'Grok' },
+                { id: 'codex', label: 'Codex' },
+                { id: 'cursor', label: 'Cursor' },
+                { id: 'claude', label: 'Claude' }
+              ] as const
+            ).map((q) => (
+              <button
+                key={q.id}
+                type="button"
+                className={`quick-agent ${q.id === 'cursor' ? 'quick-cursor' : ''}`}
+                title={`Launch ${q.label}`}
+                disabled={!activeProject}
+                onClick={() => void launchAgent(q.id)}
+              >
+                {q.label}
+              </button>
+            ))}
+          </div>
+        )}
         <button type="button" className="no-drag primary" onClick={() => setPaletteOpen(true)}>
           + agent
+        </button>
+        <button
+          type="button"
+          className="no-drag settings-gear"
+          title="Settings (Ctrl+,)"
+          aria-label="Settings"
+          onClick={() => setSettingsOpen(true)}
+        >
+          ⚙
         </button>
       </header>
 
@@ -387,14 +457,19 @@ export default function App(): JSX.Element {
               .filter((s) => s.id === activeSessionId || s.id === splitId)
               .map((s) => (
                 <div key={s.id} className="term-stack">
-                  <TerminalPane sessionId={s.id} visible />
+                  <TerminalPane sessionId={s.id} visible fontSize={fontSize} />
                 </div>
               ))}
           </>
         ) : (
           <div className="term-stack">
             {projectSessions.map((s) => (
-              <TerminalPane key={s.id} sessionId={s.id} visible={activeSessionId === s.id} />
+              <TerminalPane
+                key={s.id}
+                sessionId={s.id}
+                visible={activeSessionId === s.id}
+                fontSize={fontSize}
+              />
             ))}
           </div>
         )}
@@ -417,6 +492,9 @@ export default function App(): JSX.Element {
           <span>
             <b>⌃P</b> project
           </span>
+          <span>
+            <b>⌃,</b> settings
+          </span>
         </div>
         <div className="status-text">
           {memLabel} · {status}
@@ -436,7 +514,7 @@ export default function App(): JSX.Element {
             <input
               className="palette-search"
               autoFocus
-              placeholder="Launch agent… (grok, codex, claude, cursor)"
+              placeholder="Launch agent… grok · codex · cursor · claude"
               value={paletteQuery}
               onChange={(e) => {
                 setPaletteQuery(e.target.value)
@@ -497,6 +575,25 @@ export default function App(): JSX.Element {
           }}
         />
       )}
+
+      <SettingsMenu
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        version={version}
+        activeProject={activeProject}
+        memLabel={memLabel}
+        onSettingsChange={applySettings}
+        onOpenOnOpen={() => {
+          if (activeProject) {
+            setSettingsOpen(false)
+            setOnOpenProject(activeProject)
+          }
+        }}
+        onResetAgents={() => {
+          void window.truedeck.resetAgents().then(() => refreshAgents())
+        }}
+        onStatus={setStatus}
+      />
     </div>
   )
 }

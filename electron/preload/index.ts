@@ -93,6 +93,7 @@ const api = {
     ipcRenderer.invoke('memory:ensure', projectRoot),
 
   openPathInOs: (p: string): Promise<string> => ipcRenderer.invoke('shell:openPath', p),
+  openExternal: (url: string): Promise<void> => ipcRenderer.invoke('shell:openExternal', url),
   showItem: (p: string): Promise<void> => ipcRenderer.invoke('shell:showItem', p),
 
   mempalaceStatus: (): Promise<{
