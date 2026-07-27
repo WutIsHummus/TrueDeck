@@ -156,9 +156,36 @@ export default function App(): JSX.Element {
   }
 
   const closeSession = async (id: string): Promise<void> => {
-    await window.truedeck.killSession(id)
+    try {
+      await window.truedeck.killSession(id)
+    } catch {
+      // still remove from UI if process already dead
+    }
     removeSession(id)
+    setStatus('Tab closed')
   }
+
+  // Ctrl+W / Ctrl+F4 closes active tab
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const wantClose =
+        ((e.ctrlKey || e.metaKey) && (e.key === 'w' || e.key === 'W')) ||
+        (e.ctrlKey && e.key === 'F4')
+      if (!wantClose || !activeSessionId) return
+      e.preventDefault()
+      void (async () => {
+        try {
+          await window.truedeck.killSession(activeSessionId)
+        } catch {
+          // ignore
+        }
+        removeSession(activeSessionId)
+        setStatus('Tab closed')
+      })()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [activeSessionId, removeSession, setStatus])
 
   const saveSettingsPatch = async (patch: Partial<AppSettings>): Promise<void> => {
     const current = await window.truedeck.getSettings()
@@ -282,33 +309,62 @@ export default function App(): JSX.Element {
           )}
         </div>
 
-        {layoutMode === 'tabs' && projectSessions.length > 0 && (
-          <div className="tabs">
+        {projectSessions.length > 0 && (
+          <div className="tabs" role="tablist">
             {projectSessions.map((s) => (
-              <button
+              <div
                 key={s.id}
+                role="tab"
+                aria-selected={activeSessionId === s.id}
                 className={`session-tab ${activeSessionId === s.id ? 'active' : ''}`}
                 onClick={() => setActiveSession(s.id)}
+                onMouseDown={(e) => {
+                  // Middle-click closes tab (browser-style)
+                  if (e.button === 1) {
+                    e.preventDefault()
+                    e.stopPropagation()
+                    void closeSession(s.id)
+                  }
+                }}
+                onAuxClick={(e) => {
+                  if (e.button === 1) {
+                    e.preventDefault()
+                    void closeSession(s.id)
+                  }
+                }}
               >
                 <span className="dot" style={{ background: s.color }} />
-                {s.agentName}
+                <span className="session-tab-label">{s.agentName}</span>
                 {s.status === 'exited' && <span className="badge">exit</span>}
-                <span
-                  className="close"
-                  role="button"
-                  tabIndex={0}
+                <button
+                  type="button"
+                  className="tab-close"
+                  title="Close tab (Ctrl+W)"
+                  aria-label={`Close ${s.agentName}`}
                   onClick={(e) => {
+                    e.preventDefault()
                     e.stopPropagation()
                     void closeSession(s.id)
                   }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void closeSession(s.id)
-                  }}
                 >
-                  ✕
-                </span>
-              </button>
+                  ×
+                </button>
+              </div>
             ))}
+            <button
+              type="button"
+              className="session-tab tab-close-all"
+              title="Close all tabs"
+              onClick={() => {
+                void (async () => {
+                  for (const s of [...projectSessions]) {
+                    await closeSession(s.id)
+                  }
+                })()
+              }}
+            >
+              Close all
+            </button>
           </div>
         )}
 

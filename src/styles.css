@@ -271,20 +271,57 @@ select:focus {
   white-space: nowrap;
   border: 1px solid var(--border);
   background: #101722;
-  padding: 6px 10px;
+  padding: 4px 6px 4px 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 8px;
+  cursor: pointer;
+  user-select: none;
 }
 
-.session-tab .close {
-  opacity: 0.6;
-  border: none;
+.session-tab-label {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+/* Real close control — not nested inside a <button> (that broke clicks) */
+.tab-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  margin-left: 2px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
   background: transparent;
-  padding: 0 2px;
-  margin-left: 4px;
   color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  flex-shrink: 0;
 }
 
-.session-tab .close:hover {
+.tab-close:hover {
+  background: #7f1d1d55;
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.session-tab:hover .tab-close {
+  color: var(--text);
+}
+
+.tab-close-all {
+  opacity: 0.75;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.tab-close-all:hover {
   opacity: 1;
+  border-color: #7f1d1d;
   color: var(--danger);
 }
 

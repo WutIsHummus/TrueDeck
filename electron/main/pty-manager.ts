@@ -176,6 +176,11 @@ export class PtyManager {
     } catch {
       // ignore
     }
+    try {
+      live.proc.kill('SIGKILL')
+    } catch {
+      // ignore
+    }
     this.sessions.delete(id)
     this.win?.webContents.send('pty:exit', { id, exitCode: -1 })
   }

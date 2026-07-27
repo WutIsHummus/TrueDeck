@@ -83,14 +83,17 @@ export function SessionGrid({
             <span className="grid-cell-title">{s.agentName}</span>
             {s.status === 'exited' && <span className="badge">exit</span>}
             <button
-              className="ghost grid-close"
-              title="Close pane"
+              type="button"
+              className="tab-close grid-close"
+              title="Close tab (Ctrl+W)"
+              aria-label={`Close ${s.agentName}`}
               onClick={(e) => {
+                e.preventDefault()
                 e.stopPropagation()
                 onClose(s.id)
               }}
             >
-              ✕
+              ×
             </button>
           </div>
           <div className="grid-cell-body">

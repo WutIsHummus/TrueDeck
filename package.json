@@ -23,16 +23,25 @@
     "memory"
   ],
   "scripts": {
-    "dev": "electron-vite dev",
+    "start": "tsx tui/index.ts",
+    "tui": "tsx tui/index.ts",
+    "gui": "electron-vite dev",
+    "dev": "tsx tui/index.ts",
+    "dev:gui": "electron-vite dev",
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "dist": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win",
     "postinstall": "electron-builder install-app-deps"
   },
+  "bin": {
+    "truedeck": "./bin/truedeck.js"
+  },
   "dependencies": {
+    "@types/blessed": "^0.1.27",
     "@xterm/addon-fit": "^0.10.0",
     "@xterm/addon-web-links": "^0.11.0",
+    "blessed": "^0.1.81",
     "node-pty": "^1.0.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
@@ -48,6 +57,7 @@
     "electron": "^34.0.0",
     "electron-builder": "^25.1.8",
     "electron-vite": "^2.3.0",
+    "tsx": "^4.23.1",
     "typescript": "^5.7.3",
     "vite": "^5.4.14"
   },
