@@ -341,14 +341,16 @@ export default function App(): JSX.Element {
         className="titlebar"
         onDoubleClick={() => void window.truedeck.windowMaximize()}
       >
-        <img
-          className="titlebar-icon no-drag"
-          src="../../resources/icon-simple.svg"
-          width={16}
-          height={16}
-          alt=""
-          draggable={false}
-        />
+        <span className="titlebar-icon no-drag" aria-hidden>
+          <svg width="16" height="16" viewBox="0 0 64 64">
+            <rect width="64" height="64" rx="15" fill="#1a1614" />
+            <rect x="14" y="18" width="24" height="6" rx="3" fill="#f0a050" opacity="0.35" />
+            <rect x="14" y="28" width="28" height="6" rx="3" fill="#f0a050" opacity="0.65" />
+            <rect x="14" y="38" width="20" height="6" rx="3" fill="#f0a050" />
+            <circle cx="46" cy="31" r="7" fill="none" stroke="#60a5fa" strokeWidth="2.5" />
+            <circle cx="46" cy="31" r="2.8" fill="#60a5fa" />
+          </svg>
+        </span>
         <span className="logo">TRUEDECK{version ? ` ${version}` : ''}</span>
         <button
           type="button"
