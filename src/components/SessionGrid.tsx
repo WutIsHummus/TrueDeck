@@ -85,7 +85,7 @@ export function SessionGrid({
             <button
               type="button"
               className="tab-close grid-close"
-              title="Close tab (Ctrl+W)"
+              title="Close tab (Ctrl+Shift+W)"
               aria-label={`Close ${s.agentName}`}
               onClick={(e) => {
                 e.preventDefault()

@@ -180,8 +180,9 @@ export function Onboarding({
                   <>
                     <h3>+ agent</h3>
                     <p>
-                      Opens the full agent palette (also <kbd>Ctrl+K</kbd>) — Grok, Codex, Cursor,
-                      Claude, Gemini, Shell, and more.
+                      Opens the full agent list — Grok, Codex, Cursor, Claude, Gemini, Shell, and
+                      more. Shortcut: hold <strong>Ctrl+Shift</strong> and press <strong>A</strong>{' '}
+                      (<kbd>Ctrl+Shift+A</kbd>).
                     </p>
                   </>
                 )}
@@ -190,7 +191,7 @@ export function Onboarding({
                     <h3>Settings ⚙</h3>
                     <p>
                       Font size, theme, on-open commands (e.g. <code>rojo serve</code>), agent
-                      reset, updates. Shortcut: <kbd>Ctrl+,</kbd>
+                      reset, updates. Shortcut: <kbd>Ctrl+Shift+S</kbd>.
                     </p>
                   </>
                 )}
@@ -375,16 +376,20 @@ export function Onboarding({
               <p className="onboard-lead">Quick map:</p>
               <ul className="onboard-bullets">
                 <li>
-                  <kbd>Ctrl+K</kbd> agent palette · <kbd>Ctrl+P</kbd> project · <kbd>Ctrl+,</kbd>{' '}
-                  settings
+                  All shortcuts: hold <strong>Ctrl+Shift</strong>, then a letter
                 </li>
                 <li>
-                  <kbd>Ctrl+W</kbd> close tab · drag tabs to reorder · drop on stage to split
+                  <strong>A</strong> agents · <strong>O</strong> project · <strong>W</strong> close ·{' '}
+                  <strong>S</strong> settings · <strong>T</strong> next tab
                 </li>
                 <li>
-                  <code>mem·auto</code> = memory running for you — no action needed
+                  <code>mem·auto</code> = automatic memory (status only, not a button)
                 </li>
               </ul>
+              <p className="muted">
+                Example: hold Ctrl and Shift, tap <strong>A</strong> → agent list. Works even while
+                an agent terminal is focused.
+              </p>
               <button type="button" className="onboard-primary" onClick={() => onComplete(false)}>
                 Enter TrueDeck →
               </button>

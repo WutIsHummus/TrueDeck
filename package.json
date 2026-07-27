@@ -1,7 +1,7 @@
 {
   "name": "truedeck",
-  "version": "0.2.0",
-  "description": "Mouse-friendly multi-agent coding deck — run Grok, Codex, Claude, Cursor, Gemini side by side with per-repo + global TrueMemory.",
+  "version": "0.3.0",
+  "description": "Terminal-first multi-agent coding deck — Grok, Codex, Cursor, Claude with automatic memory and Ctrl+Shift shortcuts.",
   "main": "./out/main/index.js",
   "author": "TrueDeck Contributors",
   "license": "MIT",

@@ -1,63 +1,48 @@
+<p align="center">
+  <img src="resources/icon.svg" width="96" height="96" alt="TrueDeck icon" />
+</p>
+
 # TrueDeck
 
-**Free, open-source multi-agent coding workbench** — Agent Deck style, mouse-first UI, real terminals.
+**Terminal-first multi-agent coding deck** — between a Codex-style TUI and a plain CLI.
 
-Run **Grok Build**, **Codex**, **Claude Code**, **Cursor Agent**, **Gemini**, **OpenCode**, **Aider**, or any CLI side by side. Each project gets durable **TrueMemory**, plus a **global** memory shared across every repo.
+Run **Grok**, **Codex**, **Cursor**, **Claude**, **Gemini**, and more as live terminal tabs.  
+**Automatic memory** (no Docker, no memory panels to babysit). Drag tabs, split, ship.
 
-> BridgeSpace alternative without the subscription: multi-pane agents, on-open commands (`rojo serve`), and markdown memory you can commit.
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+[![Release](https://img.shields.io/github/v/release/WutIsHummus/TrueDeck?include_prereleases)](https://github.com/WutIsHummus/TrueDeck/releases)
 
-![TrueDeck layout](docs/screenshot-placeholder.svg)
+<p align="center">
+  <img src="docs/banner.svg" alt="TrueDeck banner" width="100%" />
+</p>
+
+<p align="center">
+  <img src="docs/studio-preview.svg" alt="TrueDeck studio UI preview" width="100%" />
+</p>
+
+## What’s new in v0.3.0
+
+- **Studio UI** — thin chrome, almost full terminal, not a 3-column IDE
+- **Cursor** as a first-class agent (quick chip + palette)
+- **Onboarding** — connect a repo, learn `mem·auto`, launch an agent
+- **Ctrl+Shift shortcuts** — easy, works inside agent terminals
+- **Drag-and-drop tabs** — reorder, drop to split, context menu
+- **Settings** (Ctrl+Shift+S) — font, theme, on-open commands, updates
+- **Update button** when a newer GitHub release exists
+- **Automatic memory** — `.truedeck/auto-context.md` + MemPalace (native)
 
 ## Features
 
 | Feature | What it does |
 |--------|----------------|
-| **Agent grid** | BridgeSpace-style **Grid** view — see multiple agents at once; or classic **Tabs** |
-| **Multi-CLI** | Grok, Codex, Claude, Cursor Agent, Gemini, OpenCode, Aider, Shell — edit presets in `agents.json` |
-| **Smart Cursor** | Resolves `cursor-agent` → `cursor agent` → Cursor IDE fallback |
-| **On-open commands** | Per project: auto-run `rojo serve`, `npm run dev`, etc. when you open the folder |
-| **First-run seed** | Auto-discovers local projects (e.g. `~/SPTS`) with sensible defaults |
-| **TrueMemory (repo)** | `.memory/` inside each project — commit it like code |
-| **TrueMemory (global)** | Cross-project prefs under app data |
-| **MemPalace (native)** | Default “mem space” via `mempalace-mcp` — **no Docker** |
-| **Pluggable memory** | Toggle MemPalace / OpenMemory / custom MCP from the UI |
-| **Speech-to-text ready** | Focus a terminal + [Handy](https://github.com/cjpais/Handy) or **Win+H** |
-
-## Memory backends (no Docker required)
-
-TrueDeck stacks layers you can turn on/off:
-
-| Backend | Role |
-|---------|------|
-| **TrueMemory** | Always on — markdown in `.memory/` + global files |
-| **MemPalace** | Default mem space — **native** MCP only (`noDocker: true`) |
-| **OpenMemory** | Optional Mem0 MCP — enable when installed |
-| **Custom MCP** | Paste any memory server command |
-
-UI: right panel → **Memory backends** → toggle / **+ Custom MCP** / **Export MCP** (Cursor + Grok snippets).
-
-Details: [docs/memory-providers.md](./docs/memory-providers.md)
-
-### MemPalace without Docker
-
-```powershell
-uv tool install mempalace
-.\tools\ensure-mempalace.ps1
-```
-
-Cursor / Grok should use native MCP (already configured if you ran our setup):
-
-```text
-command: %USERPROFILE%\.local\bin\mempalace-mcp.exe
-args:    --palace %USERPROFILE%\.mempalace\palace
-```
-
-```powershell
-# one-shot switch away from docker run
-.\tools\install-native-mempalace-mcp.ps1
-```
-
-Restart Cursor / Grok after changing MCP config.
+| **Studio + TUI** | Electron studio (`npm start`) or pure terminal (`npm run tui`) |
+| **Multi-CLI** | Grok, Codex, Cursor, Claude, Gemini, Shell, OpenCode, Aider |
+| **Smart Cursor** | Resolves `cursor-agent` → `cursor agent` → Cursor IDE |
+| **On-open commands** | e.g. `rojo serve` when you open a Roblox project |
+| **Onboarding** | First-run walkthrough; replay with **?** |
+| **mem·auto** | Status only — memory runs for you (files + optional MemPalace) |
+| **Drag tabs** | Reorder · drop on stage to split · middle-click close |
+| **Updates** | Title-bar **Update** when a newer release is on GitHub |
 
 ## Quick start
 
@@ -65,7 +50,7 @@ Restart Cursor / Grok after changing MCP config.
 
 - Node.js 20+
 - Windows, macOS, or Linux
-- Optional CLIs on PATH: `grok`, `codex`, `claude`, `gemini`, `cursor`, `opencode`, `aider`, `rojo`, …
+- Optional CLIs on PATH: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, `rojo`, …
 
 ### Install & run
 
@@ -73,111 +58,97 @@ Restart Cursor / Grok after changing MCP config.
 git clone https://github.com/WutIsHummus/TrueDeck.git
 cd TrueDeck
 npm install
-npm run dev
+npm start
 ```
 
-Build a desktop binary:
+| Command | What |
+|---------|------|
+| `npm start` | Studio UI (default) |
+| `npm run tui` | Full terminal deck |
+| `npm run build` | Production compile |
+| `npm run dist:win` | Windows installer (electron-builder) |
 
-```bash
-npm run dist:win   # or dist (dir), electron-builder targets in package.json
-```
+## Keyboard shortcuts
 
-### First session
+All app shortcuts use **Ctrl+Shift** so they work even while an agent terminal is focused:
 
-1. **+ Open** a project folder (e.g. your Roblox/Rojo repo).
-2. Configure **On open…** → enable `rojo serve` (auto-suggested when `default.project.json` exists).
-3. Click the project again (or open it) to spawn on-open panes + default agents.
-4. Use toolbar **+ Grok / + Codex / + Claude / + Cursor / + Gemini** for more tabs.
-5. Edit **TrueMemory** on the right:
-   - **This repo** → `.memory/` in the project
-   - **Global** → shared across all projects
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+Shift+A** | Agent list |
+| **Ctrl+Shift+O** | Open project |
+| **Ctrl+Shift+W** | Close tab |
+| **Ctrl+Shift+S** | Settings |
+| **Ctrl+Shift+T** | Next tab |
+| **Ctrl+Shift+D** | Split / unsplit |
+| **Ctrl+Shift+N** | New shell |
+| **Ctrl+Shift+1–9** | Jump to tab |
 
-### Speech-to-text
+You can also click **Grok · Codex · Cursor · Claude** or **+ agent**.
+
+## What is `mem·auto`?
+
+A **status badge**, not a control.
+
+TrueDeck automatically:
+
+1. Ensures `.memory/` for the repo  
+2. Writes `.truedeck/auto-context.md` for agents  
+3. Warms **MemPalace** natively (no Docker) when installed  
+4. Background-mines the project into a wing  
+
+You don’t manage memory UI. See [docs/memory-providers.md](./docs/memory-providers.md).
+
+### Optional MemPalace (native)
 
 ```powershell
-winget install cjpais.Handy
+uv tool install mempalace
+.\tools\ensure-mempalace.ps1
 ```
 
-Set a push-to-talk hotkey in Handy, focus a TrueDeck terminal tab, speak. Or use **Win+H**.
+## Onboarding
 
-## TrueMemory protocol
+First launch opens a short tour:
 
-Agents and humans share plain markdown:
+1. Welcome  
+2. Explain chrome (`mem·auto`, agent chips, + agent, settings)  
+3. Connect a local repo  
+4. Launch Cursor / Grok / Codex / Claude  
+5. Done  
+
+Replay anytime: **?** in the title bar, or **Settings → About → Replay onboarding**.
+
+## Project layout
 
 ```
-.memory/
-  INDEX.md
-  context/      # durable facts
-  patterns/     # how-tos
-  decisions/    # ADRs
-  sessions/     # optional day logs
+TrueDeck/
+  src/                 # Studio UI (React + xterm)
+  electron/            # Main process, memory service, updates
+  tui/                 # Terminal UI alternative
+  resources/icon.svg   # App icon
+  docs/                # Banner, preview, memory docs
+  tools/               # MemPalace helpers
 ```
 
-**Global memory** lives in the TrueDeck app data directory (`memory/`), same layout.
+## Brand assets
 
-Tip for agents: at session start, read both `INDEX.md` files when present.
+| File | Use |
+|------|-----|
+| [resources/icon.svg](./resources/icon.svg) | App icon |
+| [resources/icon-simple.svg](./resources/icon-simple.svg) | Small mark |
+| [docs/banner.svg](./docs/banner.svg) | GitHub / social banner |
+| [docs/studio-preview.svg](./docs/studio-preview.svg) | UI preview |
 
-## Customize agents
+## Updates
 
-After first run, edit:
+TrueDeck checks GitHub Releases on launch. If a newer tag exists, an amber **Update** button appears.
 
-- **Windows:** `%APPDATA%\truedeck\data\agents.json`
-- **macOS:** `~/Library/Application Support/truedeck/data/agents.json`
-- **Linux:** `~/.config/truedeck/data/agents.json`
-
-Example preset:
-
-```json
-{
-  "id": "cursor",
-  "name": "Cursor Agent",
-  "command": "cursor",
-  "args": ["agent"],
-  "color": "#60a5fa",
-  "icon": "◆",
-  "description": "Cursor agent CLI"
-}
-```
-
-Projects store: `…/data/projects.json` (on-open commands + default agent tabs).
-
-## Stack
-
-- **Electron** + **electron-vite** + **React** + **TypeScript**
-- **node-pty** + **xterm.js** (real PTYs, mouse-selectable UI)
-- **Zustand** for UI state
-- Markdown on disk for memory (no vendor lock-in)
-
-## Roadmap
-
-- [x] Split panes / grid layout (BridgeSpace-style)
-- [x] Reliable Cursor agent resolution
-- [x] First-run project seeding
-- [x] CI + Windows release workflow
-- [ ] Drag-and-drop pane resize / reorder
-- [ ] Built-in Whisper STT (optional)
-- [ ] MCP bridge for shared memory across external tools
-- [ ] Session cost / status badges per agent
-- [ ] Portable agent-deck import/export
-
-## Releases
-
-Tag a version to build Windows installers:
+Publish a release:
 
 ```bash
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.3.0
+git push origin v0.3.0
+gh release create v0.3.0 --title "TrueDeck v0.3.0" --notes "Studio UI, onboarding, Ctrl+Shift shortcuts, Cursor, auto memory."
 ```
-
-Or run the **Release** workflow manually from GitHub Actions.
-
-## Contributing
-
-PRs welcome. Keep the core philosophy:
-
-1. **Real terminals** for real CLIs (not fake chat-only agents)
-2. **Memory as files** (repo + global), not a black-box cloud
-3. **Mouse-first** desktop UX without hiding the terminal
 
 ## License
 
@@ -185,6 +156,6 @@ MIT — see [LICENSE](./LICENSE).
 
 ## Related
 
-- [Handy](https://github.com/cjpais/Handy) — free offline speech-to-text
-- [Claude Squad](https://github.com/smtg-ai/claude-squad) — TUI multi-agent manager
-- [Agent Deck](https://github.com/asheshgoplani/agent-deck) — terminal session manager inspiration
+- [Handy](https://github.com/cjpais/Handy) — free offline speech-to-text  
+- [MemPalace](https://github.com/MemPalace/mempalace) — local AI memory (native MCP)  
+- [Claude Squad](https://github.com/smtg-ai/claude-squad) · [Agent Deck](https://github.com/asheshgoplani/agent-deck)

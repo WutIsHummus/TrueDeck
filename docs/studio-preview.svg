@@ -1,0 +1,70 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="620" viewBox="0 0 1100 620" role="img" aria-label="TrueDeck studio UI">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#101012"/>
+      <stop offset="100%" stop-color="#0c0c0c"/>
+    </linearGradient>
+  </defs>
+  <rect width="1100" height="620" rx="12" fill="url(#bg)" stroke="#2a2a2a" stroke-width="2"/>
+
+  <!-- titlebar -->
+  <rect x="1" y="1" width="1098" height="40" rx="12" fill="#141414"/>
+  <rect x="1" y="28" width="1098" height="14" fill="#141414"/>
+  <text x="16" y="26" font-family="ui-monospace,Consolas,monospace" font-size="13" font-weight="700" fill="#f0a050">TRUEDECK 0.3.0</text>
+  <rect x="170" y="10" width="160" height="22" rx="11" fill="#ffffff08" stroke="#2a2a2a"/>
+  <circle cx="184" cy="21" r="4" fill="#7fd99a"/>
+  <text x="196" y="25" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#a1a1aa">~/SPTS</text>
+
+  <text x="560" y="25" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#8a8a8a">mem·auto</text>
+
+  <!-- quick agents -->
+  <g font-family="ui-monospace,Consolas,monospace" font-size="11">
+    <rect x="680" y="10" width="52" height="22" rx="11" fill="#ffffff06" stroke="#2a2a2a"/>
+    <text x="694" y="25" fill="#a1a1aa">Grok</text>
+    <rect x="738" y="10" width="58" height="22" rx="11" fill="#ffffff06" stroke="#2a2a2a"/>
+    <text x="750" y="25" fill="#a1a1aa">Codex</text>
+    <rect x="802" y="10" width="62" height="22" rx="11" fill="#60a5fa18" stroke="#60a5fa66"/>
+    <text x="814" y="25" fill="#93c5fd">Cursor</text>
+    <rect x="870" y="10" width="62" height="22" rx="11" fill="#ffffff06" stroke="#2a2a2a"/>
+    <text x="882" y="25" fill="#a1a1aa">Claude</text>
+    <rect x="940" y="10" width="70" height="22" rx="11" fill="#ffffff10" stroke="#3f3f3f"/>
+    <text x="952" y="25" fill="#e8e8e8">+ agent</text>
+    <text x="1025" y="26" fill="#8a8a8a" font-size="14">⚙</text>
+    <text x="1050" y="26" fill="#8a8a8a" font-size="14">?</text>
+  </g>
+
+  <!-- tab bar -->
+  <rect y="41" width="1100" height="36" fill="#141414"/>
+  <rect x="8" y="47" width="88" height="26" rx="6" fill="#0c0c0c" stroke="#2a2a2a"/>
+  <circle cx="22" cy="60" r="3.5" fill="#22d3ee"/>
+  <text x="32" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#e8e8e8">Grok</text>
+  <text x="78" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#8a8a8a">×</text>
+
+  <rect x="102" y="47" width="100" height="26" rx="6" fill="#0c0c0c" stroke="#60a5fa55"/>
+  <circle cx="116" cy="60" r="3.5" fill="#60a5fa"/>
+  <text x="126" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#93c5fd">Cursor</text>
+  <text x="182" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#8a8a8a">×</text>
+
+  <rect x="208" y="47" width="96" height="26" rx="6" fill="#0c0c0c" stroke="#2a2a2a"/>
+  <circle cx="222" cy="60" r="3.5" fill="#34d399"/>
+  <text x="232" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#a1a1aa">Codex</text>
+  <text x="286" y="64" font-family="Segoe UI,sans-serif" font-size="12" fill="#8a8a8a">×</text>
+
+  <text x="320" y="64" font-family="ui-monospace,Consolas,monospace" font-size="16" fill="#8a8a8a">+</text>
+  <text x="345" y="64" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#71717a">clear</text>
+
+  <!-- terminal -->
+  <rect y="77" width="1100" height="510" fill="#0c0c0c"/>
+  <text x="20" y="120" font-family="ui-monospace,Consolas,monospace" font-size="14" fill="#f0a050">›</text>
+  <text x="36" y="120" font-family="ui-monospace,Consolas,monospace" font-size="14" fill="#e8e8e8"> cursor-agent</text>
+  <text x="20" y="155" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#52525b"># TrueDeck auto-context loaded · mem·auto+palace</text>
+  <text x="20" y="185" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#a1a1aa">Project: C:\Users\alper\SPTS</text>
+  <text x="20" y="215" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#7fd99a">✓ Memory automatic — no Docker</text>
+  <text x="20" y="255" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#71717a">What should we work on?</text>
+  <text x="20" y="290" font-family="ui-monospace,Consolas,monospace" font-size="13" fill="#e8e8e8">_</text>
+
+  <!-- statusbar -->
+  <rect y="587" width="1100" height="32" fill="#141414"/>
+  <text x="12" y="608" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#71717a">Ctrl+Shift+A agents · Ctrl+Shift+O project · Ctrl+Shift+W close · Ctrl+Shift+S settings</text>
+  <text x="900" y="608" font-family="ui-monospace,Consolas,monospace" font-size="11" fill="#52525b">mem·auto · Ready</text>
+</svg>
