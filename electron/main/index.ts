@@ -21,9 +21,9 @@ import {
   buildAgentBootstrapPrompt
 } from './memory'
 import { getGlobalDataDir, getSettingsPath } from './paths'
+import { runFirstRunSeed } from './first-run'
 import type { AgentPreset, AppSettings, MemoryScope, ProjectOnOpenCommand } from '../shared/types'
 
-// @electron-toolkit/utils may not be installed — lightweight fallbacks
 const isDev = !app.isPackaged
 
 function loadSettings(): AppSettings {
@@ -41,7 +41,9 @@ function defaultSettings(): AppSettings {
   return {
     injectMemoryOnAgentStart: true,
     theme: 'dark',
-    fontSize: 13
+    fontSize: 13,
+    layoutMode: 'grid',
+    autoGrid: true
   }
 }
 
@@ -91,9 +93,11 @@ function createWindow(): void {
 function registerIpc(): void {
   ipcMain.handle('app:getSettings', () => loadSettings())
   ipcMain.handle('app:setSettings', (_e, s: AppSettings) => {
-    saveSettings(s)
-    return s
+    saveSettings({ ...defaultSettings(), ...s })
+    return loadSettings()
   })
+  ipcMain.handle('app:firstRun', (_e, force?: boolean) => runFirstRunSeed(Boolean(force)))
+  ipcMain.handle('app:version', () => app.getVersion())
 
   ipcMain.handle('agents:list', () => loadAgents())
   ipcMain.handle('agents:save', (_e, agents: AgentPreset[]) => {

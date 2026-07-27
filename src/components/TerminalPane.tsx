@@ -102,6 +102,7 @@ export function TerminalPane({ sessionId, visible, fontSize = 13 }: Props): JSX.
   return (
     <div
       className={`terminal-pane ${visible ? 'visible' : ''}`}
+      style={visible ? undefined : { display: 'none' }}
       ref={hostRef}
       onClick={() => termRef.current?.focus()}
     />

@@ -51,8 +51,13 @@ export interface MemoryNote {
   scope?: MemoryScope
 }
 
+export type LayoutMode = 'tabs' | 'grid'
+
 export interface AppSettings {
   injectMemoryOnAgentStart: boolean
   theme: 'dark' | 'light'
   fontSize: number
+  layoutMode: LayoutMode
+  /** When true, opening a project auto-switches to grid if 2+ panes */
+  autoGrid: boolean
 }

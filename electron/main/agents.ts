@@ -52,11 +52,13 @@ const DEFAULT_AGENTS: AgentPreset[] = [
   {
     id: 'cursor',
     name: 'Cursor Agent',
-    command: process.platform === 'win32' ? 'cursor.cmd' : 'cursor',
-    args: ['agent'],
+    // Prefer dedicated cursor-agent CLI; resolve-command.ts rewrites at spawn time.
+    command: process.platform === 'win32' ? 'cursor-agent' : 'cursor-agent',
+    args: [],
     color: '#60a5fa',
     icon: '◆',
-    description: 'Cursor agent CLI (cursor agent). Falls back to opening Cursor if unavailable.'
+    description:
+      'Cursor Agent CLI (cursor-agent). Auto-resolves to cursor agent or Cursor.exe if needed.'
   },
   {
     id: 'opencode',

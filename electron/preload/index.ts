@@ -12,6 +12,11 @@ import type {
 const api = {
   getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('app:getSettings'),
   setSettings: (s: AppSettings): Promise<AppSettings> => ipcRenderer.invoke('app:setSettings', s),
+  firstRun: (
+    force?: boolean
+  ): Promise<{ seeded: ProjectConfig[]; firstRun: boolean }> =>
+    ipcRenderer.invoke('app:firstRun', force),
+  version: (): Promise<string> => ipcRenderer.invoke('app:version'),
 
   listAgents: (): Promise<AgentPreset[]> => ipcRenderer.invoke('agents:list'),
   saveAgents: (agents: AgentPreset[]): Promise<AgentPreset[]> =>

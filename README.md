@@ -12,11 +12,13 @@ Run **Grok Build**, **Codex**, **Claude Code**, **Cursor Agent**, **Gemini**, **
 
 | Feature | What it does |
 |--------|----------------|
-| **Agent deck** | Click to launch agents as tabs; full xterm.js terminals (mouse + keyboard) |
-| **Multi-CLI** | Grok, Codex, Claude, Cursor, Gemini, OpenCode, Aider, Shell — edit presets in `agents.json` |
+| **Agent grid** | BridgeSpace-style **Grid** view — see multiple agents at once; or classic **Tabs** |
+| **Multi-CLI** | Grok, Codex, Claude, Cursor Agent, Gemini, OpenCode, Aider, Shell — edit presets in `agents.json` |
+| **Smart Cursor** | Resolves `cursor-agent` → `cursor agent` → Cursor IDE fallback |
 | **On-open commands** | Per project: auto-run `rojo serve`, `npm run dev`, etc. when you open the folder |
+| **First-run seed** | Auto-discovers local projects (e.g. `~/SPTS`) with sensible defaults |
 | **TrueMemory (repo)** | `.memory/` inside each project — commit it like code |
-| **TrueMemory (global)** | Cross-project prefs under app data / `~`-scoped global store |
+| **TrueMemory (global)** | Cross-project prefs under app data |
 | **Speech-to-text ready** | Focus a terminal + [Handy](https://github.com/cjpais/Handy) or **Win+H** |
 
 ## Quick start
@@ -110,12 +112,26 @@ Projects store: `…/data/projects.json` (on-open commands + default agent tabs)
 
 ## Roadmap
 
-- [ ] Split panes / grid layout (BridgeSpace-style 2×2)
-- [ ] Drag-and-drop tab reorder
+- [x] Split panes / grid layout (BridgeSpace-style)
+- [x] Reliable Cursor agent resolution
+- [x] First-run project seeding
+- [x] CI + Windows release workflow
+- [ ] Drag-and-drop pane resize / reorder
 - [ ] Built-in Whisper STT (optional)
 - [ ] MCP bridge for shared memory across external tools
 - [ ] Session cost / status badges per agent
 - [ ] Portable agent-deck import/export
+
+## Releases
+
+Tag a version to build Windows installers:
+
+```bash
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+Or run the **Release** workflow manually from GitHub Actions.
 
 ## Contributing
 

@@ -295,15 +295,16 @@ select:focus {
   background: #05070a;
 }
 
-.terminal-pane {
+.terminal-host.tabs-mode .terminal-pane {
   position: absolute;
   inset: 0;
   padding: 4px;
-  display: none;
 }
 
-.terminal-pane.visible {
-  display: block;
+.terminal-pane {
+  width: 100%;
+  height: 100%;
+  padding: 2px;
 }
 
 .terminal-pane .xterm {
@@ -312,6 +313,99 @@ select:focus {
 
 .terminal-pane .xterm-viewport {
   overflow-y: auto !important;
+}
+
+/* Multi-agent grid (BridgeSpace-style) */
+.session-grid {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  gap: 6px;
+  padding: 6px;
+  background: #070b10;
+}
+
+.grid-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #05070a;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.grid-cell.focused {
+  border-color: #22d3ee66;
+  box-shadow: 0 0 0 1px #22d3ee33, 0 8px 24px #00000055;
+}
+
+.grid-cell-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: #101722;
+  border-bottom: 1px solid var(--border);
+  border-top: 2px solid transparent;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.grid-cell-title {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.grid-close {
+  padding: 2px 6px;
+  border: none;
+  color: var(--text-muted);
+  line-height: 1;
+}
+
+.grid-close:hover {
+  color: var(--danger);
+  background: transparent;
+}
+
+.grid-cell-body {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+
+.grid-cell-body .terminal-pane {
+  position: absolute;
+  inset: 0;
+}
+
+.layout-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.layout-toggle button {
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.layout-toggle button.active {
+  background: #155e75;
+  color: white;
+  box-shadow: none;
+  border-color: transparent;
 }
 
 .empty-state {
