@@ -92,7 +92,7 @@ export function SettingsMenu({
         <header className="settings-header">
           <div>
             <h2>Settings</h2>
-            <p className="hint">Ctrl+Shift+S · Esc to close</p>
+            <p className="hint">Ctrl+S · Esc to close</p>
           </div>
           <button type="button" className="tab-close" onClick={onClose} aria-label="Close settings">
             ×
@@ -192,11 +192,11 @@ export function SettingsMenu({
                   </select>
                 </label>
                 <p className="hint">
-                  Easy shortcuts (hold both <strong>Ctrl</strong> and <strong>Shift</strong>):
+                  Shortcuts (hold <strong>Ctrl</strong>, then a letter):
                   <br />
-                  <strong>A</strong> agents · <strong>O</strong> open project · <strong>W</strong>{' '}
-                  close tab · <strong>S</strong> settings · <strong>T</strong> next tab ·{' '}
-                  <strong>D</strong> split · <strong>N</strong> shell · <strong>1–9</strong> jump tab
+                  <strong>A</strong> agents · <strong>O</strong> project · <strong>W</strong> close ·{' '}
+                  <strong>S</strong> settings · <strong>T</strong> next tab · <strong>D</strong>{' '}
+                  split · <strong>N</strong> shell · <strong>1–9</strong> jump tab
                 </p>
               </section>
             )}
@@ -225,7 +225,7 @@ export function SettingsMenu({
                     </p>
                   </>
                 ) : (
-                  <p className="hint">Open a project first (Ctrl+Shift+O).</p>
+                  <p className="hint">Open a project first (Ctrl+O).</p>
                 )}
               </section>
             )}

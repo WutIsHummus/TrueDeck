@@ -209,7 +209,7 @@ export function TabBar({
         )
       })}
 
-      <button type="button" className="tab-add" title="New agent (Ctrl+Shift+A)" onClick={onNew}>
+      <button type="button" className="tab-add" title="New agent (Ctrl+A)" onClick={onNew}>
         +
       </button>
       {sessions.length > 0 && (

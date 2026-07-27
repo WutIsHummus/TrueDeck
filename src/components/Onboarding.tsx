@@ -112,7 +112,7 @@ export function Onboarding({
                   </div>
                   <div>
                     <strong>Start an AI agent here</strong> — opens a list (Grok, Codex, Cursor,
-                    Claude…). Also <kbd>Ctrl+Shift+A</kbd>.
+                    Claude…). Also <kbd>Ctrl+A</kbd>.
                   </div>
                 </li>
                 <li>
@@ -121,7 +121,7 @@ export function Onboarding({
                   </div>
                   <div>
                     <strong>Settings</strong> — font size, theme, on-open commands (like{' '}
-                    <code>rojo serve</code>). Also <kbd>Ctrl+Shift+S</kbd>.
+                    <code>rojo serve</code>). Also <kbd>Ctrl+S</kbd>.
                   </div>
                 </li>
                 <li>
@@ -130,7 +130,7 @@ export function Onboarding({
                   </div>
                   <div>
                     <strong>Your folder</strong> — shows the connected repo path. Click it (or use{' '}
-                    <kbd>Ctrl+Shift+O</kbd>) to open a different one.
+                    <kbd>Ctrl+O</kbd>) to open a different one.
                   </div>
                 </li>
               </ol>
@@ -298,19 +298,18 @@ export function Onboarding({
               <p className="onboard-lead">Quick map:</p>
               <ul className="onboard-bullets">
                 <li>
-                  All shortcuts: hold <strong>Ctrl+Shift</strong>, then a letter
+                  Shortcuts: hold <strong>Ctrl</strong>, then a letter
                 </li>
                 <li>
                   <strong>A</strong> agents · <strong>O</strong> project · <strong>W</strong> close ·{' '}
                   <strong>S</strong> settings · <strong>T</strong> next tab
                 </li>
                 <li>
-                  <code>mem·auto</code> = automatic memory (status only, not a button)
+                  <code>mem·auto</code> = automatic memory (status only — ignore it)
                 </li>
               </ul>
               <p className="muted">
-                Example: hold Ctrl and Shift, tap <strong>A</strong> → agent list. Works even while
-                an agent terminal is focused.
+                Example: hold Ctrl, tap <strong>A</strong> → agent list.
               </p>
               <button type="button" className="onboard-primary" onClick={() => onComplete(false)}>
                 Enter TrueDeck →

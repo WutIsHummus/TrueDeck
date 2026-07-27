@@ -8,7 +8,7 @@ import { Onboarding } from './components/Onboarding'
 import type { AgentPreset, AppSettings, ProjectConfig } from '../electron/shared/types'
 
 /**
- * Studio layout — between Codex TUI and raw CLI.
+ * Studio layout - between Codex TUI and raw CLI.
  * Memory is fully automatic (no user management UI).
  */
 export default function App(): JSX.Element {
@@ -160,17 +160,9 @@ export default function App(): JSX.Element {
   }, [addSession, markSessionExited, refreshAgents, refreshProjects, setStatus])
 
   /**
-   * Easy app shortcuts: always Ctrl+Shift+letter (harder for agents to steal).
-   * Capture phase so they work even when the terminal is focused.
-   *
-   *   Ctrl+Shift+A  agents
-   *   Ctrl+Shift+O  open project
-   *   Ctrl+Shift+W  close tab
-   *   Ctrl+Shift+S  settings
-   *   Ctrl+Shift+T  next tab
-   *   Ctrl+Shift+D  split / unsplit
-   *   Ctrl+Shift+N  new shell
-   *   Ctrl+Shift+1–9  jump to tab
+   * Simple shortcuts: Ctrl + letter (no Shift).
+   *   Ctrl+A agents · Ctrl+O project · Ctrl+W close · Ctrl+S settings
+   *   Ctrl+T next tab · Ctrl+D split · Ctrl+N shell · Ctrl+1–9 jump
    */
   useEffect(() => {
     const onKey = (e: KeyboardEvent): void => {
@@ -181,12 +173,21 @@ export default function App(): JSX.Element {
       }
 
       const ctrl = e.ctrlKey || e.metaKey
-      if (!ctrl || !e.shiftKey) return
+      // Require Ctrl, ignore when Shift/Alt held (except Ctrl+Shift+Tab handled below)
+      if (!ctrl) return
 
       const key = e.key.toLowerCase()
+      const letter = key.length === 1 ? key : ''
 
-      // Agents palette
-      if (key === 'a') {
+      // Don't steal typing when user is in a normal text field (settings/onboarding)
+      const t = e.target as HTMLElement | null
+      const tag = t?.tagName?.toLowerCase()
+      const typing =
+        tag === 'input' || tag === 'textarea' || (t as HTMLElement)?.isContentEditable
+      if (typing && key !== 'Escape') return
+
+      // Agents: Ctrl+A
+      if (letter === 'a' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         setSettingsOpen(false)
@@ -196,24 +197,24 @@ export default function App(): JSX.Element {
         return
       }
 
-      // Open project
-      if (key === 'o') {
+      // Open project: Ctrl+O
+      if (letter === 'o' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         void addProject()
         return
       }
 
-      // Close tab
-      if (key === 'w') {
+      // Close tab: Ctrl+W
+      if (letter === 'w' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         if (activeSessionId) void closeSession(activeSessionId)
         return
       }
 
-      // Settings
-      if (key === 's') {
+      // Settings: Ctrl+S
+      if (letter === 's' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         setPaletteOpen(false)
@@ -221,13 +222,13 @@ export default function App(): JSX.Element {
         return
       }
 
-      // Next / previous tab: Ctrl+Shift+T next, Ctrl+Shift+Tab previous
-      if (key === 't' || e.key === 'Tab') {
+      // Next tab: Ctrl+T  |  Previous: Ctrl+Shift+Tab or Ctrl+Tab reverse via Shift
+      if ((letter === 't' && !e.shiftKey && !e.altKey) || e.key === 'Tab') {
         e.preventDefault()
         e.stopPropagation()
         if (!projectSessions.length) return
         const idx = projectSessions.findIndex((s) => s.id === activeSessionId)
-        const goPrev = e.key === 'Tab' // Tab key = previous; letter T = next
+        const goPrev = e.key === 'Tab' && e.shiftKey
         const nextIdx = goPrev
           ? (idx - 1 + projectSessions.length) % projectSessions.length
           : (idx + 1) % projectSessions.length
@@ -235,8 +236,8 @@ export default function App(): JSX.Element {
         return
       }
 
-      // Split
-      if (key === 'd') {
+      // Split: Ctrl+D
+      if (letter === 'd' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         if (projectSessions.length < 2) {
@@ -248,23 +249,22 @@ export default function App(): JSX.Element {
         return
       }
 
-      // New shell
-      if (key === 'n') {
+      // New shell: Ctrl+N
+      if (letter === 'n' && !e.shiftKey && !e.altKey) {
         e.preventDefault()
         e.stopPropagation()
         void launchAgent('shell')
         return
       }
 
-      // Jump to tab 1–9
-      if (e.key >= '1' && e.key <= '9') {
+      // Jump tab: Ctrl+1..9
+      if (!e.shiftKey && !e.altKey && e.key >= '1' && e.key <= '9') {
         e.preventDefault()
         e.stopPropagation()
         const s = projectSessions[Number(e.key) - 1]
         if (s) setActiveSession(s.id)
       }
     }
-    // capture: true → works while typing in the terminal
     window.addEventListener('keydown', onKey, true)
     return () => window.removeEventListener('keydown', onKey, true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -281,7 +281,7 @@ export default function App(): JSX.Element {
 
   const openProject = async (p: ProjectConfig): Promise<void> => {
     setActiveProject(p.id)
-    setStatus(`Opening ${p.name}…`)
+    setStatus(`Opening ${p.name}...`)
     try {
       const res = await window.truedeck.openProject(p.id)
       for (const id of res.sessionIds) {
@@ -306,7 +306,7 @@ export default function App(): JSX.Element {
 
   const launchAgent = async (agentId: string): Promise<void> => {
     if (!activeProject) {
-      setStatus('Pick a project first (Ctrl+Shift+O)')
+      setStatus('Pick a project first (Ctrl+O)')
       setPaletteOpen(false)
       return
     }
@@ -326,7 +326,7 @@ export default function App(): JSX.Element {
   const shortPath = (p: string): string => {
     const home = (window as unknown as { __home?: string }).__home
     if (home && p.startsWith(home)) return '~' + p.slice(home.length)
-    return p.length > 52 ? '…' + p.slice(-50) : p
+    return p.length > 52 ? '...' + p.slice(-50) : p
   }
 
   const paletteSelect = (agent: AgentPreset): void => {
@@ -335,17 +335,17 @@ export default function App(): JSX.Element {
 
   return (
     <div className="studio">
-      {/* Title — minimal */}
+      {/* Title - minimal */}
       <header className="titlebar">
         <span className="logo">TRUEDECK{version ? ` ${version}` : ''}</span>
         <button
           type="button"
           className="project-chip no-drag"
-          title="Open project (Ctrl+Shift+O)"
+          title="Open project (Ctrl+O)"
           onClick={() => void addProject()}
         >
           <span className="dot" />
-          {activeProject ? shortPath(activeProject.root) : 'open project…'}
+          {activeProject ? shortPath(activeProject.root) : 'open project...'}
         </button>
         {projects.length > 1 && (
           <select
@@ -376,14 +376,14 @@ export default function App(): JSX.Element {
         <div className="spacer" />
         <span
           className="meta no-drag mem-badge"
-          title="Automatic memory status (not a control). TrueDeck keeps project context for agents — you don’t manage notes or Docker here."
+          title="Automatic memory status (not a control). TrueDeck keeps project context for agents - you don't manage notes or Docker here."
         >
           {memLabel}
         </span>
         <button
           type="button"
           className="no-drag primary"
-          title="Choose an agent (Ctrl+Shift+A)"
+          title="Choose an agent (Ctrl+A)"
           disabled={!activeProject}
           onClick={() => setPaletteOpen(true)}
         >
@@ -412,7 +412,7 @@ export default function App(): JSX.Element {
         <button
           type="button"
           className="no-drag settings-gear"
-          title="Settings (Ctrl+Shift+S)"
+          title="Settings (Ctrl+S)"
           aria-label="Settings"
           onClick={() => setSettingsOpen(true)}
         >
@@ -456,7 +456,7 @@ export default function App(): JSX.Element {
         }}
       />
 
-      {/* Terminal stage — drop a tab here to split */}
+      {/* Terminal stage - drop a tab here to split */}
       <main
         className={`stage ${splitId ? 'split' : ''}`}
         onDragOver={(e) => {
@@ -485,10 +485,9 @@ export default function App(): JSX.Element {
             <div>
               <h2>truedeck</h2>
               <p>
-                Terminal-first agent deck — between Codex and a plain CLI.
+                Terminal-first agent deck - between Codex and a plain CLI.
                 <br />
-                <kbd>Ctrl+Shift+O</kbd> project · <kbd>Ctrl+Shift+A</kbd> agents ·{' '}
-                <kbd>Ctrl+Shift+W</kbd> close tab
+                <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+A</kbd> agents · <kbd>Ctrl+W</kbd> close tab
               </p>
               <div className="row" style={{ justifyContent: 'center' }}>
                 <button type="button" className="primary" onClick={() => void addProject()}>
@@ -545,27 +544,24 @@ export default function App(): JSX.Element {
       </main>
 
       <footer className="statusbar">
-        <div className="hint" title="All app shortcuts use Ctrl+Shift so they work inside agent terminals">
-          <span title="Ctrl+Shift+A — agent list">
-            <kbd>Ctrl+Shift+A</kbd> agents
+        <div className="hint" title="Hold Ctrl, then press a letter">
+          <span title="Ctrl+A — agent list">
+            <kbd>Ctrl+A</kbd> agents
           </span>
-          <span title="Ctrl+Shift+O — open project folder">
-            <kbd>Ctrl+Shift+O</kbd> project
+          <span title="Ctrl+O — open project">
+            <kbd>Ctrl+O</kbd> project
           </span>
-          <span title="Ctrl+Shift+W — close current tab">
-            <kbd>Ctrl+Shift+W</kbd> close
+          <span title="Ctrl+W — close tab">
+            <kbd>Ctrl+W</kbd> close
           </span>
-          <span title="Ctrl+Shift+S — settings">
-            <kbd>Ctrl+Shift+S</kbd> settings
+          <span title="Ctrl+S — settings">
+            <kbd>Ctrl+S</kbd> settings
           </span>
-          <span title="Ctrl+Shift+T — next tab">
-            <kbd>Ctrl+Shift+T</kbd> next tab
+          <span title="Ctrl+T — next tab">
+            <kbd>Ctrl+T</kbd> next
           </span>
-          <span title="Drag tabs to reorder">drag tabs</span>
         </div>
-        <div className="status-text">
-          {memLabel} · {status}
-        </div>
+        <div className="status-text">{status || memLabel}</div>
       </footer>
 
       {/* Agent palette */}
@@ -581,7 +577,7 @@ export default function App(): JSX.Element {
             <input
               className="palette-search"
               autoFocus
-              placeholder="Type to filter agents…  (or click one below)"
+              placeholder="Type to filter agents...  (or click one below)"
               value={paletteQuery}
               onChange={(e) => {
                 setPaletteQuery(e.target.value)
@@ -717,7 +713,8 @@ export default function App(): JSX.Element {
         onComplete={(skipped) => {
           void window.truedeck.completeOnboarding(skipped)
           setOnboardingOpen(false)
-          setStatus(skipped ? 'Onboarding skipped' : 'Welcome to TrueDeck')
+          // Stay quiet — no "Onboarding skipped" clutter in the status bar
+          if (!skipped) setStatus('Ready')
         }}
       />
     </div>
