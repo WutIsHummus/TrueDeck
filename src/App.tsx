@@ -5,6 +5,7 @@ import { OnOpenModal } from './components/OnOpenModal'
 import { SettingsMenu } from './components/SettingsMenu'
 import { TabBar } from './components/TabBar'
 import { Onboarding } from './components/Onboarding'
+import { WindowControls } from './components/WindowControls'
 import type { AgentPreset, AppSettings, ProjectConfig } from '../electron/shared/types'
 
 /**
@@ -335,8 +336,19 @@ export default function App(): JSX.Element {
 
   return (
     <div className="studio">
-      {/* Title - minimal */}
-      <header className="titlebar">
+      {/* Custom window bar (frameless) */}
+      <header
+        className="titlebar"
+        onDoubleClick={() => void window.truedeck.windowMaximize()}
+      >
+        <img
+          className="titlebar-icon no-drag"
+          src="../../resources/icon-simple.svg"
+          width={16}
+          height={16}
+          alt=""
+          draggable={false}
+        />
         <span className="logo">TRUEDECK{version ? ` ${version}` : ''}</span>
         <button
           type="button"
@@ -376,7 +388,7 @@ export default function App(): JSX.Element {
         <div className="spacer" />
         <span
           className="meta no-drag mem-badge"
-          title="Automatic memory status (not a control). TrueDeck keeps project context for agents - you don't manage notes or Docker here."
+          title="Automatic memory status (not a control)."
         >
           {memLabel}
         </span>
@@ -427,6 +439,7 @@ export default function App(): JSX.Element {
         >
           ?
         </button>
+        <WindowControls />
       </header>
 
       <TabBar

@@ -123,16 +123,27 @@ textarea:focus {
 .titlebar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 10px;
+  gap: 8px;
+  padding: 0 0 0 10px;
   background: var(--bg-bar);
   border-bottom: 1px solid var(--border);
-  min-height: 34px;
+  min-height: 36px;
+  height: 36px;
   -webkit-app-region: drag;
+  user-select: none;
 }
 
 .titlebar button,
-.titlebar .no-drag {
+.titlebar select,
+.titlebar input,
+.titlebar .no-drag,
+.titlebar .win-controls {
+  -webkit-app-region: no-drag;
+}
+
+.titlebar-icon {
+  flex-shrink: 0;
+  border-radius: 4px;
   -webkit-app-region: no-drag;
 }
 
@@ -142,6 +153,51 @@ textarea:focus {
   font-size: 12px;
   letter-spacing: 0.04em;
   color: var(--accent);
+  flex-shrink: 0;
+}
+
+/* Native-feel Windows window buttons */
+.win-controls {
+  display: flex;
+  align-items: stretch;
+  height: 100%;
+  margin-left: 4px;
+  flex-shrink: 0;
+}
+
+.win-btn {
+  width: 46px;
+  height: 100%;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  color: var(--text-muted);
+  padding: 0;
+}
+
+.win-btn:hover {
+  background: #ffffff14;
+  color: var(--text);
+  transform: none;
+}
+
+.win-btn:active {
+  background: #ffffff1f;
+  transform: none;
+}
+
+.win-btn-close:hover {
+  background: #e81123;
+  color: #fff;
+}
+
+.win-btn-close:active {
+  background: #c50f1f;
+  color: #fff;
 }
 
 .project-chip {

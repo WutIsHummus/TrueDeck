@@ -96,6 +96,9 @@ function createWindow(): void {
     show: false,
     title: 'TrueDeck',
     backgroundColor: '#0c0c0c',
+    // Custom title bar — no native Windows frame
+    frame: false,
+    titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
     autoHideMenuBar: true,
     icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
@@ -109,6 +112,12 @@ function createWindow(): void {
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
   })
+
+  const emitMaxState = (): void => {
+    mainWindow?.webContents.send('window:maximized', mainWindow.isMaximized())
+  }
+  mainWindow.on('maximize', emitMaxState)
+  mainWindow.on('unmaximize', emitMaxState)
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
     shell.openExternal(details.url)
@@ -138,6 +147,21 @@ function registerIpc(): void {
     completeOnboarding(Boolean(skipped))
   )
   ipcMain.handle('app:resetOnboarding', () => resetOnboarding())
+
+  // Custom window chrome (frameless)
+  ipcMain.handle('window:minimize', () => {
+    mainWindow?.minimize()
+  })
+  ipcMain.handle('window:maximize', () => {
+    if (!mainWindow) return false
+    if (mainWindow.isMaximized()) mainWindow.unmaximize()
+    else mainWindow.maximize()
+    return mainWindow.isMaximized()
+  })
+  ipcMain.handle('window:close', () => {
+    mainWindow?.close()
+  })
+  ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
 
   // MemPalace (native, no Docker) — kept for backward-compatible UI hooks
   ipcMain.handle('mempalace:status', () => getMemPalaceStatus())

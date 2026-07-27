@@ -39,6 +39,16 @@ const api = {
   resetOnboarding: (): Promise<{ completed: boolean }> =>
     ipcRenderer.invoke('app:resetOnboarding'),
 
+  windowMinimize: (): Promise<void> => ipcRenderer.invoke('window:minimize'),
+  windowMaximize: (): Promise<boolean> => ipcRenderer.invoke('window:maximize'),
+  windowClose: (): Promise<void> => ipcRenderer.invoke('window:close'),
+  windowIsMaximized: (): Promise<boolean> => ipcRenderer.invoke('window:isMaximized'),
+  onWindowMaximized: (cb: (maximized: boolean) => void): (() => void) => {
+    const listener = (_: Electron.IpcRendererEvent, maximized: boolean): void => cb(maximized)
+    ipcRenderer.on('window:maximized', listener)
+    return () => ipcRenderer.removeListener('window:maximized', listener)
+  },
+
   listAgents: (): Promise<AgentPreset[]> => ipcRenderer.invoke('agents:list'),
   saveAgents: (agents: AgentPreset[]): Promise<AgentPreset[]> =>
     ipcRenderer.invoke('agents:save', agents),
