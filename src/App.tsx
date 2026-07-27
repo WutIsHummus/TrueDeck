@@ -3,6 +3,7 @@ import { useDeck } from './store'
 import { TerminalPane } from './components/TerminalPane'
 import { OnOpenModal } from './components/OnOpenModal'
 import { SettingsMenu } from './components/SettingsMenu'
+import { TabBar } from './components/TabBar'
 import type { AgentPreset, AppSettings, ProjectConfig } from '../electron/shared/types'
 
 /**
@@ -24,6 +25,7 @@ export default function App(): JSX.Element {
     removeSession,
     setActiveSession,
     markSessionExited,
+    moveSessionInProject,
     setStatus
   } = useDeck()
 
@@ -354,64 +356,57 @@ export default function App(): JSX.Element {
         </button>
       </header>
 
-      {/* Tabs */}
-      <div className="tabbar" role="tablist">
-        {projectSessions.map((s, i) => (
-          <div
-            key={s.id}
-            role="tab"
-            className={`tab ${activeSessionId === s.id ? 'active' : ''}`}
-            onClick={() => setActiveSession(s.id)}
-            onMouseDown={(e) => {
-              if (e.button === 1) {
-                e.preventDefault()
-                void closeSession(s.id)
-              }
-            }}
-            title={`${s.agentName} · Alt+${i + 1}`}
-          >
-            <span className="dot" style={{ background: s.color }} />
-            <span className="label">{s.agentName}</span>
-            {s.status === 'exited' && <span className="badge">exit</span>}
-            <button
-              type="button"
-              className="x"
-              aria-label={`Close ${s.agentName}`}
-              onClick={(e) => {
-                e.stopPropagation()
-                void closeSession(s.id)
-              }}
-            >
-              ×
-            </button>
-          </div>
-        ))}
-        <button
-          type="button"
-          className="tab-add"
-          title="New agent (Ctrl+K)"
-          onClick={() => setPaletteOpen(true)}
-        >
-          +
-        </button>
-        {projectSessions.length > 0 && (
-          <button
-            type="button"
-            className="tab-add"
-            title="Close all tabs"
-            onClick={() => {
-              void (async () => {
-                for (const s of [...projectSessions]) await closeSession(s.id)
-              })()
-            }}
-          >
-            clear
-          </button>
-        )}
-      </div>
+      <TabBar
+        sessions={projectSessions}
+        activeSessionId={activeSessionId}
+        splitId={splitId}
+        onSelect={setActiveSession}
+        onClose={(id) => void closeSession(id)}
+        onReorder={(id, toIndex) => {
+          if (!activeProject) return
+          moveSessionInProject(id, toIndex, activeProject.root)
+          setStatus('Tabs reordered')
+        }}
+        onSplitWith={(id) => {
+          setSplitId(id)
+          setStatus('Split view')
+        }}
+        onClearSplit={() => {
+          setSplitId(null)
+          setStatus('Split off')
+        }}
+        onNew={() => setPaletteOpen(true)}
+        onCloseAll={() => {
+          void (async () => {
+            for (const s of [...projectSessions]) await closeSession(s.id)
+          })()
+        }}
+      />
 
-      {/* Terminal stage — almost full window */}
-      <main className={`stage ${splitId ? 'split' : ''}`}>
+      {/* Terminal stage — drop a tab here to split */}
+      <main
+        className={`stage ${splitId ? 'split' : ''}`}
+        onDragOver={(e) => {
+          if (e.dataTransfer.types.includes('text/truedeck-tab') || e.dataTransfer.types.includes('text/plain')) {
+            e.preventDefault()
+            e.dataTransfer.dropEffect = 'link'
+            e.currentTarget.classList.add('drop-target')
+          }
+        }}
+        onDragLeave={(e) => {
+          e.currentTarget.classList.remove('drop-target')
+        }}
+        onDrop={(e) => {
+          e.currentTarget.classList.remove('drop-target')
+          const id =
+            e.dataTransfer.getData('text/truedeck-tab') || e.dataTransfer.getData('text/plain')
+          if (!id || id === activeSessionId) return
+          e.preventDefault()
+          setActiveSession(activeSessionId || id)
+          setSplitId(id === activeSessionId ? null : id)
+          setStatus('Split view (dropped tab)')
+        }}
+      >
         {projectSessions.length === 0 ? (
           <div className="stage-empty">
             <div>
@@ -494,6 +489,9 @@ export default function App(): JSX.Element {
           </span>
           <span>
             <b>⌃,</b> settings
+          </span>
+          <span>
+            <b>drag</b> tabs
           </span>
         </div>
         <div className="status-text">

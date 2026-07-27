@@ -28,6 +28,10 @@ interface DeckState {
   removeSession: (id: string) => void
   setActiveSession: (id: string | null) => void
   markSessionExited: (id: string, exitCode: number) => void
+  /** Reorder sessions globally by moving id to before targetId (or end if null). */
+  reorderSession: (id: string, beforeId: string | null) => void
+  /** Move session to an explicit index within its project group. */
+  moveSessionInProject: (id: string, toIndex: number, projectRoot: string) => void
   refreshMemory: () => Promise<void>
   setMemoryScope: (scope: MemoryScope) => void
   setActiveNote: (path: string | null, content?: string) => void
@@ -76,6 +80,53 @@ export const useDeck = create<DeckState>((set, get) => ({
     }),
 
   setActiveSession: (id) => set({ activeSessionId: id }),
+
+  reorderSession: (id, beforeId) =>
+    set((state) => {
+      const list = [...state.sessions]
+      const from = list.findIndex((s) => s.id === id)
+      if (from < 0) return state
+      const [item] = list.splice(from, 1)
+      if (!beforeId) {
+        list.push(item)
+      } else {
+        const to = list.findIndex((s) => s.id === beforeId)
+        if (to < 0) list.push(item)
+        else list.splice(to, 0, item)
+      }
+      return { sessions: list }
+    }),
+
+  moveSessionInProject: (id, toIndex, projectRoot) =>
+    set((state) => {
+      const others = state.sessions.filter((s) => s.projectRoot !== projectRoot)
+      const group = state.sessions.filter((s) => s.projectRoot === projectRoot)
+      const from = group.findIndex((s) => s.id === id)
+      if (from < 0) return state
+      const [item] = group.splice(from, 1)
+      const clamped = Math.max(0, Math.min(toIndex, group.length))
+      group.splice(clamped, 0, item)
+      // Preserve relative order of non-project sessions; put project group where first was
+      const firstIdx = state.sessions.findIndex((s) => s.projectRoot === projectRoot)
+      if (firstIdx < 0) return { sessions: [...others, ...group] }
+      const next = [...others]
+      // Rebuild: walk original order, replace project block with reordered group once
+      const rebuilt: SessionInfo[] = []
+      let inserted = false
+      for (const s of state.sessions) {
+        if (s.projectRoot === projectRoot) {
+          if (!inserted) {
+            rebuilt.push(...group)
+            inserted = true
+          }
+        } else {
+          rebuilt.push(s)
+        }
+      }
+      if (!inserted) rebuilt.push(...group)
+      void next
+      return { sessions: rebuilt }
+    }),
 
   markSessionExited: (id, exitCode) =>
     set((state) => ({

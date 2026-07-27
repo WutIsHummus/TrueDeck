@@ -234,32 +234,68 @@ textarea:focus {
   color: var(--text);
 }
 
-/* Tabs — Codex-like strip */
+/* Tabs — interactive drag strip */
 .tabbar {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   padding: 0 6px;
   background: var(--bg-bar);
   border-bottom: 1px solid var(--border);
   overflow-x: auto;
-  min-height: 36px;
+  min-height: 38px;
+  -webkit-app-region: no-drag;
+}
+
+.tabbar.is-dragging {
+  cursor: grabbing;
+}
+
+.tab-slot {
+  display: inline-flex;
+  align-items: stretch;
+  position: relative;
+}
+
+.tab-drop-indicator {
+  width: 3px;
+  margin: 6px 0;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px #f0a05088;
+  align-self: stretch;
+  flex-shrink: 0;
+  animation: tab-pulse 0.8s ease infinite alternate;
+}
+
+@keyframes tab-pulse {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .tab {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 6px 6px 10px;
+  gap: 5px;
+  padding: 6px 4px 6px 4px;
   border: 1px solid transparent;
   border-bottom: 2px solid transparent;
   border-radius: 6px 6px 0 0;
   background: transparent;
   color: var(--text-muted);
-  cursor: pointer;
+  cursor: grab;
   white-space: nowrap;
   user-select: none;
   max-width: 180px;
+  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease, opacity 0.12s;
+}
+
+.tab:active {
+  cursor: grabbing;
 }
 
 .tab:hover {
@@ -274,6 +310,35 @@ textarea:focus {
   border-bottom-color: var(--bg);
 }
 
+.tab.split-peer {
+  box-shadow: inset 0 -2px 0 var(--accent-2);
+}
+
+.tab.dragging {
+  opacity: 0.35;
+  transform: scale(0.96);
+}
+
+.tab.exited .label {
+  text-decoration: line-through;
+  opacity: 0.7;
+}
+
+.tab-grip {
+  font-size: 9px;
+  letter-spacing: -2px;
+  color: var(--text-muted);
+  opacity: 0.35;
+  padding: 0 2px;
+  cursor: grab;
+  line-height: 1;
+}
+
+.tab:hover .tab-grip,
+.tab.active .tab-grip {
+  opacity: 0.7;
+}
+
 .tab .dot {
   width: 7px;
   height: 7px;
@@ -286,6 +351,7 @@ textarea:focus {
   text-overflow: ellipsis;
   font-size: 12px;
   font-weight: 500;
+  max-width: 100px;
 }
 
 .tab .x {
@@ -301,7 +367,8 @@ textarea:focus {
   font-size: 14px;
   line-height: 1;
   padding: 0;
-  opacity: 0.5;
+  opacity: 0;
+  cursor: pointer;
 }
 
 .tab:hover .x,
@@ -314,15 +381,90 @@ textarea:focus {
   color: var(--danger);
 }
 
+.badge.split-badge {
+  border-color: #60a5fa55;
+  color: #93c5fd;
+}
+
 .tab-add {
   font-family: var(--mono);
-  font-size: 14px;
+  font-size: 12px;
   padding: 4px 10px;
   color: var(--text-muted);
+  flex-shrink: 0;
 }
 
 .tab-add:hover {
   color: var(--accent);
+}
+
+/* Drop tabs onto terminal stage to split */
+.stage.drop-target {
+  outline: 2px dashed #f0a05066;
+  outline-offset: -4px;
+}
+
+.stage.drop-target::after {
+  content: 'Drop to split view';
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: #0c0c0ccc;
+  color: var(--accent);
+  font-family: var(--mono);
+  font-size: 13px;
+  z-index: 20;
+  pointer-events: none;
+}
+
+.tab-menu-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+}
+
+.tab-context-menu {
+  position: fixed;
+  z-index: 90;
+  min-width: 168px;
+  padding: 4px;
+  background: #161616;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  box-shadow: 0 12px 40px #000000aa;
+}
+
+.tab-menu-title {
+  padding: 6px 10px 4px;
+  font-size: 10px;
+  font-family: var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.tab-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border-radius: 5px;
+  font-size: 12px;
+  color: var(--text);
+}
+
+.tab-context-menu button:hover:not(:disabled) {
+  background: #ffffff12;
+}
+
+.tab-context-menu button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.tab-context-menu button.danger {
+  color: var(--danger);
 }
 
 /* Main terminal stage */
