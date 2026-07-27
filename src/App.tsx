@@ -4,6 +4,7 @@ import { TerminalPane } from './components/TerminalPane'
 import { OnOpenModal } from './components/OnOpenModal'
 import { SettingsMenu } from './components/SettingsMenu'
 import { TabBar } from './components/TabBar'
+import { Onboarding } from './components/Onboarding'
 import type { AgentPreset, AppSettings, ProjectConfig } from '../electron/shared/types'
 
 /**
@@ -48,6 +49,7 @@ export default function App(): JSX.Element {
     currentVersion: string
   } | null>(null)
   const [checkingUpdate, setCheckingUpdate] = useState(false)
+  const [onboardingOpen, setOnboardingOpen] = useState(false)
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) || null,
@@ -121,6 +123,13 @@ export default function App(): JSX.Element {
           setStatus(`Ready · seeded ${result.seeded.map((p) => p.name).join(', ')}`)
           await refreshProjects()
         }
+      } catch {
+        // ignore
+      }
+      // First-run onboarding (walkthrough)
+      try {
+        const ob = await window.truedeck.getOnboarding()
+        if (!ob.completed) setOnboardingOpen(true)
       } catch {
         // ignore
       }
@@ -340,7 +349,10 @@ export default function App(): JSX.Element {
           </select>
         )}
         <div className="spacer" />
-        <span className="meta no-drag" title="Memory is automatic — nothing to manage">
+        <span
+          className="meta no-drag mem-badge"
+          title="Automatic memory status (not a control). TrueDeck keeps project context for agents — you don’t manage notes or Docker here."
+        >
           {memLabel}
         </span>
         {showQuickAgents && (
@@ -397,6 +409,15 @@ export default function App(): JSX.Element {
           onClick={() => setSettingsOpen(true)}
         >
           ⚙
+        </button>
+        <button
+          type="button"
+          className="no-drag settings-gear"
+          title="Replay onboarding"
+          aria-label="Help"
+          onClick={() => setOnboardingOpen(true)}
+        >
+          ?
         </button>
       </header>
 
@@ -668,6 +689,32 @@ export default function App(): JSX.Element {
           void window.truedeck.resetAgents().then(() => refreshAgents())
         }}
         onStatus={setStatus}
+        onReplayOnboarding={() => {
+          setSettingsOpen(false)
+          setOnboardingOpen(true)
+        }}
+      />
+
+      <Onboarding
+        open={onboardingOpen}
+        projects={projects}
+        hasActiveProject={Boolean(activeProject)}
+        hasSessions={projectSessions.length > 0}
+        shortPath={shortPath}
+        onAddProject={async () => {
+          await addProject()
+        }}
+        onOpenProject={async (p) => {
+          await openProject(p)
+        }}
+        onLaunchAgent={async (id) => {
+          await launchAgent(id)
+        }}
+        onComplete={(skipped) => {
+          void window.truedeck.completeOnboarding(skipped)
+          setOnboardingOpen(false)
+          setStatus(skipped ? 'Onboarding skipped' : 'Welcome to TrueDeck')
+        }}
       />
     </div>
   )

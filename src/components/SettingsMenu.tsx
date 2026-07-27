@@ -21,6 +21,7 @@ interface Props {
   onOpenOnOpen: () => void
   onResetAgents: () => void
   onStatus: (msg: string) => void
+  onReplayOnboarding?: () => void
 }
 
 type TabId = 'general' | 'terminal' | 'project' | 'agents' | 'about'
@@ -38,7 +39,8 @@ export function SettingsMenu({
   onSettingsChange,
   onOpenOnOpen,
   onResetAgents,
-  onStatus
+  onStatus,
+  onReplayOnboarding
 }: Props): JSX.Element | null {
   const [tab, setTab] = useState<TabId>('general')
   const [settings, setSettings] = useState<AppSettings | null>(null)
@@ -319,6 +321,18 @@ export function SettingsMenu({
                   Terminal-first multi-agent deck — Grok, Codex, Cursor, Claude — with automatic
                   memory.
                 </p>
+                <div className="row" style={{ marginTop: 10, flexWrap: 'wrap' }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      void window.truedeck.resetOnboarding().then(() => {
+                        onReplayOnboarding?.()
+                      })
+                    }}
+                  >
+                    Replay onboarding
+                  </button>
+                </div>
                 <a
                   className="settings-link"
                   href="https://github.com/WutIsHummus/TrueDeck"

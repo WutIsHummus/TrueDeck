@@ -37,6 +37,11 @@ import {
 } from './memory-providers'
 import { onProjectOpen, onAgentSpawn, getRuntimeStatus } from './memory-service'
 import { checkForUpdates } from './update-check'
+import {
+  getOnboardingState,
+  completeOnboarding,
+  resetOnboarding
+} from './onboarding'
 import type {
   AgentPreset,
   AppSettings,
@@ -128,6 +133,11 @@ function registerIpc(): void {
   ipcMain.handle('app:firstRun', (_e, force?: boolean) => runFirstRunSeed(Boolean(force)))
   ipcMain.handle('app:version', () => app.getVersion())
   ipcMain.handle('app:checkUpdates', (_e, force?: boolean) => checkForUpdates(Boolean(force)))
+  ipcMain.handle('app:onboarding', () => getOnboardingState())
+  ipcMain.handle('app:completeOnboarding', (_e, skipped?: boolean) =>
+    completeOnboarding(Boolean(skipped))
+  )
+  ipcMain.handle('app:resetOnboarding', () => resetOnboarding())
 
   // MemPalace (native, no Docker) — kept for backward-compatible UI hooks
   ipcMain.handle('mempalace:status', () => getMemPalaceStatus())

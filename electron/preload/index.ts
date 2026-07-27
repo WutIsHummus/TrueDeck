@@ -32,6 +32,12 @@ const api = {
     checkedAt: number
     error?: string
   }> => ipcRenderer.invoke('app:checkUpdates', force),
+  getOnboarding: (): Promise<{ completed: boolean; skipped?: boolean }> =>
+    ipcRenderer.invoke('app:onboarding'),
+  completeOnboarding: (skipped?: boolean): Promise<{ completed: boolean }> =>
+    ipcRenderer.invoke('app:completeOnboarding', skipped),
+  resetOnboarding: (): Promise<{ completed: boolean }> =>
+    ipcRenderer.invoke('app:resetOnboarding'),
 
   listAgents: (): Promise<AgentPreset[]> => ipcRenderer.invoke('agents:list'),
   saveAgents: (agents: AgentPreset[]): Promise<AgentPreset[]> =>
