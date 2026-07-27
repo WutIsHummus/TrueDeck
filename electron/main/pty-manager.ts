@@ -2,8 +2,8 @@ import { BrowserWindow } from 'electron'
 import type { IPty } from 'node-pty'
 import { v4 as uuid } from 'uuid'
 import type { AgentPreset, SessionInfo } from '../shared/types'
-import { buildAgentBootstrapPrompt } from './memory'
 import { resolveAgentCommand } from './resolve-command'
+import { memoryEnv } from './memory-service'
 
 // node-pty is a native module; require keeps electron-vite externalization happy
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -31,7 +31,10 @@ export class PtyManager {
     agent: AgentPreset
     cols?: number
     rows?: number
+    /** @deprecated memory is always automatic */
     injectMemoryHint?: boolean
+    /** Extra env (memory service fills TRUEDECK_* paths) */
+    extraEnv?: Record<string, string>
   }): SessionInfo {
     const id = uuid()
     const resolved = resolveAgentCommand(opts.agent.id, opts.agent.command, [
@@ -40,10 +43,13 @@ export class PtyManager {
     const shell = resolved.command
     const args = resolved.args
     const cwd = opts.projectRoot
+    // Memory is abstracted: every agent inherits auto paths via env
+    const mem = memoryEnv(cwd)
     const env = {
       ...process.env,
+      ...mem,
+      ...(opts.extraEnv || {}),
       TRUEDECK: '1',
-      TRUEDECK_PROJECT: cwd,
       TRUEDECK_AGENT: opts.agent.id,
       TRUEDECK_RESOLVED: resolved.resolvedFrom || ''
     } as Record<string, string>
@@ -59,7 +65,6 @@ export class PtyManager {
         useConpty: process.platform === 'win32'
       })
     } catch (err) {
-      // Fallback: open a shell and print the error so the UI still works
       const fallbackShell =
         process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash'
       const fallbackArgs = process.platform === 'win32' ? ['-NoLogo'] : []
@@ -74,8 +79,8 @@ export class PtyManager {
       setTimeout(() => {
         proc.write(
           process.platform === 'win32'
-            ? `Write-Host "Failed to launch ${opts.agent.name} (${shell}). ${msg}" -ForegroundColor Red\r\nWrite-Host "Resolved via: ${resolved.resolvedFrom}" -ForegroundColor DarkGray\r\n`
-            : `echo "Failed to launch ${opts.agent.name} (${shell}). ${msg}"; echo "Resolved via: ${resolved.resolvedFrom}"\r`
+            ? `Write-Host "Failed to launch ${opts.agent.name} (${shell}). ${msg}" -ForegroundColor Red\r\n`
+            : `echo "Failed to launch ${opts.agent.name} (${shell}). ${msg}"\r`
         )
       }, 100)
     }
@@ -106,22 +111,7 @@ export class PtyManager {
     })
 
     this.sessions.set(id, { info, proc })
-
-    if (opts.injectMemoryHint !== false) {
-      const hint = buildAgentBootstrapPrompt(cwd)
-      setTimeout(() => {
-        const oneLiner =
-          process.platform === 'win32'
-            ? `# TrueDeck: repo memory = .memory\\INDEX.md | global memory in app data\r\n`
-            : `# TrueDeck: read .memory/INDEX.md (repo) + global memory for cross-project context\r`
-        if (opts.agent.id === 'shell') {
-          proc.write(oneLiner)
-        } else {
-          void hint
-        }
-      }, 200)
-    }
-
+    // No manual memory prompts — context is in env + .truedeck/auto-context.md
     this.win?.webContents.send('pty:spawned', info)
     return info
   }

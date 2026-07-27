@@ -52,7 +52,13 @@ function shortPath(p: string): string {
 }
 
 async function main(): Promise<void> {
+  // Memory is automatic — ensure trees + quiet mine; no user UI
   ensureFileMemory(project)
+  try {
+    mineProject(project)
+  } catch {
+    // optional
+  }
 
   const screen = blessed.screen({
     smartCSR: true,

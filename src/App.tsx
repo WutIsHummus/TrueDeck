@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useDeck } from './store'
-import { SessionGrid } from './components/SessionGrid'
-import { MemoryPanel } from './components/MemoryPanel'
+import { TerminalPane } from './components/TerminalPane'
 import { OnOpenModal } from './components/OnOpenModal'
-import type { AppSettings, LayoutMode, ProjectConfig } from '../electron/shared/types'
+import type { AgentPreset, ProjectConfig } from '../electron/shared/types'
 
+/**
+ * Studio layout — between Codex TUI and raw CLI.
+ * Memory is fully automatic (no user management UI).
+ */
 export default function App(): JSX.Element {
   const {
     projects,
@@ -20,16 +23,16 @@ export default function App(): JSX.Element {
     removeSession,
     setActiveSession,
     markSessionExited,
-    setStatus,
-    refreshMemory
+    setStatus
   } = useDeck()
 
-  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [paletteQuery, setPaletteQuery] = useState('')
+  const [paletteIndex, setPaletteIndex] = useState(0)
   const [onOpenProject, setOnOpenProject] = useState<ProjectConfig | null>(null)
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>('grid')
-  const [autoGrid, setAutoGrid] = useState(true)
-  const [version, setVersion] = useState('0.2.0')
-  const [seedBanner, setSeedBanner] = useState<string | null>(null)
+  const [splitId, setSplitId] = useState<string | null>(null)
+  const [version, setVersion] = useState('')
+  const [memLabel, setMemLabel] = useState('mem·auto')
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) || null,
@@ -42,45 +45,46 @@ export default function App(): JSX.Element {
     [sessions, activeProject]
   )
 
-  const persistLayout = async (mode: LayoutMode, auto = autoGrid): Promise<void> => {
-    setLayoutMode(mode)
-    try {
-      const current = await window.truedeck.getSettings()
-      await window.truedeck.setSettings({
-        ...current,
-        layoutMode: mode,
-        autoGrid: auto
-      })
-    } catch {
-      // ignore
-    }
-  }
+  const filteredAgents = useMemo(() => {
+    const q = paletteQuery.trim().toLowerCase()
+    if (!q) return agents
+    return agents.filter(
+      (a) =>
+        a.name.toLowerCase().includes(q) ||
+        a.id.toLowerCase().includes(q) ||
+        a.command.toLowerCase().includes(q)
+    )
+  }, [agents, paletteQuery])
+
+  const closeSession = useCallback(
+    async (id: string) => {
+      try {
+        await window.truedeck.killSession(id)
+      } catch {
+        // ignore
+      }
+      removeSession(id)
+      if (splitId === id) setSplitId(null)
+      setStatus('Tab closed')
+    },
+    [removeSession, setStatus, splitId]
+  )
 
   useEffect(() => {
     void (async () => {
       await refreshProjects()
       await refreshAgents()
       try {
-        const settings = await window.truedeck.getSettings()
-        setLayoutMode(settings.layoutMode || 'grid')
-        setAutoGrid(settings.autoGrid !== false)
         const v = await window.truedeck.version()
         setVersion(v)
       } catch {
         // ignore
       }
-
       try {
         const result = await window.truedeck.firstRun()
-        if (result.firstRun) {
+        if (result.firstRun && result.seeded.length) {
+          setStatus(`Ready · seeded ${result.seeded.map((p) => p.name).join(', ')}`)
           await refreshProjects()
-          if (result.seeded.length > 0) {
-            setSeedBanner(
-              `Seeded ${result.seeded.map((p) => p.name).join(', ')} — click a project to open agents.`
-            )
-          } else {
-            setSeedBanner('Welcome to TrueDeck — open a project folder to start.')
-          }
         }
       } catch {
         // ignore
@@ -95,15 +99,78 @@ export default function App(): JSX.Element {
       offSpawn()
       offExit()
     }
-  }, [addSession, markSessionExited, refreshAgents, refreshProjects])
+  }, [addSession, markSessionExited, refreshAgents, refreshProjects, setStatus])
 
-  // Auto-switch to grid when multiple panes appear
+  // Global shortcuts (Codex / IDE muscle memory)
   useEffect(() => {
-    if (autoGrid && projectSessions.length >= 2 && layoutMode === 'tabs') {
-      void persistLayout('grid')
+    const onKey = (e: KeyboardEvent): void => {
+      const mod = e.ctrlKey || e.metaKey
+
+      // Ctrl+K — agent palette
+      if (mod && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        setPaletteOpen(true)
+        setPaletteQuery('')
+        setPaletteIndex(0)
+        return
+      }
+
+      // Ctrl+P — open / switch project
+      if (mod && e.key.toLowerCase() === 'p') {
+        e.preventDefault()
+        void addProject()
+        return
+      }
+
+      // Ctrl+W — close tab
+      if (mod && e.key.toLowerCase() === 'w') {
+        e.preventDefault()
+        if (activeSessionId) void closeSession(activeSessionId)
+        return
+      }
+
+      // Ctrl+Tab / Ctrl+Shift+Tab — cycle tabs
+      if (mod && e.key === 'Tab') {
+        e.preventDefault()
+        if (!projectSessions.length) return
+        const idx = projectSessions.findIndex((s) => s.id === activeSessionId)
+        const next = e.shiftKey
+          ? (idx - 1 + projectSessions.length) % projectSessions.length
+          : (idx + 1) % projectSessions.length
+        setActiveSession(projectSessions[next]?.id || null)
+        return
+      }
+
+      // Ctrl+\ — split with previous tab (2-up)
+      if (mod && e.key === '\\') {
+        e.preventDefault()
+        if (projectSessions.length < 2) {
+          setStatus('Need 2 tabs to split')
+          return
+        }
+        const other = projectSessions.find((s) => s.id !== activeSessionId)
+        setSplitId((cur) => (cur ? null : other?.id || null))
+        return
+      }
+
+      // Ctrl+N — new shell quickly
+      if (mod && e.key.toLowerCase() === 'n') {
+        e.preventDefault()
+        void launchAgent('shell')
+        return
+      }
+
+      // 1-9 with Alt — switch tab
+      if (e.altKey && e.key >= '1' && e.key <= '9') {
+        e.preventDefault()
+        const s = projectSessions[Number(e.key) - 1]
+        if (s) setActiveSession(s.id)
+      }
     }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectSessions.length, autoGrid])
+  }, [activeSessionId, projectSessions, closeSession, setActiveSession, setStatus])
 
   const addProject = async (): Promise<void> => {
     const p = await window.truedeck.addProject()
@@ -111,13 +178,12 @@ export default function App(): JSX.Element {
     await refreshProjects()
     setActiveProject(p.id)
     setOnOpenProject(p)
-    setStatus(`Added ${p.name}`)
+    setStatus(`Project ${p.name}`)
   }
 
   const openProject = async (p: ProjectConfig): Promise<void> => {
     setActiveProject(p.id)
     setStatus(`Opening ${p.name}…`)
-    setSeedBanner(null)
     try {
       const res = await window.truedeck.openProject(p.id)
       for (const id of res.sessionIds) {
@@ -125,11 +191,16 @@ export default function App(): JSX.Element {
         const found = all.find((s) => s.id === id)
         if (found) addSession(found)
       }
-      await refreshMemory()
-      if (autoGrid && res.sessionIds.length >= 2) {
-        await persistLayout('grid')
+      if (res.memory?.label) setMemLabel(`mem·${res.memory.label}`)
+      else {
+        try {
+          const m = await window.truedeck.memoryStatus(p.root)
+          setMemLabel(`mem·${m.label}`)
+        } catch {
+          setMemLabel('mem·auto')
+        }
       }
-      setStatus(`Opened ${p.name}`)
+      setStatus(`${p.name} ready`)
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e))
     }
@@ -137,7 +208,8 @@ export default function App(): JSX.Element {
 
   const launchAgent = async (agentId: string): Promise<void> => {
     if (!activeProject) {
-      setStatus('Select a project first')
+      setStatus('Pick a project first (Ctrl+P)')
+      setPaletteOpen(false)
       return
     }
     try {
@@ -146,257 +218,274 @@ export default function App(): JSX.Element {
         agentId
       })
       addSession(info)
-      if (autoGrid && projectSessions.length >= 1) {
-        await persistLayout('grid')
-      }
-      setStatus(`Launched ${info.agentName}`)
+      setPaletteOpen(false)
+      setStatus(`→ ${info.agentName}`)
     } catch (e) {
       setStatus(e instanceof Error ? e.message : String(e))
     }
   }
 
-  const closeSession = async (id: string): Promise<void> => {
-    try {
-      await window.truedeck.killSession(id)
-    } catch {
-      // still remove from UI if process already dead
-    }
-    removeSession(id)
-    setStatus('Tab closed')
+  const shortPath = (p: string): string => {
+    const home = (window as unknown as { __home?: string }).__home
+    if (home && p.startsWith(home)) return '~' + p.slice(home.length)
+    return p.length > 52 ? '…' + p.slice(-50) : p
   }
 
-  // Ctrl+W / Ctrl+F4 closes active tab
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent): void => {
-      const wantClose =
-        ((e.ctrlKey || e.metaKey) && (e.key === 'w' || e.key === 'W')) ||
-        (e.ctrlKey && e.key === 'F4')
-      if (!wantClose || !activeSessionId) return
-      e.preventDefault()
-      void (async () => {
-        try {
-          await window.truedeck.killSession(activeSessionId)
-        } catch {
-          // ignore
-        }
-        removeSession(activeSessionId)
-        setStatus('Tab closed')
-      })()
-    }
-    window.addEventListener('keydown', onKey)
-    return () => window.removeEventListener('keydown', onKey)
-  }, [activeSessionId, removeSession, setStatus])
-
-  const saveSettingsPatch = async (patch: Partial<AppSettings>): Promise<void> => {
-    const current = await window.truedeck.getSettings()
-    const next = { ...current, ...patch }
-    await window.truedeck.setSettings(next)
-    setLayoutMode(next.layoutMode)
-    setAutoGrid(next.autoGrid)
+  const paletteSelect = (agent: AgentPreset): void => {
+    void launchAgent(agent.id)
   }
 
   return (
-    <div className="app">
-      <aside className="sidebar">
-        <div className="brand">
-          <div className="brand-mark">TD</div>
-          <div>
-            <h1>TrueDeck</h1>
-            <p>Multi-agent workbench · v{version}</p>
-          </div>
-        </div>
-
-        <div className="section" style={{ flex: 1 }}>
-          <div className="section-header">
-            <h2>Projects</h2>
-            <button className="primary" onClick={() => void addProject()}>
-              + Open
-            </button>
-          </div>
-          {seedBanner && <p className="hint">{seedBanner}</p>}
-          <div className="project-list">
+    <div className="studio">
+      {/* Title — minimal */}
+      <header className="titlebar">
+        <span className="logo">TRUEDECK{version ? ` ${version}` : ''}</span>
+        <button
+          type="button"
+          className="project-chip no-drag"
+          title="Switch project (Ctrl+P)"
+          onClick={() => void addProject()}
+        >
+          <span className="dot" />
+          {activeProject ? shortPath(activeProject.root) : 'open project…'}
+        </button>
+        {projects.length > 1 && (
+          <select
+            className="no-drag"
+            style={{
+              background: '#0a0a0a',
+              border: '1px solid var(--border)',
+              borderRadius: 6,
+              padding: '2px 6px',
+              color: 'var(--text-muted)',
+              fontFamily: 'var(--mono)',
+              fontSize: 11,
+              maxWidth: 160
+            }}
+            value={activeProjectId || ''}
+            onChange={(e) => {
+              const p = projects.find((x) => x.id === e.target.value)
+              if (p) void openProject(p)
+            }}
+          >
             {projects.map((p) => (
-              <button
-                key={p.id}
-                className={`project-item ${activeProjectId === p.id ? 'active' : ''}`}
-                onClick={() => void openProject(p)}
-                onContextMenu={(e) => {
-                  e.preventDefault()
-                  setOnOpenProject(p)
-                }}
-              >
-                <span className="dot" style={{ background: p.color || '#22d3ee' }} />
-                <div className="meta">
-                  <div className="name">{p.name}</div>
-                  <div className="path">{p.root}</div>
-                </div>
-              </button>
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
             ))}
-            {projects.length === 0 && (
-              <div className="muted">Open a folder to get started.</div>
-            )}
-          </div>
-        </div>
+          </select>
+        )}
+        <div className="spacer" />
+        <span className="meta no-drag" title="Memory is automatic — nothing to manage">
+          {memLabel}
+        </span>
+        <button type="button" className="no-drag primary" onClick={() => setPaletteOpen(true)}>
+          + agent
+        </button>
+      </header>
 
-        <div className="section">
-          <div className="section-header">
-            <h2>Agents</h2>
-            <button className="ghost" onClick={() => setSettingsOpen(true)} title="Settings">
-              ⚙
-            </button>
-          </div>
-          <div className="agent-list">
-            {agents.map((a) => (
-              <button
-                key={a.id}
-                className="agent-chip"
-                title={a.description || a.command}
-                onClick={() => void launchAgent(a.id)}
-                disabled={!activeProject}
-              >
-                <span className="dot" style={{ background: a.color }} />
-                <span style={{ fontWeight: 600 }}>{a.icon}</span>
-                <span>{a.name}</span>
-              </button>
-            ))}
-          </div>
-          <p className="hint">
-            Grid shows all agents at once. Right-click a project for on-open commands (rojo serve).
-            Speech: Handy or Win+H into the focused pane.
-          </p>
-        </div>
-
-        <div className="section" style={{ borderTop: '1px solid var(--border)' }}>
-          <div className="muted">{status}</div>
-        </div>
-      </aside>
-
-      <main className="main">
-        <div className="toolbar">
-          <strong>{activeProject?.name || 'No project'}</strong>
-          {activeProject && (
-            <span className="badge" title={activeProject.root}>
-              {activeProject.root}
-            </span>
-          )}
-          <div className="layout-toggle" title="Layout mode">
-            <button
-              className={layoutMode === 'tabs' ? 'active' : ''}
-              onClick={() => void persistLayout('tabs')}
-            >
-              Tabs
-            </button>
-            <button
-              className={layoutMode === 'grid' ? 'active' : ''}
-              onClick={() => void persistLayout('grid')}
-            >
-              Grid
-            </button>
-          </div>
-          <div className="spacer" />
-          {activeProject && (
-            <>
-              <button onClick={() => setOnOpenProject(activeProject)}>On open…</button>
-              <button className="primary" onClick={() => void launchAgent('grok')}>
-                + Grok
-              </button>
-              <button onClick={() => void launchAgent('codex')}>+ Codex</button>
-              <button onClick={() => void launchAgent('claude')}>+ Claude</button>
-              <button onClick={() => void launchAgent('cursor')}>+ Cursor</button>
-              <button onClick={() => void launchAgent('gemini')}>+ Gemini</button>
-              <button onClick={() => void launchAgent('shell')}>+ Shell</button>
-            </>
-          )}
-        </div>
-
-        {projectSessions.length > 0 && (
-          <div className="tabs" role="tablist">
-            {projectSessions.map((s) => (
-              <div
-                key={s.id}
-                role="tab"
-                aria-selected={activeSessionId === s.id}
-                className={`session-tab ${activeSessionId === s.id ? 'active' : ''}`}
-                onClick={() => setActiveSession(s.id)}
-                onMouseDown={(e) => {
-                  // Middle-click closes tab (browser-style)
-                  if (e.button === 1) {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void closeSession(s.id)
-                  }
-                }}
-                onAuxClick={(e) => {
-                  if (e.button === 1) {
-                    e.preventDefault()
-                    void closeSession(s.id)
-                  }
-                }}
-              >
-                <span className="dot" style={{ background: s.color }} />
-                <span className="session-tab-label">{s.agentName}</span>
-                {s.status === 'exited' && <span className="badge">exit</span>}
-                <button
-                  type="button"
-                  className="tab-close"
-                  title="Close tab (Ctrl+W)"
-                  aria-label={`Close ${s.agentName}`}
-                  onClick={(e) => {
-                    e.preventDefault()
-                    e.stopPropagation()
-                    void closeSession(s.id)
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
+      {/* Tabs */}
+      <div className="tabbar" role="tablist">
+        {projectSessions.map((s, i) => (
+          <div
+            key={s.id}
+            role="tab"
+            className={`tab ${activeSessionId === s.id ? 'active' : ''}`}
+            onClick={() => setActiveSession(s.id)}
+            onMouseDown={(e) => {
+              if (e.button === 1) {
+                e.preventDefault()
+                void closeSession(s.id)
+              }
+            }}
+            title={`${s.agentName} · Alt+${i + 1}`}
+          >
+            <span className="dot" style={{ background: s.color }} />
+            <span className="label">{s.agentName}</span>
+            {s.status === 'exited' && <span className="badge">exit</span>}
             <button
               type="button"
-              className="session-tab tab-close-all"
-              title="Close all tabs"
-              onClick={() => {
-                void (async () => {
-                  for (const s of [...projectSessions]) {
-                    await closeSession(s.id)
-                  }
-                })()
+              className="x"
+              aria-label={`Close ${s.agentName}`}
+              onClick={(e) => {
+                e.stopPropagation()
+                void closeSession(s.id)
               }}
             >
-              Close all
+              ×
             </button>
           </div>
+        ))}
+        <button
+          type="button"
+          className="tab-add"
+          title="New agent (Ctrl+K)"
+          onClick={() => setPaletteOpen(true)}
+        >
+          +
+        </button>
+        {projectSessions.length > 0 && (
+          <button
+            type="button"
+            className="tab-add"
+            title="Close all tabs"
+            onClick={() => {
+              void (async () => {
+                for (const s of [...projectSessions]) await closeSession(s.id)
+              })()
+            }}
+          >
+            clear
+          </button>
         )}
+      </div>
 
+      {/* Terminal stage — almost full window */}
+      <main className={`stage ${splitId ? 'split' : ''}`}>
         {projectSessions.length === 0 ? (
-          <div className="terminal-host">
-            <div className="empty-state">
-              <div>
-                <h3>Agent deck is empty</h3>
-                <p>
-                  Open a project on the left, then launch Grok, Codex, Claude, Cursor, Gemini, or a
-                  shell. Use <strong>Grid</strong> to see multiple agents side by side.
-                </p>
-                <div className="row" style={{ justifyContent: 'center' }}>
-                  <button className="primary" onClick={() => void addProject()}>
-                    Open project folder
-                  </button>
-                </div>
+          <div className="stage-empty">
+            <div>
+              <h2>truedeck</h2>
+              <p>
+                Terminal-first agent deck — between Codex and a plain CLI.
+                <br />
+                <kbd>Ctrl+P</kbd> project · <kbd>Ctrl+K</kbd> agent · <kbd>Ctrl+W</kbd> close tab
+              </p>
+              <div className="row" style={{ justifyContent: 'center' }}>
+                <button type="button" className="primary" onClick={() => void addProject()}>
+                  Open project
+                </button>
+                <button type="button" onClick={() => setPaletteOpen(true)} disabled={!activeProject}>
+                  Launch agent
+                </button>
               </div>
+              {projects.length > 0 && (
+                <div style={{ marginTop: 16 }}>
+                  <div className="muted" style={{ marginBottom: 8 }}>
+                    recent
+                  </div>
+                  {projects.slice(0, 5).map((p) => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      style={{ display: 'block', width: '100%', textAlign: 'left', marginBottom: 4 }}
+                      onClick={() => void openProject(p)}
+                    >
+                      {p.name}{' '}
+                      <span className="muted" style={{ fontFamily: 'var(--mono)', fontSize: 11 }}>
+                        {shortPath(p.root)}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
+        ) : splitId ? (
+          <>
+            {projectSessions
+              .filter((s) => s.id === activeSessionId || s.id === splitId)
+              .map((s) => (
+                <div key={s.id} className="term-stack">
+                  <TerminalPane sessionId={s.id} visible />
+                </div>
+              ))}
+          </>
         ) : (
-          <SessionGrid
-            sessions={projectSessions}
-            activeSessionId={activeSessionId}
-            layoutMode={layoutMode}
-            onFocus={setActiveSession}
-            onClose={(id) => void closeSession(id)}
-          />
+          <div className="term-stack">
+            {projectSessions.map((s) => (
+              <TerminalPane key={s.id} sessionId={s.id} visible={activeSessionId === s.id} />
+            ))}
+          </div>
         )}
       </main>
 
-      <MemoryPanel />
+      <footer className="statusbar">
+        <div className="hint">
+          <span>
+            <b>⌃K</b> agent
+          </span>
+          <span>
+            <b>⌃W</b> close
+          </span>
+          <span>
+            <b>⌃Tab</b> next
+          </span>
+          <span>
+            <b>⌃\</b> split
+          </span>
+          <span>
+            <b>⌃P</b> project
+          </span>
+        </div>
+        <div className="status-text">
+          {memLabel} · {status}
+        </div>
+      </footer>
+
+      {/* Agent palette */}
+      {paletteOpen && (
+        <div
+          className="palette-backdrop"
+          onClick={() => setPaletteOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') setPaletteOpen(false)
+          }}
+        >
+          <div className="palette" onClick={(e) => e.stopPropagation()}>
+            <input
+              className="palette-search"
+              autoFocus
+              placeholder="Launch agent… (grok, codex, claude, cursor)"
+              value={paletteQuery}
+              onChange={(e) => {
+                setPaletteQuery(e.target.value)
+                setPaletteIndex(0)
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setPaletteOpen(false)
+                  return
+                }
+                if (e.key === 'ArrowDown') {
+                  e.preventDefault()
+                  setPaletteIndex((i) => Math.min(i + 1, filteredAgents.length - 1))
+                }
+                if (e.key === 'ArrowUp') {
+                  e.preventDefault()
+                  setPaletteIndex((i) => Math.max(i - 1, 0))
+                }
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  const a = filteredAgents[paletteIndex]
+                  if (a) paletteSelect(a)
+                }
+              }}
+            />
+            <div className="palette-list">
+              {filteredAgents.map((a, i) => (
+                <button
+                  key={a.id}
+                  type="button"
+                  className={`palette-item ${i === paletteIndex ? 'active' : ''}`}
+                  onMouseEnter={() => setPaletteIndex(i)}
+                  onClick={() => paletteSelect(a)}
+                >
+                  <span className="dot" style={{ background: a.color, width: 8, height: 8, borderRadius: 99 }} />
+                  <span className="name">{a.name}</span>
+                  <span className="sub">{a.command}</span>
+                </button>
+              ))}
+              {filteredAgents.length === 0 && (
+                <div className="palette-item muted">No agents match</div>
+              )}
+            </div>
+            <div className="palette-footer">
+              enter launch · esc close · set project with ctrl+p first
+            </div>
+          </div>
+        </div>
+      )}
 
       {onOpenProject && (
         <OnOpenModal
@@ -404,80 +493,9 @@ export default function App(): JSX.Element {
           onClose={() => setOnOpenProject(null)}
           onSaved={(p) => {
             void refreshProjects()
-            setStatus(`Updated on-open for ${p.name}`)
+            setStatus(`On-open saved · ${p.name}`)
           }}
         />
-      )}
-
-      {settingsOpen && (
-        <div className="modal-backdrop" onClick={() => setSettingsOpen(false)}>
-          <div className="modal" onClick={(e) => e.stopPropagation()}>
-            <h3>TrueDeck v{version}</h3>
-            <p className="hint">
-              Free multi-agent coding deck with TrueMemory (per-repo <code>.memory/</code> + global
-              cross-project memory).
-            </p>
-            <div className="onopen-list" style={{ marginTop: 8 }}>
-              <label className="row muted">
-                <input
-                  type="checkbox"
-                  checked={autoGrid}
-                  onChange={(e) => {
-                    setAutoGrid(e.target.checked)
-                    void saveSettingsPatch({ autoGrid: e.target.checked })
-                  }}
-                />
-                Auto-switch to Grid when 2+ agents are open
-              </label>
-            </div>
-            <p className="hint">
-              Cursor uses the <code>cursor-agent</code> CLI when installed, else{' '}
-              <code>cursor agent</code>, else opens Cursor IDE.
-            </p>
-            <p className="hint">
-              Speech-to-text:{' '}
-              <a href="https://github.com/cjpais/Handy" style={{ color: 'var(--accent)' }}>
-                Handy
-              </a>{' '}
-              (<code>winget install cjpais.Handy</code>) or Win+H.
-            </p>
-            <p className="hint">
-              GitHub:{' '}
-              <a
-                href="https://github.com/WutIsHummus/TrueDeck"
-                style={{ color: 'var(--accent)' }}
-              >
-                WutIsHummus/TrueDeck
-              </a>
-            </p>
-            <div className="actions">
-              <button
-                onClick={() => {
-                  void window.truedeck.resetAgents().then(() => refreshAgents())
-                }}
-              >
-                Reset agent presets
-              </button>
-              <button
-                onClick={() => {
-                  void window.truedeck.firstRun(true).then(async (r) => {
-                    await refreshProjects()
-                    setStatus(
-                      r.seeded.length
-                        ? `Re-seeded: ${r.seeded.map((p) => p.name).join(', ')}`
-                        : 'No new projects to seed'
-                    )
-                  })
-                }}
-              >
-                Re-seed local projects
-              </button>
-              <button className="primary" onClick={() => setSettingsOpen(false)}>
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
       )}
     </div>
   )

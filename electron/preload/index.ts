@@ -63,8 +63,16 @@ const api = {
   killSession: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
   openProject: (
     projectId: string
-  ): Promise<{ project: ProjectConfig; sessionIds: string[] }> =>
-    ipcRenderer.invoke('sessions:openProject', projectId),
+  ): Promise<{
+    project: ProjectConfig
+    sessionIds: string[]
+    memory?: { ok: boolean; label: string; detail: string }
+  }> => ipcRenderer.invoke('sessions:openProject', projectId),
+
+  memoryStatus: (
+    projectRoot?: string
+  ): Promise<{ ok: boolean; label: string; detail: string }> =>
+    ipcRenderer.invoke('memory:status', projectRoot),
 
   listMemory: (scope: MemoryScope, projectRoot?: string): Promise<MemoryNote[]> =>
     ipcRenderer.invoke('memory:list', scope, projectRoot),

@@ -1,6 +1,20 @@
-# Memory providers in TrueDeck
+# Memory in TrueDeck (automatic)
+
+**You do not manage memory in the UI.** TrueDeck abstracts it:
+
+1. On **project open** → ensure `.memory/`, warm MemPalace (native), background mine, write `.truedeck/auto-context.md`
+2. On **agent spawn** → refresh auto-context, inject `TRUEDECK_*` env paths
+3. Agents that read `AGENTS.md` / `CLAUDE.md` get a one-line pointer automatically
+
+Status shows only `mem·auto` / `mem·auto+palace` — no panels to babysit.
+
+---
+
+# Memory providers (advanced / power users)
 
 TrueDeck treats “mem space” as a **pluggable backend**, not a single product.
+Providers still exist under the hood for OpenMemory / custom MCP, but the
+default path is fully automatic.
 
 ## Built-in
 

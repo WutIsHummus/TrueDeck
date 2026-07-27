@@ -35,6 +35,7 @@ import {
   buildMcpServerMap,
   defaultMemoryProviders
 } from './memory-providers'
+import { onProjectOpen, onAgentSpawn, getRuntimeStatus } from './memory-service'
 import type {
   AgentPreset,
   AppSettings,
@@ -61,8 +62,8 @@ function defaultSettings(): AppSettings {
     injectMemoryOnAgentStart: true,
     theme: 'dark',
     fontSize: 13,
-    layoutMode: 'grid',
-    autoGrid: true,
+    layoutMode: 'tabs',
+    autoGrid: false,
     memoryProviders: defaultMemoryProviders()
   }
 }
@@ -228,16 +229,18 @@ function registerIpc(): void {
 
   ipcMain.handle(
     'sessions:spawn',
-    (_e, opts: { projectRoot: string; agentId: string; cols?: number; rows?: number }) => {
+    async (_e, opts: { projectRoot: string; agentId: string; cols?: number; rows?: number }) => {
       const agents = loadAgents()
       const agent = agents.find((a) => a.id === opts.agentId)
       if (!agent) throw new Error(`Unknown agent: ${opts.agentId}`)
+      // Memory abstracted: refresh auto-context + env before spawn
+      const { env } = await onAgentSpawn(opts.projectRoot)
       return ptyManager.spawn({
         projectRoot: opts.projectRoot,
         agent,
         cols: opts.cols,
         rows: opts.rows,
-        injectMemoryHint: loadSettings().injectMemoryOnAgentStart
+        extraEnv: env
       })
     }
   )
@@ -258,11 +261,14 @@ function registerIpc(): void {
   ipcMain.handle('sessions:kill', (_e, id: string) => {
     ptyManager.kill(id)
   })
-  ipcMain.handle('sessions:openProject', (_e, projectId: string) => {
+  ipcMain.handle('sessions:openProject', async (_e, projectId: string) => {
     const project = getProject(projectId) || listProjects().find((p) => p.root === projectId)
     if (!project) throw new Error('Project not found')
     upsertProject(project.root) // touch lastOpened
-    ensureGlobalMemory()
+
+    // Fully automatic memory: files + MemPalace mine + auto-context
+    const mem = await onProjectOpen(project.root)
+
     const launched: string[] = []
     for (const cmd of project.onOpenCommands || []) {
       if (!cmd.enabled) continue
@@ -274,21 +280,22 @@ function registerIpc(): void {
       })
       launched.push(info.id)
     }
-    // default agent tabs
     const agents = loadAgents()
+    const { env } = await onAgentSpawn(project.root)
     for (const agentId of project.defaultAgents || []) {
       const agent = agents.find((a) => a.id === agentId)
       if (!agent) continue
-      // don't double-launch shell if only commands
       const info = ptyManager.spawn({
         projectRoot: project.root,
         agent,
-        injectMemoryHint: loadSettings().injectMemoryOnAgentStart
+        extraEnv: env
       })
       launched.push(info.id)
     }
-    return { project, sessionIds: launched }
+    return { project, sessionIds: launched, memory: mem }
   })
+
+  ipcMain.handle('memory:status', (_e, projectRoot?: string) => getRuntimeStatus(projectRoot))
 
   ipcMain.handle('memory:list', (_e, scope: MemoryScope, projectRoot?: string) =>
     listMemory(scope, projectRoot)
