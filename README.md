@@ -30,7 +30,7 @@ Run **Grok Build**, **Codex**, **Claude Code**, **Cursor Agent**, **Gemini**, **
 ### Install & run
 
 ```bash
-git clone https://github.com/YOUR_USER/TrueDeck.git
+git clone https://github.com/WutIsHummus/TrueDeck.git
 cd TrueDeck
 npm install
 npm run dev

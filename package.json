@@ -5,10 +5,10 @@
   "main": "./out/main/index.js",
   "author": "TrueDeck Contributors",
   "license": "MIT",
-  "homepage": "https://github.com/alper/TrueDeck",
+  "homepage": "https://github.com/WutIsHummus/TrueDeck",
   "repository": {
     "type": "git",
-    "url": "https://github.com/alper/TrueDeck.git"
+    "url": "https://github.com/WutIsHummus/TrueDeck.git"
   },
   "keywords": [
     "ai",
