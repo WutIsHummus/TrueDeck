@@ -131,14 +131,6 @@ export function SettingsMenu({
                     </select>
                   </label>
                   <label className="settings-row">
-                    <span>Show quick agents</span>
-                    <input
-                      type="checkbox"
-                      checked={settings.showQuickAgents !== false}
-                      onChange={(e) => void patch({ showQuickAgents: e.target.checked })}
-                    />
-                  </label>
-                  <label className="settings-row">
                     <span>Reopen last project</span>
                     <input
                       type="checkbox"

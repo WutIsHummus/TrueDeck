@@ -70,7 +70,7 @@ function defaultSettings(): AppSettings {
     fontSize: 13,
     layoutMode: 'tabs',
     autoGrid: false,
-    showQuickAgents: true,
+    showQuickAgents: false,
     reopenLastProject: true,
     memoryProviders: defaultMemoryProviders()
   }

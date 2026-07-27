@@ -33,7 +33,7 @@ export function Onboarding({
 }: Props): JSX.Element | null {
   const [step, setStep] = useState<StepId>('welcome')
   const [busy, setBusy] = useState(false)
-  const [chromeHighlight, setChromeHighlight] = useState<string | null>('mem')
+  const [chromeHighlight, setChromeHighlight] = useState<string | null>('plus')
 
   const idx = STEPS.indexOf(step)
   const progress = ((idx + 1) / STEPS.length) * 100
@@ -97,7 +97,7 @@ export function Onboarding({
                 That top bar can look cryptic. Here’s what each piece means:
               </p>
 
-              {/* Interactive mock of the title bar */}
+              {/* Interactive mock of the title bar — no one-click agent chips */}
               <div className="onboard-chrome-demo">
                 <button
                   type="button"
@@ -105,34 +105,6 @@ export function Onboarding({
                   onClick={() => setChromeHighlight('mem')}
                 >
                   mem·auto
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill agent ${chromeHighlight === 'agents' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('agents')}
-                >
-                  Grok
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill agent ${chromeHighlight === 'agents' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('agents')}
-                >
-                  Codex
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill agent cursor ${chromeHighlight === 'agents' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('agents')}
-                >
-                  Cursor
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill agent ${chromeHighlight === 'agents' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('agents')}
-                >
-                  Claude
                 </button>
                 <button
                   type="button"
@@ -165,24 +137,13 @@ export function Onboarding({
                     </p>
                   </>
                 )}
-                {chromeHighlight === 'agents' && (
-                  <>
-                    <h3>Grok · Codex · Cursor · Claude</h3>
-                    <p>
-                      <strong>One-click agent launchers.</strong> Click with a project open to start
-                      that AI coding CLI in a new tab. They’re shortcuts — same as picking from the
-                      agent palette.
-                    </p>
-                    <p className="muted">Needs a connected repo first (next step).</p>
-                  </>
-                )}
                 {chromeHighlight === 'plus' && (
                   <>
                     <h3>+ agent</h3>
                     <p>
-                      Opens the full agent list — Grok, Codex, Cursor, Claude, Gemini, Shell, and
-                      more. Shortcut: hold <strong>Ctrl+Shift</strong> and press <strong>A</strong>{' '}
-                      (<kbd>Ctrl+Shift+A</kbd>).
+                      <strong>This is how you start agents</strong> — open a list, pick Grok, Codex,
+                      Cursor, Claude, etc. No one-click launchers in the bar. Shortcut:{' '}
+                      <kbd>Ctrl+Shift+A</kbd>.
                     </p>
                   </>
                 )}
@@ -201,7 +162,6 @@ export function Onboarding({
                 {(
                   [
                     ['mem', 'mem·auto'],
-                    ['agents', 'Agents'],
                     ['plus', '+ agent'],
                     ['gear', 'Settings']
                   ] as const

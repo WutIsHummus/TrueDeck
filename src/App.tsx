@@ -39,7 +39,6 @@ export default function App(): JSX.Element {
   const [version, setVersion] = useState('')
   const [memLabel, setMemLabel] = useState('mem·auto')
   const [fontSize, setFontSize] = useState(13)
-  const [showQuickAgents, setShowQuickAgents] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
   const [updateInfo, setUpdateInfo] = useState<{
     updateAvailable: boolean
@@ -89,7 +88,6 @@ export default function App(): JSX.Element {
 
   const applySettings = useCallback((s: AppSettings) => {
     setFontSize(s.fontSize || 13)
-    setShowQuickAgents(s.showQuickAgents !== false)
     setTheme(s.theme || 'dark')
     document.documentElement.classList.toggle('theme-light', s.theme === 'light')
   }, [])
@@ -382,33 +380,11 @@ export default function App(): JSX.Element {
         >
           {memLabel}
         </span>
-        {showQuickAgents && (
-          <div className="quick-agents no-drag">
-            {(
-              [
-                { id: 'grok', label: 'Grok' },
-                { id: 'codex', label: 'Codex' },
-                { id: 'cursor', label: 'Cursor' },
-                { id: 'claude', label: 'Claude' }
-              ] as const
-            ).map((q) => (
-              <button
-                key={q.id}
-                type="button"
-                className={`quick-agent ${q.id === 'cursor' ? 'quick-cursor' : ''}`}
-                title={`Launch ${q.label}`}
-                disabled={!activeProject}
-                onClick={() => void launchAgent(q.id)}
-              >
-                {q.label}
-              </button>
-            ))}
-          </div>
-        )}
         <button
           type="button"
           className="no-drag primary"
-          title="Open agent list (Ctrl+Shift+A)"
+          title="Choose an agent (Ctrl+Shift+A)"
+          disabled={!activeProject}
           onClick={() => setPaletteOpen(true)}
         >
           + agent
