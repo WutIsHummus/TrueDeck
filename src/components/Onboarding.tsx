@@ -33,7 +33,6 @@ export function Onboarding({
 }: Props): JSX.Element | null {
   const [step, setStep] = useState<StepId>('welcome')
   const [busy, setBusy] = useState(false)
-  const [chromeHighlight, setChromeHighlight] = useState<string | null>('plus')
 
   const idx = STEPS.indexOf(step)
   const progress = ((idx + 1) / STEPS.length) * 100
@@ -92,97 +91,60 @@ export function Onboarding({
 
           {step === 'chrome' && (
             <div className="onboard-step">
-              <h1>What you’re looking at</h1>
+              <h1>Quick map of the app</h1>
               <p className="onboard-lead">
-                That top bar can look cryptic. Here’s what each piece means:
+                Nothing to click on this screen — just read, then hit <strong>Next</strong>.
               </p>
 
-              {/* Interactive mock of the title bar — no one-click agent chips */}
-              <div className="onboard-chrome-demo">
-                <button
-                  type="button"
-                  className={`onboard-pill ${chromeHighlight === 'mem' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('mem')}
-                >
-                  mem·auto
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill plus ${chromeHighlight === 'plus' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('plus')}
-                >
-                  + agent
-                </button>
-                <button
-                  type="button"
-                  className={`onboard-pill gear ${chromeHighlight === 'gear' ? 'lit' : ''}`}
-                  onClick={() => setChromeHighlight('gear')}
-                >
-                  ⚙
-                </button>
-              </div>
+              <ol className="onboard-guide">
+                <li>
+                  <div className="onboard-guide-label">
+                    <span className="onboard-sample">mem·auto</span>
+                  </div>
+                  <div>
+                    <strong>Status only</strong> — not a button. Means memory is automatic for your
+                    agents. You can ignore it.
+                  </div>
+                </li>
+                <li>
+                  <div className="onboard-guide-label">
+                    <span className="onboard-sample primary">+ agent</span>
+                  </div>
+                  <div>
+                    <strong>Start an AI agent here</strong> — opens a list (Grok, Codex, Cursor,
+                    Claude…). Also <kbd>Ctrl+Shift+A</kbd>.
+                  </div>
+                </li>
+                <li>
+                  <div className="onboard-guide-label">
+                    <span className="onboard-sample">⚙</span>
+                  </div>
+                  <div>
+                    <strong>Settings</strong> — font size, theme, on-open commands (like{' '}
+                    <code>rojo serve</code>). Also <kbd>Ctrl+Shift+S</kbd>.
+                  </div>
+                </li>
+                <li>
+                  <div className="onboard-guide-label">
+                    <span className="onboard-sample">project chip</span>
+                  </div>
+                  <div>
+                    <strong>Your folder</strong> — shows the connected repo path. Click it (or use{' '}
+                    <kbd>Ctrl+Shift+O</kbd>) to open a different one.
+                  </div>
+                </li>
+              </ol>
 
-              <div className="onboard-explain">
-                {chromeHighlight === 'mem' && (
-                  <>
-                    <h3>mem·auto</h3>
-                    <p>
-                      <strong>Not a button you manage.</strong> It’s a status badge meaning memory
-                      is automatic: TrueDeck keeps project context (and MemPalace when installed)
-                      updated for every agent. You don’t open a memory panel or run Docker for this.
-                    </p>
-                    <p className="muted">
-                      Variants: <code>mem·auto</code>, <code>mem·auto+palace</code> (graph memory
-                      ready).
-                    </p>
-                  </>
-                )}
-                {chromeHighlight === 'plus' && (
-                  <>
-                    <h3>+ agent</h3>
-                    <p>
-                      <strong>This is how you start agents</strong> — open a list, pick Grok, Codex,
-                      Cursor, Claude, etc. No one-click launchers in the bar. Shortcut:{' '}
-                      <kbd>Ctrl+Shift+A</kbd>.
-                    </p>
-                  </>
-                )}
-                {chromeHighlight === 'gear' && (
-                  <>
-                    <h3>Settings ⚙</h3>
-                    <p>
-                      Font size, theme, on-open commands (e.g. <code>rojo serve</code>), agent
-                      reset, updates. Shortcut: <kbd>Ctrl+Shift+S</kbd>.
-                    </p>
-                  </>
-                )}
-              </div>
-
-              <div className="onboard-chrome-picks">
-                {(
-                  [
-                    ['mem', 'mem·auto'],
-                    ['plus', '+ agent'],
-                    ['gear', 'Settings']
-                  ] as const
-                ).map(([id, label]) => (
-                  <button
-                    key={id}
-                    type="button"
-                    className={chromeHighlight === id ? 'active' : ''}
-                    onClick={() => setChromeHighlight(id)}
-                  >
-                    {label}
-                  </button>
-                ))}
-              </div>
+              <p className="muted" style={{ marginBottom: 16 }}>
+                Next step: connect a real project folder. After that you can launch an agent.
+              </p>
 
               <div className="onboard-nav">
                 <button type="button" onClick={back}>
                   ← Back
                 </button>
                 <button type="button" className="onboard-primary" onClick={next}>
-                  Next →
+                  Got it — Next →
                 </button>
               </div>
             </div>
