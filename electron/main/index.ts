@@ -36,6 +36,7 @@ import {
   defaultMemoryProviders
 } from './memory-providers'
 import { onProjectOpen, onAgentSpawn, getRuntimeStatus } from './memory-service'
+import { checkForUpdates } from './update-check'
 import type {
   AgentPreset,
   AppSettings,
@@ -126,6 +127,7 @@ function registerIpc(): void {
   })
   ipcMain.handle('app:firstRun', (_e, force?: boolean) => runFirstRunSeed(Boolean(force)))
   ipcMain.handle('app:version', () => app.getVersion())
+  ipcMain.handle('app:checkUpdates', (_e, force?: boolean) => checkForUpdates(Boolean(force)))
 
   // MemPalace (native, no Docker) — kept for backward-compatible UI hooks
   ipcMain.handle('mempalace:status', () => getMemPalaceStatus())

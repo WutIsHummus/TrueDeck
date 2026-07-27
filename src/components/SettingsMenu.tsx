@@ -7,6 +7,16 @@ interface Props {
   version: string
   activeProject: ProjectConfig | null
   memLabel: string
+  updateInfo: {
+    updateAvailable: boolean
+    latestVersion: string | null
+    releaseUrl: string | null
+    downloadUrl: string | null
+    currentVersion: string
+  } | null
+  checkingUpdate: boolean
+  onCheckUpdate: () => void
+  onOpenUpdate: () => void
   onSettingsChange: (s: AppSettings) => void
   onOpenOnOpen: () => void
   onResetAgents: () => void
@@ -21,6 +31,10 @@ export function SettingsMenu({
   version,
   activeProject,
   memLabel,
+  updateInfo,
+  checkingUpdate,
+  onCheckUpdate,
+  onOpenUpdate,
   onSettingsChange,
   onOpenOnOpen,
   onResetAgents,
@@ -276,6 +290,31 @@ export function SettingsMenu({
                   <span>Version</span>
                   <span className="meta">{version || 'dev'}</span>
                 </div>
+                <div className="settings-row">
+                  <span>Updates</span>
+                  <div className="row">
+                    {updateInfo?.updateAvailable ? (
+                      <button type="button" className="update-btn" onClick={onOpenUpdate}>
+                        Update{updateInfo.latestVersion ? ` v${updateInfo.latestVersion}` : ''}
+                      </button>
+                    ) : (
+                      <span className="meta">
+                        {updateInfo?.latestVersion
+                          ? `Up to date (v${updateInfo.currentVersion})`
+                          : '—'}
+                      </span>
+                    )}
+                    <button type="button" disabled={checkingUpdate} onClick={onCheckUpdate}>
+                      {checkingUpdate ? 'Checking…' : 'Check now'}
+                    </button>
+                  </div>
+                </div>
+                {updateInfo?.updateAvailable && updateInfo.latestVersion && (
+                  <p className="hint">
+                    New release <strong>v{updateInfo.latestVersion}</strong> is available (you have
+                    v{updateInfo.currentVersion}).
+                  </p>
+                )}
                 <p className="hint">
                   Terminal-first multi-agent deck — Grok, Codex, Cursor, Claude — with automatic
                   memory.

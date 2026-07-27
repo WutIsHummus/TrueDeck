@@ -19,6 +19,19 @@ const api = {
   ): Promise<{ seeded: ProjectConfig[]; firstRun: boolean }> =>
     ipcRenderer.invoke('app:firstRun', force),
   version: (): Promise<string> => ipcRenderer.invoke('app:version'),
+  checkUpdates: (
+    force?: boolean
+  ): Promise<{
+    currentVersion: string
+    latestVersion: string | null
+    updateAvailable: boolean
+    releaseUrl: string | null
+    downloadUrl: string | null
+    releaseName: string | null
+    publishedAt: string | null
+    checkedAt: number
+    error?: string
+  }> => ipcRenderer.invoke('app:checkUpdates', force),
 
   listAgents: (): Promise<AgentPreset[]> => ipcRenderer.invoke('agents:list'),
   saveAgents: (agents: AgentPreset[]): Promise<AgentPreset[]> =>

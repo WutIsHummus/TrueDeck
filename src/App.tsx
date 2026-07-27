@@ -40,6 +40,14 @@ export default function App(): JSX.Element {
   const [fontSize, setFontSize] = useState(13)
   const [showQuickAgents, setShowQuickAgents] = useState(true)
   const [theme, setTheme] = useState<'dark' | 'light'>('dark')
+  const [updateInfo, setUpdateInfo] = useState<{
+    updateAvailable: boolean
+    latestVersion: string | null
+    releaseUrl: string | null
+    downloadUrl: string | null
+    currentVersion: string
+  } | null>(null)
+  const [checkingUpdate, setCheckingUpdate] = useState(false)
 
   const activeProject = useMemo(
     () => projects.find((p) => p.id === activeProjectId) || null,
@@ -115,6 +123,22 @@ export default function App(): JSX.Element {
         }
       } catch {
         // ignore
+      }
+      // Background release check
+      try {
+        const u = await window.truedeck.checkUpdates(false)
+        setUpdateInfo({
+          updateAvailable: u.updateAvailable,
+          latestVersion: u.latestVersion,
+          releaseUrl: u.releaseUrl,
+          downloadUrl: u.downloadUrl,
+          currentVersion: u.currentVersion
+        })
+        if (u.updateAvailable && u.latestVersion) {
+          setStatus(`Update available: v${u.latestVersion}`)
+        }
+      } catch {
+        // ignore offline
       }
     })()
 
@@ -345,6 +369,26 @@ export default function App(): JSX.Element {
         <button type="button" className="no-drag primary" onClick={() => setPaletteOpen(true)}>
           + agent
         </button>
+        {updateInfo?.updateAvailable && (
+          <button
+            type="button"
+            className="no-drag update-btn"
+            title={
+              updateInfo.latestVersion
+                ? `v${updateInfo.currentVersion} → v${updateInfo.latestVersion}`
+                : 'New release available'
+            }
+            onClick={() => {
+              const url =
+                updateInfo.downloadUrl ||
+                updateInfo.releaseUrl ||
+                'https://github.com/WutIsHummus/TrueDeck/releases/latest'
+              void window.truedeck.openExternal(url)
+            }}
+          >
+            Update{updateInfo.latestVersion ? ` v${updateInfo.latestVersion}` : ''}
+          </button>
+        )}
         <button
           type="button"
           className="no-drag settings-gear"
@@ -580,6 +624,39 @@ export default function App(): JSX.Element {
         version={version}
         activeProject={activeProject}
         memLabel={memLabel}
+        updateInfo={updateInfo}
+        checkingUpdate={checkingUpdate}
+        onCheckUpdate={() => {
+          void (async () => {
+            setCheckingUpdate(true)
+            try {
+              const u = await window.truedeck.checkUpdates(true)
+              setUpdateInfo({
+                updateAvailable: u.updateAvailable,
+                latestVersion: u.latestVersion,
+                releaseUrl: u.releaseUrl,
+                downloadUrl: u.downloadUrl,
+                currentVersion: u.currentVersion
+              })
+              if (u.updateAvailable && u.latestVersion) {
+                setStatus(`Update available: v${u.latestVersion}`)
+              } else if (u.error) {
+                setStatus(`Update check failed: ${u.error}`)
+              } else {
+                setStatus(`You're on the latest (v${u.currentVersion})`)
+              }
+            } finally {
+              setCheckingUpdate(false)
+            }
+          })()
+        }}
+        onOpenUpdate={() => {
+          const url =
+            updateInfo?.downloadUrl ||
+            updateInfo?.releaseUrl ||
+            'https://github.com/WutIsHummus/TrueDeck/releases/latest'
+          void window.truedeck.openExternal(url)
+        }}
         onSettingsChange={applySettings}
         onOpenOnOpen={() => {
           if (activeProject) {

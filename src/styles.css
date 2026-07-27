@@ -234,6 +234,34 @@ textarea:focus {
   color: var(--text);
 }
 
+.update-btn {
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid #f0a05088;
+  background: linear-gradient(180deg, #f0a05033, #f0a05018);
+  color: #ffc078;
+  animation: update-pulse 2s ease infinite;
+}
+
+.update-btn:hover {
+  border-color: #f0a050;
+  background: linear-gradient(180deg, #f0a05055, #f0a05028);
+  color: #ffe0b0;
+}
+
+@keyframes update-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 #f0a05000;
+  }
+  50% {
+    box-shadow: 0 0 0 4px #f0a05022;
+  }
+}
+
 /* Tabs — interactive drag strip */
 .tabbar {
   display: flex;
