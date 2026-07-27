@@ -85,6 +85,28 @@ const api = {
   openPathInOs: (p: string): Promise<string> => ipcRenderer.invoke('shell:openPath', p),
   showItem: (p: string): Promise<void> => ipcRenderer.invoke('shell:showItem', p),
 
+  mempalaceStatus: (): Promise<{
+    installed: boolean
+    cliPath: string | null
+    mcpPath: string | null
+    palacePath: string
+    ready: boolean
+    mode: 'native' | 'docker' | 'missing'
+    message: string
+    version?: string
+  }> => ipcRenderer.invoke('mempalace:status'),
+  mempalaceEnsure: (opts?: {
+    projectRoot?: string
+    wing?: string
+  }): Promise<{
+    installed: boolean
+    ready: boolean
+    mode: string
+    message: string
+    palacePath: string
+  }> => ipcRenderer.invoke('mempalace:ensure', opts),
+
+
   onPtyData: (cb: (payload: { id: string; data: string }) => void): (() => void) => {
     const listener = (_: Electron.IpcRendererEvent, payload: { id: string; data: string }): void =>
       cb(payload)

@@ -19,7 +19,40 @@ Run **Grok Build**, **Codex**, **Claude Code**, **Cursor Agent**, **Gemini**, **
 | **First-run seed** | Auto-discovers local projects (e.g. `~/SPTS`) with sensible defaults |
 | **TrueMemory (repo)** | `.memory/` inside each project — commit it like code |
 | **TrueMemory (global)** | Cross-project prefs under app data |
+| **MemPalace (native)** | Graph/vector memory via `mempalace-mcp` — **no Docker** |
 | **Speech-to-text ready** | Focus a terminal + [Handy](https://github.com/cjpais/Handy) or **Win+H** |
+
+## MemPalace without Docker
+
+TrueDeck and your AI CLIs should use the **native** MCP server, not `docker run`:
+
+```powershell
+# install once
+uv tool install mempalace
+
+# verify
+.\tools\ensure-mempalace.ps1
+```
+
+MCP config (Cursor / Grok):
+
+```json
+{
+  "command": "%USERPROFILE%\\.local\\bin\\mempalace-mcp.exe",
+  "args": ["--palace", "%USERPROFILE%\\.mempalace\\palace"]
+}
+```
+
+Grok: `~/.grok/config.toml` → `[mcp_servers.mempalace]`  
+Cursor: `~/.cursor/mcp.json` → `mcpServers.mempalace`
+
+If you still have Docker-based mempalace, switch with:
+
+```powershell
+.\tools\install-native-mempalace-mcp.ps1
+```
+
+Then **restart Cursor / Grok**. You never need to open Docker Desktop for memory again.
 
 ## Quick start
 

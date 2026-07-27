@@ -22,6 +22,7 @@ import {
 } from './memory'
 import { getGlobalDataDir, getSettingsPath } from './paths'
 import { runFirstRunSeed } from './first-run'
+import { getMemPalaceStatus, ensureMemPalace, mempalaceMcpSnippet } from './mempalace'
 import type { AgentPreset, AppSettings, MemoryScope, ProjectOnOpenCommand } from '../shared/types'
 
 const isDev = !app.isPackaged
@@ -98,6 +99,17 @@ function registerIpc(): void {
   })
   ipcMain.handle('app:firstRun', (_e, force?: boolean) => runFirstRunSeed(Boolean(force)))
   ipcMain.handle('app:version', () => app.getVersion())
+
+  // MemPalace (native, no Docker)
+  ipcMain.handle('mempalace:status', () => getMemPalaceStatus())
+  ipcMain.handle(
+    'mempalace:ensure',
+    (_e, opts?: { projectRoot?: string; wing?: string }) => ensureMemPalace(opts)
+  )
+  ipcMain.handle('mempalace:mcpSnippet', async () => {
+    const s = await getMemPalaceStatus()
+    return mempalaceMcpSnippet(s)
+  })
 
   ipcMain.handle('agents:list', () => loadAgents())
   ipcMain.handle('agents:save', (_e, agents: AgentPreset[]) => {
@@ -259,6 +271,11 @@ app.whenReady().then(() => {
   ensureGlobalMemory()
   registerIpc()
   createWindow()
+
+  // Warm native MemPalace in background (never starts Docker)
+  void ensureMemPalace().catch(() => {
+    // optional dependency
+  })
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

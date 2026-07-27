@@ -16,11 +16,25 @@ export function MemoryPanel(): JSX.Element {
     setStatus
   } = useDeck()
   const [newPath, setNewPath] = useState('context/note.md')
+  const [palaceMsg, setPalaceMsg] = useState<string>('Checking MemPalace…')
+  const [palaceReady, setPalaceReady] = useState(false)
   const project = projects.find((p) => p.id === activeProjectId)
 
   useEffect(() => {
     void refreshMemory()
   }, [memoryScope, activeProjectId, refreshMemory])
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const s = await window.truedeck.mempalaceStatus()
+        setPalaceReady(s.ready)
+        setPalaceMsg(s.message + (s.version ? ` (${s.version})` : ''))
+      } catch {
+        setPalaceMsg('MemPalace status unavailable')
+      }
+    })()
+  }, [])
 
   const openNote = async (path: string, content: string): Promise<void> => {
     setActiveNote(path, content)
@@ -68,6 +82,53 @@ export function MemoryPanel(): JSX.Element {
         <div>
           <h1 style={{ fontSize: 14 }}>TrueMemory</h1>
           <p>Per-repo + global agent memory</p>
+        </div>
+      </div>
+
+      <div className="section" style={{ paddingBottom: 0 }}>
+        <div className="section-header">
+          <h2>MemPalace</h2>
+          <span className="badge" style={{ borderColor: palaceReady ? '#34d39955' : '#f8717155' }}>
+            {palaceReady ? 'native' : 'off'}
+          </span>
+        </div>
+        <p className="hint">{palaceMsg}</p>
+        <div className="row">
+          <button
+            className="ghost"
+            onClick={() => {
+              void (async () => {
+                const s = await window.truedeck.mempalaceEnsure({
+                  projectRoot: project?.root,
+                  wing: project?.name
+                })
+                setPalaceReady(s.ready)
+                setPalaceMsg(s.message)
+                setStatus(s.ready ? 'MemPalace ready (no Docker)' : s.message)
+              })()
+            }}
+          >
+            Ensure ready
+          </button>
+          {project && (
+            <button
+              className="ghost"
+              title="Mine this repo into a MemPalace wing (background)"
+              onClick={() => {
+                void (async () => {
+                  setStatus(`Mining ${project.name} into MemPalace…`)
+                  const s = await window.truedeck.mempalaceEnsure({
+                    projectRoot: project.root,
+                    wing: project.name
+                  })
+                  setPalaceMsg(s.message)
+                  setStatus(`MemPalace mine started for ${project.name}`)
+                })()
+              }}
+            >
+              Mine project
+            </button>
+          )}
         </div>
       </div>
 
