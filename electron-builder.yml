@@ -1,0 +1,15 @@
+appId: dev.truedeck.app
+productName: TrueDeck
+directories:
+  buildResources: resources
+  output: release
+files:
+  - out/**/*
+  - package.json
+win:
+  target:
+    - nsis
+    - portable
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
