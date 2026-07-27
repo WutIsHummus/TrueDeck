@@ -6,10 +6,17 @@ directories:
 files:
   - out/**/*
   - package.json
+  - resources/**/*
 win:
+  icon: resources/icon.svg
   target:
     - nsis
     - portable
+mac:
+  icon: resources/icon.svg
+linux:
+  icon: resources/icon.svg
+
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

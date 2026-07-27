@@ -76,6 +76,10 @@ function saveSettings(s: AppSettings): void {
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const iconPath = app.isPackaged
+    ? join(process.resourcesPath, 'icon.svg')
+    : join(app.getAppPath(), 'resources', 'icon.svg')
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -83,8 +87,9 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: 'TrueDeck',
-    backgroundColor: '#0b0f14',
+    backgroundColor: '#0c0c0c',
     autoHideMenuBar: true,
+    icon: existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,

@@ -5,17 +5,8 @@ import type { AgentPreset } from '../shared/types'
 
 const DEFAULT_AGENTS: AgentPreset[] = [
   {
-    id: 'shell',
-    name: 'Shell',
-    command: process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash',
-    args: process.platform === 'win32' ? ['-NoLogo'] : [],
-    color: '#6b7280',
-    icon: '▣',
-    description: 'Plain shell in the project folder'
-  },
-  {
     id: 'grok',
-    name: 'Grok Build',
+    name: 'Grok',
     command: 'grok',
     args: [],
     color: '#22d3ee',
@@ -32,8 +23,18 @@ const DEFAULT_AGENTS: AgentPreset[] = [
     description: 'OpenAI Codex CLI'
   },
   {
+    id: 'cursor',
+    name: 'Cursor',
+    // resolve-command.ts prefers cursor-agent.cmd, then cursor agent, then IDE
+    command: process.platform === 'win32' ? 'cursor-agent' : 'cursor-agent',
+    args: [],
+    color: '#60a5fa',
+    icon: '◆',
+    description: 'Cursor Agent CLI (native). Opens in a TrueDeck tab.'
+  },
+  {
     id: 'claude',
-    name: 'Claude Code',
+    name: 'Claude',
     command: 'claude',
     args: [],
     color: '#c084fc',
@@ -50,15 +51,13 @@ const DEFAULT_AGENTS: AgentPreset[] = [
     description: 'Google Gemini CLI'
   },
   {
-    id: 'cursor',
-    name: 'Cursor Agent',
-    // Prefer dedicated cursor-agent CLI; resolve-command.ts rewrites at spawn time.
-    command: process.platform === 'win32' ? 'cursor-agent' : 'cursor-agent',
-    args: [],
-    color: '#60a5fa',
-    icon: '◆',
-    description:
-      'Cursor Agent CLI (cursor-agent). Auto-resolves to cursor agent or Cursor.exe if needed.'
+    id: 'shell',
+    name: 'Shell',
+    command: process.platform === 'win32' ? 'powershell.exe' : process.env.SHELL || '/bin/bash',
+    args: process.platform === 'win32' ? ['-NoLogo'] : [],
+    color: '#6b7280',
+    icon: '▣',
+    description: 'Plain shell in the project folder'
   },
   {
     id: 'opencode',
@@ -80,18 +79,42 @@ const DEFAULT_AGENTS: AgentPreset[] = [
   }
 ]
 
+/** Merge saved list with defaults so new options (e.g. Cursor) always appear. */
+function mergeAgents(stored: AgentPreset[]): AgentPreset[] {
+  const byId = new Map(stored.map((a) => [a.id, a]))
+  const out: AgentPreset[] = []
+  for (const d of DEFAULT_AGENTS) {
+    const s = byId.get(d.id)
+    if (s) {
+      out.push({ ...d, ...s, id: d.id })
+      byId.delete(d.id)
+    } else {
+      out.push({ ...d })
+    }
+  }
+  for (const [, s] of byId) out.push(s)
+  return out
+}
+
 export function loadAgents(): AgentPreset[] {
   const path = getAgentsConfigPath()
   try {
     if (existsSync(path)) {
       const raw = JSON.parse(readFileSync(path, 'utf8')) as AgentPreset[]
-      if (Array.isArray(raw) && raw.length > 0) return raw
+      if (Array.isArray(raw) && raw.length > 0) {
+        const merged = mergeAgents(raw)
+        // Persist if Cursor (or other defaults) were missing
+        if (merged.length !== raw.length || !raw.some((a) => a.id === 'cursor')) {
+          saveAgents(merged)
+        }
+        return merged
+      }
     }
   } catch {
     // fall through
   }
   saveAgents(DEFAULT_AGENTS)
-  return DEFAULT_AGENTS
+  return DEFAULT_AGENTS.map((a) => ({ ...a }))
 }
 
 export function saveAgents(agents: AgentPreset[]): void {
