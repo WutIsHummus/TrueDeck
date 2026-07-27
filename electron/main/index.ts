@@ -23,7 +23,25 @@ import {
 import { getGlobalDataDir, getSettingsPath } from './paths'
 import { runFirstRunSeed } from './first-run'
 import { getMemPalaceStatus, ensureMemPalace, mempalaceMcpSnippet } from './mempalace'
-import type { AgentPreset, AppSettings, MemoryScope, ProjectOnOpenCommand } from '../shared/types'
+import {
+  loadMemoryProviders,
+  saveMemoryProviders,
+  listProviderStatuses,
+  ensureEnabledProviders,
+  setProviderEnabled,
+  upsertMemoryProvider,
+  removeMemoryProvider,
+  addCustomMcpProvider,
+  buildMcpServerMap,
+  defaultMemoryProviders
+} from './memory-providers'
+import type {
+  AgentPreset,
+  AppSettings,
+  MemoryProviderConfig,
+  MemoryScope,
+  ProjectOnOpenCommand
+} from '../shared/types'
 
 const isDev = !app.isPackaged
 
@@ -44,7 +62,8 @@ function defaultSettings(): AppSettings {
     theme: 'dark',
     fontSize: 13,
     layoutMode: 'grid',
-    autoGrid: true
+    autoGrid: true,
+    memoryProviders: defaultMemoryProviders()
   }
 }
 
@@ -100,7 +119,7 @@ function registerIpc(): void {
   ipcMain.handle('app:firstRun', (_e, force?: boolean) => runFirstRunSeed(Boolean(force)))
   ipcMain.handle('app:version', () => app.getVersion())
 
-  // MemPalace (native, no Docker)
+  // MemPalace (native, no Docker) — kept for backward-compatible UI hooks
   ipcMain.handle('mempalace:status', () => getMemPalaceStatus())
   ipcMain.handle(
     'mempalace:ensure',
@@ -109,6 +128,43 @@ function registerIpc(): void {
   ipcMain.handle('mempalace:mcpSnippet', async () => {
     const s = await getMemPalaceStatus()
     return mempalaceMcpSnippet(s)
+  })
+
+  // Pluggable memory providers (TrueMemory + MemPalace + OpenMemory + custom MCP)
+  ipcMain.handle('memoryProviders:list', () => loadMemoryProviders())
+  ipcMain.handle('memoryProviders:status', () => listProviderStatuses())
+  ipcMain.handle('memoryProviders:save', (_e, providers: MemoryProviderConfig[]) => {
+    saveMemoryProviders(providers)
+    return loadMemoryProviders()
+  })
+  ipcMain.handle('memoryProviders:setEnabled', (_e, id: string, enabled: boolean) =>
+    setProviderEnabled(id, enabled)
+  )
+  ipcMain.handle('memoryProviders:upsert', (_e, provider: MemoryProviderConfig) =>
+    upsertMemoryProvider(provider)
+  )
+  ipcMain.handle('memoryProviders:remove', (_e, id: string) => removeMemoryProvider(id))
+  ipcMain.handle(
+    'memoryProviders:addCustom',
+    (_e, opts: { name: string; command: string; args?: string[]; env?: Record<string, string> }) =>
+      addCustomMcpProvider(opts)
+  )
+  ipcMain.handle('memoryProviders:ensure', (_e, projectRoot?: string) =>
+    ensureEnabledProviders(projectRoot)
+  )
+  ipcMain.handle('memoryProviders:mcpMap', () => buildMcpServerMap())
+  ipcMain.handle('memoryProviders:exportSnippet', () => {
+    const map = buildMcpServerMap()
+    return {
+      cursor: JSON.stringify({ mcpServers: map }, null, 2),
+      grokToml: Object.entries(map)
+        .map(([id, cfg]) => {
+          const args = (cfg.args || []).map((a) => `"${a.replace(/\\/g, '\\\\')}"`).join(', ')
+          const cmd = cfg.command.replace(/\\/g, '\\\\')
+          return `[mcp_servers.${id}]\ncommand = "${cmd}"\nargs = [${args}]\nenabled = true\nstartup_timeout_sec = 60`
+        })
+        .join('\n\n')
+    }
   })
 
   ipcMain.handle('agents:list', () => loadAgents())
@@ -272,9 +328,9 @@ app.whenReady().then(() => {
   registerIpc()
   createWindow()
 
-  // Warm native MemPalace in background (never starts Docker)
-  void ensureMemPalace().catch(() => {
-    // optional dependency
+  // Warm enabled memory providers (MemPalace native only — never Docker)
+  void ensureEnabledProviders().catch(() => {
+    // optional
   })
 
   app.on('activate', () => {

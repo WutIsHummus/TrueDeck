@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useDeck } from '../store'
+import type { MemoryProviderStatus } from '../../electron/shared/types'
 
 export function MemoryPanel(): JSX.Element {
   const {
@@ -16,25 +17,30 @@ export function MemoryPanel(): JSX.Element {
     setStatus
   } = useDeck()
   const [newPath, setNewPath] = useState('context/note.md')
-  const [palaceMsg, setPalaceMsg] = useState<string>('Checking MemPalace…')
-  const [palaceReady, setPalaceReady] = useState(false)
+  const [providers, setProviders] = useState<MemoryProviderStatus[]>([])
+  const [showAdd, setShowAdd] = useState(false)
+  const [showExport, setShowExport] = useState<string | null>(null)
+  const [customName, setCustomName] = useState('Custom memory MCP')
+  const [customCmd, setCustomCmd] = useState('')
+  const [customArgs, setCustomArgs] = useState('')
   const project = projects.find((p) => p.id === activeProjectId)
+
+  const refreshProviders = useCallback(async () => {
+    try {
+      const list = await window.truedeck.memoryProviderStatus()
+      setProviders(list)
+    } catch {
+      setProviders([])
+    }
+  }, [])
 
   useEffect(() => {
     void refreshMemory()
   }, [memoryScope, activeProjectId, refreshMemory])
 
   useEffect(() => {
-    void (async () => {
-      try {
-        const s = await window.truedeck.mempalaceStatus()
-        setPalaceReady(s.ready)
-        setPalaceMsg(s.message + (s.version ? ` (${s.version})` : ''))
-      } catch {
-        setPalaceMsg('MemPalace status unavailable')
-      }
-    })()
-  }, [])
+    void refreshProviders()
+  }, [refreshProviders])
 
   const openNote = async (path: string, content: string): Promise<void> => {
     setActiveNote(path, content)
@@ -76,60 +82,183 @@ export function MemoryPanel(): JSX.Element {
     setStatus('Note deleted')
   }
 
+  const toggleProvider = async (id: string, enabled: boolean): Promise<void> => {
+    await window.truedeck.setMemoryProviderEnabled(id, enabled)
+    await refreshProviders()
+    setStatus(`${id} ${enabled ? 'enabled' : 'disabled'}`)
+  }
+
+  const ensureAll = async (): Promise<void> => {
+    const list = await window.truedeck.ensureMemoryProviders(project?.root)
+    setProviders(list)
+    setStatus('Memory providers refreshed (native — no Docker)')
+  }
+
+  const addCustom = async (): Promise<void> => {
+    if (!customCmd.trim()) {
+      setStatus('Command is required')
+      return
+    }
+    const args = customArgs
+      .split(/\s+/)
+      .map((s) => s.trim())
+      .filter(Boolean)
+    await window.truedeck.addCustomMemoryMcp({
+      name: customName.trim() || 'Custom MCP',
+      command: customCmd.trim(),
+      args
+    })
+    setShowAdd(false)
+    setCustomCmd('')
+    setCustomArgs('')
+    await refreshProviders()
+    setStatus('Custom memory MCP added')
+  }
+
+  const exportSnippets = async (): Promise<void> => {
+    const snip = await window.truedeck.exportMemoryMcpSnippet()
+    setShowExport(snip.cursor + '\n\n--- Grok config.toml ---\n\n' + snip.grokToml)
+  }
+
   return (
     <aside className="memory-panel">
       <div className="brand" style={{ borderBottom: '1px solid var(--border)' }}>
         <div>
           <h1 style={{ fontSize: 14 }}>TrueMemory</h1>
-          <p>Per-repo + global agent memory</p>
+          <p>Files + pluggable mem backends</p>
         </div>
       </div>
 
-      <div className="section" style={{ paddingBottom: 0 }}>
+      <div className="section" style={{ paddingBottom: 4, borderBottom: '1px solid var(--border)' }}>
         <div className="section-header">
-          <h2>MemPalace</h2>
-          <span className="badge" style={{ borderColor: palaceReady ? '#34d39955' : '#f8717155' }}>
-            {palaceReady ? 'native' : 'off'}
-          </span>
-        </div>
-        <p className="hint">{palaceMsg}</p>
-        <div className="row">
-          <button
-            className="ghost"
-            onClick={() => {
-              void (async () => {
-                const s = await window.truedeck.mempalaceEnsure({
-                  projectRoot: project?.root,
-                  wing: project?.name
-                })
-                setPalaceReady(s.ready)
-                setPalaceMsg(s.message)
-                setStatus(s.ready ? 'MemPalace ready (no Docker)' : s.message)
-              })()
-            }}
-          >
-            Ensure ready
+          <h2>Memory backends</h2>
+          <button className="ghost" onClick={() => void ensureAll()} title="Ensure enabled providers">
+            ↻
           </button>
-          {project && (
-            <button
-              className="ghost"
-              title="Mine this repo into a MemPalace wing (background)"
-              onClick={() => {
-                void (async () => {
-                  setStatus(`Mining ${project.name} into MemPalace…`)
-                  const s = await window.truedeck.mempalaceEnsure({
-                    projectRoot: project.root,
-                    wing: project.name
-                  })
-                  setPalaceMsg(s.message)
-                  setStatus(`MemPalace mine started for ${project.name}`)
-                })()
-              }}
-            >
-              Mine project
-            </button>
-          )}
         </div>
+        <p className="hint">
+          MemPalace stays native (no Docker). Toggle backends or add OpenMemory / any MCP.
+        </p>
+        <div className="note-list" style={{ maxHeight: 160 }}>
+          {providers.map((p) => (
+            <div
+              key={p.id}
+              className="note-item"
+              style={{ flexDirection: 'column', alignItems: 'stretch', gap: 4 }}
+            >
+              <div className="row" style={{ width: '100%' }}>
+                <input
+                  type="checkbox"
+                  checked={p.enabled}
+                  disabled={p.kind === 'truememory'}
+                  onChange={(e) => void toggleProvider(p.id, e.target.checked)}
+                  title={p.kind === 'truememory' ? 'Always on' : 'Enable backend'}
+                />
+                <div className="meta" style={{ flex: 1, minWidth: 0 }}>
+                  <div className="name" style={{ fontSize: 12, fontWeight: 600 }}>
+                    {p.name}
+                  </div>
+                  <div className="path" style={{ fontSize: 10 }}>
+                    {p.mode}
+                    {p.ready ? ' · ready' : p.enabled ? ' · not ready' : ' · off'}
+                  </div>
+                </div>
+                <span
+                  className="badge"
+                  style={{
+                    borderColor: p.ready ? '#34d39955' : p.enabled ? '#fbbf2455' : '#64748b55'
+                  }}
+                >
+                  {p.kind === 'mempalace' ? 'mem' : p.kind === 'truememory' ? 'files' : 'mcp'}
+                </span>
+              </div>
+              <div className="hint" style={{ margin: 0, fontSize: 10 }}>
+                {p.message}
+              </div>
+              {p.kind === 'mempalace' && p.enabled && project && (
+                <button
+                  className="ghost"
+                  style={{ fontSize: 11, alignSelf: 'flex-start' }}
+                  onClick={() => {
+                    void (async () => {
+                      setStatus(`Mining ${project.name} into MemPalace…`)
+                      await window.truedeck.mempalaceEnsure({
+                        projectRoot: project.root,
+                        wing: project.name
+                      })
+                      await refreshProviders()
+                      setStatus(`MemPalace mine started for ${project.name}`)
+                    })()
+                  }}
+                >
+                  Mine project wing
+                </button>
+              )}
+              {p.kind === 'custom-mcp' && (
+                <button
+                  className="ghost danger"
+                  style={{ fontSize: 11, alignSelf: 'flex-start' }}
+                  onClick={() => {
+                    void (async () => {
+                      await window.truedeck.removeMemoryProvider(p.id)
+                      await refreshProviders()
+                    })()
+                  }}
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+        <div className="row" style={{ marginTop: 6, flexWrap: 'wrap' }}>
+          <button className="ghost" onClick={() => setShowAdd((v) => !v)}>
+            + Custom MCP
+          </button>
+          <button className="ghost" onClick={() => void exportSnippets()}>
+            Export MCP
+          </button>
+        </div>
+        {showAdd && (
+          <div className="onopen-list" style={{ marginTop: 8 }}>
+            <input
+              value={customName}
+              onChange={(e) => setCustomName(e.target.value)}
+              placeholder="Name (e.g. OpenMemory)"
+            />
+            <input
+              value={customCmd}
+              onChange={(e) => setCustomCmd(e.target.value)}
+              placeholder="Command (e.g. npx or C:\path\server.exe)"
+            />
+            <input
+              value={customArgs}
+              onChange={(e) => setCustomArgs(e.target.value)}
+              placeholder="Args space-separated"
+            />
+            <div className="row">
+              <button className="primary" onClick={() => void addCustom()}>
+                Add
+              </button>
+              <button className="ghost" onClick={() => setShowAdd(false)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        )}
+        {showExport && (
+          <div style={{ marginTop: 8 }}>
+            <textarea
+              readOnly
+              value={showExport}
+              style={{ minHeight: 100, fontSize: 10 }}
+              onFocus={(e) => e.target.select()}
+            />
+            <button className="ghost" onClick={() => setShowExport(null)}>
+              Close export
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="memory-tabs">
@@ -149,7 +278,7 @@ export function MemoryPanel(): JSX.Element {
 
       <div className="section" style={{ flex: 1 }}>
         <div className="section-header">
-          <h2>Notes</h2>
+          <h2>Notes (TrueMemory)</h2>
           <button className="ghost" onClick={() => void createNew()}>
             + New
           </button>

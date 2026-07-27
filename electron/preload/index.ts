@@ -3,6 +3,8 @@ import type {
   AgentPreset,
   AppSettings,
   MemoryNote,
+  MemoryProviderConfig,
+  MemoryProviderStatus,
   MemoryScope,
   ProjectConfig,
   ProjectOnOpenCommand,
@@ -106,6 +108,28 @@ const api = {
     palacePath: string
   }> => ipcRenderer.invoke('mempalace:ensure', opts),
 
+  listMemoryProviders: (): Promise<MemoryProviderConfig[]> =>
+    ipcRenderer.invoke('memoryProviders:list'),
+  memoryProviderStatus: (): Promise<MemoryProviderStatus[]> =>
+    ipcRenderer.invoke('memoryProviders:status'),
+  saveMemoryProviders: (providers: MemoryProviderConfig[]): Promise<MemoryProviderConfig[]> =>
+    ipcRenderer.invoke('memoryProviders:save', providers),
+  setMemoryProviderEnabled: (id: string, enabled: boolean): Promise<MemoryProviderConfig[]> =>
+    ipcRenderer.invoke('memoryProviders:setEnabled', id, enabled),
+  upsertMemoryProvider: (provider: MemoryProviderConfig): Promise<MemoryProviderConfig[]> =>
+    ipcRenderer.invoke('memoryProviders:upsert', provider),
+  removeMemoryProvider: (id: string): Promise<MemoryProviderConfig[]> =>
+    ipcRenderer.invoke('memoryProviders:remove', id),
+  addCustomMemoryMcp: (opts: {
+    name: string
+    command: string
+    args?: string[]
+    env?: Record<string, string>
+  }): Promise<MemoryProviderConfig[]> => ipcRenderer.invoke('memoryProviders:addCustom', opts),
+  ensureMemoryProviders: (projectRoot?: string): Promise<MemoryProviderStatus[]> =>
+    ipcRenderer.invoke('memoryProviders:ensure', projectRoot),
+  exportMemoryMcpSnippet: (): Promise<{ cursor: string; grokToml: string }> =>
+    ipcRenderer.invoke('memoryProviders:exportSnippet'),
 
   onPtyData: (cb: (payload: { id: string; data: string }) => void): (() => void) => {
     const listener = (_: Electron.IpcRendererEvent, payload: { id: string; data: string }): void =>

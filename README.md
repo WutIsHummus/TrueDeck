@@ -19,40 +19,45 @@ Run **Grok Build**, **Codex**, **Claude Code**, **Cursor Agent**, **Gemini**, **
 | **First-run seed** | Auto-discovers local projects (e.g. `~/SPTS`) with sensible defaults |
 | **TrueMemory (repo)** | `.memory/` inside each project — commit it like code |
 | **TrueMemory (global)** | Cross-project prefs under app data |
-| **MemPalace (native)** | Graph/vector memory via `mempalace-mcp` — **no Docker** |
+| **MemPalace (native)** | Default “mem space” via `mempalace-mcp` — **no Docker** |
+| **Pluggable memory** | Toggle MemPalace / OpenMemory / custom MCP from the UI |
 | **Speech-to-text ready** | Focus a terminal + [Handy](https://github.com/cjpais/Handy) or **Win+H** |
 
-## MemPalace without Docker
+## Memory backends (no Docker required)
 
-TrueDeck and your AI CLIs should use the **native** MCP server, not `docker run`:
+TrueDeck stacks layers you can turn on/off:
+
+| Backend | Role |
+|---------|------|
+| **TrueMemory** | Always on — markdown in `.memory/` + global files |
+| **MemPalace** | Default mem space — **native** MCP only (`noDocker: true`) |
+| **OpenMemory** | Optional Mem0 MCP — enable when installed |
+| **Custom MCP** | Paste any memory server command |
+
+UI: right panel → **Memory backends** → toggle / **+ Custom MCP** / **Export MCP** (Cursor + Grok snippets).
+
+Details: [docs/memory-providers.md](./docs/memory-providers.md)
+
+### MemPalace without Docker
 
 ```powershell
-# install once
 uv tool install mempalace
-
-# verify
 .\tools\ensure-mempalace.ps1
 ```
 
-MCP config (Cursor / Grok):
+Cursor / Grok should use native MCP (already configured if you ran our setup):
 
-```json
-{
-  "command": "%USERPROFILE%\\.local\\bin\\mempalace-mcp.exe",
-  "args": ["--palace", "%USERPROFILE%\\.mempalace\\palace"]
-}
+```text
+command: %USERPROFILE%\.local\bin\mempalace-mcp.exe
+args:    --palace %USERPROFILE%\.mempalace\palace
 ```
 
-Grok: `~/.grok/config.toml` → `[mcp_servers.mempalace]`  
-Cursor: `~/.cursor/mcp.json` → `mcpServers.mempalace`
-
-If you still have Docker-based mempalace, switch with:
-
 ```powershell
+# one-shot switch away from docker run
 .\tools\install-native-mempalace-mcp.ps1
 ```
 
-Then **restart Cursor / Grok**. You never need to open Docker Desktop for memory again.
+Restart Cursor / Grok after changing MCP config.
 
 ## Quick start
 
