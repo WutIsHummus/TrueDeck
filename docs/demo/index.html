@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TrueDeck — Demo bumper</title>
+    <style>
+      :root {
+        --bg: #07090d;
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --accent: #f0a050;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        background: #000;
+        color: var(--text);
+        font-family: "Cascadia Code", "Segoe UI", system-ui, monospace;
+        overflow: hidden;
+      }
+      .stage {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        background: var(--bg);
+      }
+      .bg {
+        position: absolute;
+        inset: 0;
+        background-size: cover;
+        background-position: center;
+        opacity: 0;
+        transform: scale(1.08);
+        transition: opacity 0.9s ease, transform 6s ease-out;
+      }
+      .bg.on {
+        opacity: 1;
+        transform: scale(1);
+      }
+      .veil {
+        position: absolute;
+        inset: 0;
+        background: linear-gradient(
+          90deg,
+          #00000088 0%,
+          #00000044 45%,
+          #00000099 100%
+        );
+        pointer-events: none;
+      }
+      .card {
+        position: absolute;
+        left: 6vw;
+        bottom: 12vh;
+        max-width: min(720px, 80vw);
+        opacity: 0;
+        transform: translateY(12px);
+        transition: opacity 0.55s ease, transform 0.55s ease;
+        z-index: 2;
+      }
+      .card.on {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      .kicker {
+        font-size: clamp(11px, 1.4vw, 13px);
+        letter-spacing: 0.16em;
+        color: var(--accent);
+        font-weight: 700;
+        margin-bottom: 10px;
+      }
+      h1 {
+        font-size: clamp(28px, 4.5vw, 52px);
+        font-weight: 700;
+        line-height: 1.12;
+        letter-spacing: -0.02em;
+        margin-bottom: 12px;
+      }
+      p {
+        font-size: clamp(14px, 1.8vw, 18px);
+        color: var(--muted);
+        line-height: 1.45;
+        max-width: 36ch;
+      }
+      .rule {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        height: 3px;
+        background: linear-gradient(90deg, transparent, var(--accent), transparent);
+        opacity: 0.9;
+        z-index: 3;
+      }
+      .hint {
+        position: absolute;
+        top: 16px;
+        right: 18px;
+        font-size: 11px;
+        color: #64748b;
+        z-index: 3;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="stage">
+      <div class="bg" id="bgA" style="background-image: url('bg-branded.jpg')"></div>
+      <div class="bg" id="bgB" style="background-image: url('bg-abstract.jpg')"></div>
+      <div class="veil"></div>
+      <div class="card" id="card">
+        <div class="kicker" id="kicker">TRUEDECK</div>
+        <h1 id="title">Multi-agent terminal deck</h1>
+        <p id="body">Claude · Grok · Cursor · Codex — one workspace</p>
+      </div>
+      <div class="rule"></div>
+      <div class="hint">Fullscreen (F11) · record with OBS · loops</div>
+    </div>
+    <script>
+      const slides = [
+        {
+          bg: "A",
+          kicker: "TRUEDECK",
+          title: "Multi-agent terminal deck",
+          body: "Not another chat window — a deck for coding agents"
+        },
+        {
+          bg: "B",
+          kicker: "SPLIT · FOCUS · SHIP",
+          title: "Real CLIs. Side by side.",
+          body: "Ctrl+T new agent · Ctrl+D split · project stays in view"
+        },
+        {
+          bg: "A",
+          kicker: "TRUEDECK",
+          title: "Your agents. One deck.",
+          body: "Open a project. Launch. Split. Work."
+        }
+      ]
+
+      const bgA = document.getElementById("bgA")
+      const bgB = document.getElementById("bgB")
+      const card = document.getElementById("card")
+      const kicker = document.getElementById("kicker")
+      const title = document.getElementById("title")
+      const body = document.getElementById("body")
+
+      let i = 0
+
+      function show(n) {
+        const s = slides[n % slides.length]
+        card.classList.remove("on")
+        setTimeout(() => {
+          kicker.textContent = s.kicker
+          title.textContent = s.title
+          body.textContent = s.body
+          if (s.bg === "A") {
+            bgA.classList.add("on")
+            bgB.classList.remove("on")
+          } else {
+            bgB.classList.add("on")
+            bgA.classList.remove("on")
+          }
+          // restart ken burns
+          const el = s.bg === "A" ? bgA : bgB
+          el.style.transition = "none"
+          el.style.transform = "scale(1.08)"
+          void el.offsetWidth
+          el.style.transition = "opacity 0.9s ease, transform 6s ease-out"
+          el.style.transform = "scale(1)"
+          card.classList.add("on")
+        }, 280)
+      }
+
+      show(0)
+      setInterval(() => {
+        i = (i + 1) % slides.length
+        show(i)
+      }, 5200)
+    </script>
+  </body>
+</html>

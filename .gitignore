@@ -11,3 +11,13 @@ Thumbs.db
 *.local
 .env
 .env.*
+
+# VitePress docs site
+docs/.vitepress/dist
+docs/.vitepress/cache
+
+# Rust
+crates/**/target/
+**/*.rs.bk
+# Built sidecar binaries (rebuild with npm run build:backend)
+resources/bin/
