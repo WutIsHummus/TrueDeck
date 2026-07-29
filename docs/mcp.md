@@ -4,15 +4,14 @@ TrueDeck maintains a **single MCP server list** and injects it into every suppor
 
 ## Design
 
-```
-Memory providers ─┐
-User mcp-servers ─┼─► TrueDeck hub map ─► Cursor / Claude / Grok / Codex / Gemini / .mcp.json
-Builtin hub MCP ──┘
-```
+| Source | Flows into |
+|--------|------------|
+| Memory providers | |
+| User MCP servers | → **TrueDeck hub map** → Cursor / Claude / Grok / Codex / Gemini / `.mcp.json` |
+| Builtin hub MCP | |
 
-Main code: `electron/main/mcp-hub.ts` 
+Main code: `electron/main/mcp-hub.ts`  
 Agent-facing server: `resources/mcp-server/truedeck-mcp.mjs`
-
 ## Sources
 
 | Source | Description |

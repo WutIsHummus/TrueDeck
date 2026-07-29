@@ -4,9 +4,13 @@
 
 TrueDeck’s native backend runs as a **sidecar process**. Electron keeps the window + React UI; the Rust service owns PTY, projects, settings, layout, and memory inject.
 
-```
-Renderer ──IPC──► Electron (thin bridge) ──stdio JSON-RPC──► truedeck-backend
-```
+| Step | Component |
+|------|-----------|
+| 1 | Renderer (React + xterm) |
+| 2 | IPC via preload |
+| 3 | Electron main (thin bridge) |
+| 4 | stdio JSON-RPC |
+| 5 | **`truedeck-backend`** (primary) |
 
 ## Build
 

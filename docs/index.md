@@ -4,21 +4,33 @@ Day-to-day use of TrueDeck Studio. Install from **[Releases](https://github.com/
 
 ## Studio UI layout
 
-```
-┌─ title bar: icon · TRUEDECK · [Project ▾] · board · ⚙ · ? · window ─┐
-├─ layout toolbar: split hints · merge · + · clear ────────────────────┤
-├─ Group A tabs ──────────────┬─ Group B tabs ────────────────────────┤
-│  terminal                   │  terminal                              │
-│  (active agent)             │  (or stacked below)                    │
-└─────────────────────────────┴────────────────────────────────────────┘
-```
+<p class="studio-shot">
+  <img src="/screenshot.png" alt="TrueDeck multi-pane studio" />
+</p>
 
-- **Project ▾** - recent projects and Open Folder (**Ctrl+O**)
-- **Board** - task board (**Ctrl+B**)
-- **⚙** - settings (**Ctrl+S**)
-- **?** - help / replay onboarding
-- **+** or **Ctrl+T** - agent palette
-- **Drag a tab** onto Left / Right / Top / Bottom zones to split panes; center drop joins a group
+<div class="layout-wire">
+  <div class="lw-title">Title bar · Project · board · settings · window controls</div>
+  <div class="lw-panes">
+    <div class="lw-pane">
+      <div class="lw-tabs">Group A tabs</div>
+      <div class="lw-term">Terminal (active agent)</div>
+    </div>
+    <div class="lw-pane">
+      <div class="lw-tabs">Group B tabs</div>
+      <div class="lw-term">Terminal (or stacked below)</div>
+    </div>
+  </div>
+  <div class="lw-status">Status · shortcuts</div>
+</div>
+
+| Control | Action |
+|---------|--------|
+| **Project ▾** | Recent projects and Open Folder (**Ctrl+O**) |
+| **Board** | Task board (**Ctrl+B**) |
+| **⚙** | Settings (**Ctrl+S**) |
+| **?** | Help / replay onboarding |
+| **+** / **Ctrl+T** | Agent palette |
+| **Drag a tab** | Left / Right / Top / Bottom to split; center joins a group |
 
 Almost all of the window is terminal chrome. TrueDeck is not a three-column IDE.
 

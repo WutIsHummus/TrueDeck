@@ -2,24 +2,15 @@
 
 TrueDeck is a desktop app: **Electron main** owns processes and data, **preload** exposes a typed IPC API, and the **renderer** is a React + xterm Studio UI. The **Rust** `truedeck-backend` is the main session engine.
 
-## High-level diagram
+## High-level stack
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│ Renderer (src/) │
-│ React · zustand store · xterm panes · TaskBoard · Settings │
-└──────────────────────────▲──────────────────────────────────┘
- │ IPC (contextBridge / preload)
-┌──────────────────────────┴──────────────────────────────────┐
-│ Electron main (electron/main/) │
-│ index.ts · pty-manager · tasks · mcp-hub · memory-service │
-│ agents · resolve-command · session-layout · agent-frame │
-└───────┬───────────────────────────────┬─────────────────────┘
- │ │
- ▼ ▼
- node-pty (fallback) truedeck-backend / truedeck-pty
- agent CLIs in ConPTY/PTY (Rust backend primary)
-```
+| Layer | What runs there |
+|-------|-----------------|
+| **Renderer** (`src/`) | React, zustand store, xterm panes, TaskBoard, Settings |
+| **IPC** | `contextBridge` / preload (`window.truedeck`) |
+| **Electron main** (`electron/main/`) | App lifecycle, pty-manager, tasks, mcp-hub, memory, agents, session layout |
+| **Session engine** | **Rust `truedeck-backend`** (primary); `node-pty` only if Rust cannot start |
+| **Agents** | Real CLIs in ConPTY / PTY under the project root |
 
 ## Process roles
 
@@ -63,22 +54,11 @@ Single source for `AgentPreset`, `AppSettings`, `SessionInfo`, `SessionLayout`, 
 
 ## PTY backends
 
-Spawn path prefers native engines when binaries exist:
-
-```
-Electron PtyManager
- │
- ├─ prefer ──► truedeck-backend (full native: sessions + projects + …)
- │ or truedeck-pty (PTY-only sidecar)
- │
- └─ fallback ► node-pty
-```
-
-| Backend | Build | Docs |
-|---------|-------|------|
-| **node-pty** | npm postinstall | Default when Rust binary missing |
-| **truedeck-pty** | `npm run build:pty` | [FAST-PTY.md](./FAST-PTY.md) |
-| **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
+| Priority | Backend | Build | Docs |
+|----------|---------|-------|------|
+| **1 (primary)** | **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
+| 2 | truedeck-pty | `npm run build:pty` | [FAST-PTY.md](./FAST-PTY.md) |
+| 3 (last resort) | node-pty | npm postinstall | Built-in native module |
 
 Env overrides:
 
@@ -111,20 +91,18 @@ Helpers live in `src/lib/pane-layout.ts` (renderer) and `electron/main/session-l
 
 ## Memory inject
 
-```
-Project open ──► ensure .memory/ · warm MemPalace · write auto-context.md
-Agent spawn ──► onAgentSpawnFast → env TRUEDECK_* · MCP pointers as configured
-```
+| When | What happens |
+|------|----------------|
+| **Project open** | Ensure `.memory/`, warm MemPalace, write `auto-context.md` |
+| **Agent spawn** | `onAgentSpawnFast` sets `TRUEDECK_*` env and MCP pointers as configured |
 
 See [memory-providers.md](./memory-providers.md). Env bag includes `TRUEDECK_PROJECT`, `TRUEDECK_REPO_MEMORY`, `TRUEDECK_PALACE`, `TRUEDECK_AUTO_CONTEXT`, and related keys.
 
 ## Agent frame wrap
 
-If `agentFrameTui` is enabled (default true), `pty-manager` calls `maybeWrapAgentFrame`:
+If `agentFrameTui` is enabled (default true), `pty-manager` wraps the CLI with:
 
-```
-node truedeck-frame.mjs --agent <id> --name … --cwd <root> -- <resolved CLI> …
-```
+`node truedeck-frame.mjs --agent <id> --name … --cwd <root> -- <resolved CLI> …`
 
 Shell / `cmd-*` panes only wrap when `frameShellPanes` is true. See [Agent frame](./agent-frame.md).
 

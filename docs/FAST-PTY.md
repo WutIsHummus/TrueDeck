@@ -4,20 +4,13 @@
 
 ## Architecture
 
-```
-Electron main (TypeScript)
- │
- ├─ prefer ──► truedeck-pty (Rust sidecar, portable-pty / ConPTY)
- │ JSON-lines over stdio
- │
- └─ fallback ► node-pty (existing native module)
-```
-
 | Layer | Role |
 |-------|------|
-| **truedeck-pty** | Spawn / write / resize / kill; stream PTY bytes as base64 JSON events |
+| **truedeck-backend** | Primary session engine (preferred over this sidecar) |
+| **truedeck-pty** | Legacy PTY-only Rust sidecar; JSON-lines over stdio |
 | **rust-pty-host.ts** | Spawn sidecar, parse events, hand off to PtyManager |
-| **pty-manager.ts** | Session map, SessionInfo, IPC to renderer; auto-fallback |
+| **pty-manager.ts** | Session map, SessionInfo, IPC to renderer |
+| **node-pty** | Last-resort fallback native module |
 
 ## Build the Rust host
 
