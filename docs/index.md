@@ -1,45 +1,48 @@
----
-layout: home
-title: TrueDeck
-titleTemplate: Agentic programming without the ops
-hero:
-  name: TrueDeck
-  text: Agentic programming, without the ops
-  tagline: Run Grok, Codex, Cursor, Claude, and more side by side on the same project. Real agent CLIs, multi-pane studio, context handled for you.
-  image:
-    src: /screenshot.png
-    alt: TrueDeck multi-pane studio with Grok, Codex, Claude, and Cursor
-  actions:
-    - theme: brand
-      text: Download
-      link: https://github.com/WutIsHummus/TrueDeck/releases
-    - theme: alt
-      text: Get started
-      link: /getting-started
-    - theme: alt
-      text: GitHub
-      link: https://github.com/WutIsHummus/TrueDeck
-features:
-  - icon: ⬡
-    title: Multi-agent by default
-    details: Several coding agents on one codebase at once, each in a live terminal tab, not a chat webview.
-  - icon: ⊞
-    title: A desk for agents
-    details: Split panes, focus, restore. Layout that stays out of the way while agents keep their own TUIs.
-  - icon: ◌
-    title: Memory you ignore
-    details: Project context and MCP wiring sync under the hood. No notes app, no memory dashboard, no Docker checklist.
-  - icon: ⌨
-    title: Shortcuts that stick
-    details: Ctrl+T, splits, and pane focus work even when an agent TUI has keyboard focus.
----
+# Introduction
 
-<div class="home-cta">
+**TrueDeck** is for agentic programming: run coding agents side by side on the same project without babysitting memory or ops.
 
-### Install from Releases
+It is a terminal-first multi-agent deck (Electron + React + xterm, optional Rust backend). Put **Grok**, **Codex**, **Cursor Agent**, **Claude**, **Gemini**, and more in live terminal tabs with VS Code-style pane groups. Memory, MCP wiring, and project context stay under the hood so you can open a folder and ship.
 
-Do not clone the repo to run TrueDeck. Grab a build from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab, open a project, launch agents.
+| Audience | Start here |
+|----------|------------|
+| New users | [Getting started](/getting-started) |
+| Daily use | [User guide](/user-guide) · [Keyboard shortcuts](/keyboard-shortcuts) |
+| Contributors | [Development](/development) · [Architecture](/architecture) |
+| Agents and tooling | [Agents](/agents) · [MCP](/mcp) · [Task board](/task-board) |
 
-[Getting started →](/getting-started) · [User guide →](/user-guide) · [Keyboard shortcuts →](/keyboard-shortcuts)
+## What TrueDeck is
 
-</div>
+- **Agentic multi-CLI** - several agents on one codebase, each in a live PTY tab
+- **Studio UI** - thin chrome, almost all terminal (not a three-column IDE)
+- **Pane groups** - side-by-side or stacked; each group keeps its own tabs
+- **Abstracted memory** - context and MCP inject automatically; no notes dashboard to manage
+- **Session restore** - reopen last project and respawn agent tabs after quit
+
+## What it is not
+
+- Not a chat webview (agents keep their own TUIs)
+- Not a full IDE (open folders and run agents; no built-in file tree editor)
+- Not a memory product you operate (plumbing is automatic)
+
+## Download
+
+Install from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab. Do not clone the repo just to run the app.
+
+## Repo map
+
+```
+TrueDeck/
+  src/                 # Studio UI (React + xterm + pane groups)
+  electron/main/       # PTY, tasks, MCP hub, memory, session restore
+  electron/preload/    # IPC bridge
+  electron/shared/     # Shared TypeScript types
+  resources/           # Icons, agent frame, MCP server
+  crates/              # Optional Rust backend / PTY
+  tui/                 # Terminal-only deck
+  docs/                # This documentation site
+```
+
+## License
+
+MIT - see the [repository LICENSE](https://github.com/WutIsHummus/TrueDeck/blob/master/LICENSE).
