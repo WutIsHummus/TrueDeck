@@ -1,6 +1,6 @@
 # Architecture
 
-TrueDeck is a desktop app: **Electron main** owns processes and data, **preload** exposes a typed IPC API, and the **renderer** is a React + xterm Studio UI. Optional **Rust** sidecars accelerate PTY and backend work.
+TrueDeck is a desktop app: **Electron main** owns processes and data, **preload** exposes a typed IPC API, and the **renderer** is a React + xterm Studio UI. The **Rust** `truedeck-backend` is the main session engine.
 
 ## High-level diagram
 
@@ -18,7 +18,7 @@ TrueDeck is a desktop app: **Electron main** owns processes and data, **preload*
  │ │
  ▼ ▼
  node-pty (fallback) truedeck-backend / truedeck-pty
- agent CLIs in ConPTY/PTY (optional Rust sidecars)
+ agent CLIs in ConPTY/PTY (Rust backend primary)
 ```
 
 ## Process roles
@@ -106,7 +106,7 @@ Helpers live in `src/lib/pane-layout.ts` (renderer) and `electron/main/session-l
 
 1. Renderer loads settings; if `reopenLastProject`, call `sessions:restore`
 2. Main loads `session-layout.json`, clamps tabs (max 16), filters install helpers
-3. For each tab, resolve agent + spawn PTY (memory env, optional frame)
+3. For each tab, resolve agent + spawn PTY (memory env, agent frame when enabled)
 4. Renderer rebuilds pane tree from saved structure + new session ids
 
 ## Memory inject

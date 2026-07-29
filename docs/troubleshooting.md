@@ -59,7 +59,7 @@ See [Agent frame](./agent-frame.md).
 - Hard cap is **16** panes; soft warning near **12**
 - Close unused agent tabs (each is a full CLI + model process)
 - Prefer side-by-side only when you actively compare agents
-- Optional: build Rust PTY/backend for lower I/O overhead ([FAST-PTY](./FAST-PTY.md), [RUST-BACKEND](./RUST-BACKEND.md)) - does **not** reduce model latency
+- Build the Rust backend for lower I/O overhead ([RUST-BACKEND](./RUST-BACKEND.md), [FAST-PTY](./FAST-PTY.md)) - does **not** reduce model latency
 
 ## Session restore tab flood
 

@@ -54,8 +54,8 @@ const build = spawnSync(cargo, ['build', '--release'], {
  stdio: 'inherit'
 })
 if (build.status !== 0) {
- console.error('[build:backend] failed - using fallback')
- process.exit(0)
+ console.error('[build:backend] failed - release builds need a successful Rust backend build')
+ process.exit(1)
 }
 
 const built = join(crate, 'target', 'release', exe)

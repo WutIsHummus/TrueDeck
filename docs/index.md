@@ -101,7 +101,7 @@ On quit, TrueDeck saves `session-layout.json` (tabs, multi-pane tree, active pro
 
 ## Memory (automatic)
 
-You do not manage a memory badge. On project open and agent spawn, TrueDeck ensures `.memory/`, refreshes `.truedeck/auto-context.md`, injects env paths, and optionally warms MemPalace. Details: [Memory providers](/memory-providers).
+You do not manage a memory badge. On project open and agent spawn, TrueDeck ensures `.memory/`, refreshes `.truedeck/auto-context.md`, injects env paths, and warms MemPalace when configured. Details: [Memory providers](/memory-providers).
 
 ## PTY backend
 

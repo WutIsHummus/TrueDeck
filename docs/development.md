@@ -7,8 +7,8 @@ Build and run TrueDeck from source. Product docs: [Getting started](./getting-st
 - **Node.js 20+**
 - **npm** (lockfile is npm)
 - **Git**
-- Optional: **Rust** + MSVC Build Tools (Windows) for native sidecars
-- Optional: agent CLIs you want to test (`claude`, `codex`, `cursor-agent`, …)
+- **Rust** + MSVC Build Tools (Windows) for `truedeck-backend`
+- Agent CLIs you want to test (`claude`, `codex`, `cursor-agent`, …)
 
 ## Clone and install
 
@@ -46,7 +46,7 @@ npm install
 
 TypeScript projects: `tsconfig.json`, `tsconfig.node.json`, `tsconfig.web.json`.
 
-## Optional Rust
+## Rust backend
 
 ### Full backend
 

@@ -60,7 +60,7 @@ export function defaultMemoryProviders(): MemoryProviderConfig[] {
  name: 'OpenMemory (Mem0)',
  enabled: false,
  description:
- 'Optional Mem0 OpenMemory MCP. Enable and set command after you install it.',
+ 'Mem0 OpenMemory MCP. Enable and set command after you install it.',
  // Placeholder - user fills in after install (npx / docker / binary)
  command: 'npx',
  args: ['-y', 'openmemory', 'mcp'],

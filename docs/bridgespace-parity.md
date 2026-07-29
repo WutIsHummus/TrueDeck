@@ -9,7 +9,7 @@ TrueDeck identity: **orchestrate vendor CLIs** (Grok, Codex, Claude, Cursor Agen
 | Layer | Role | Status |
 |-------|------|--------|
 | **TrueMemory** | Markdown under `.memory/` + global app-data notes | Shipped |
-| **MemPalace** | Graph/vector palace via native MCP | Shipped (optional native) |
+| **MemPalace** | Graph/vector palace via native MCP | Shipped (native) |
 | **Graphify** | Code/structure graph (`graphify-out/`) | **Automatic** (under the hood) |
 
 **User-facing:** memory and Graphify stay automatic. Choose which CLIs to keep wired (`syncedAgentIds`; default = all coding agents). TrueDeck injects MCP + memory into those CLIs on project open and agent launch, warms palace + graph, and refreshes the graph after agent work.
@@ -42,7 +42,7 @@ Agents still use all three when available via `.truedeck/auto-context.md` and en
 | 6 | Graph + dual memory in context | Done (auto-context / env) |
 | 7 | Run history | Done (task/run store; list via MCP) |
 | 8 | Layouts + review | Done (IPC/layouts; review via git tools) |
-| 9 | Browser / voice / SSH | Deferred (optional packs) |
+| 9 | Browser / voice / SSH | Deferred |
 
 **Deck actions are MCP-first** (`truedeck_launch`, pipelines, tasks) - no deck tools UI panel.
 

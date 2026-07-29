@@ -32,7 +32,7 @@ If the binary is missing, TrueDeck falls back to **TypeScript + node-pty**.
 
 ```powershell
 $env:TRUEDECK_BACKEND_BIN = "C:\path\to\truedeck-backend.exe"
-$env:TRUEDECK_DATA_DIR = "C:\path\to\TrueDeck\data" # optional; default = app userData/data
+$env:TRUEDECK_DATA_DIR = "C:\path\to\TrueDeck\data" # default = app userData/data
 ```
 
 ## Protocol

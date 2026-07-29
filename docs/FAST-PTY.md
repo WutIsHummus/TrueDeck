@@ -39,7 +39,7 @@ Electron main (TypeScript)
  ```
  or `node-pty` if the binary is missing.
 
-Optional override:
+Override:
 
 ```powershell
 $env:TRUEDECK_PTY_BIN = "C:\path\to\truedeck-pty.exe"

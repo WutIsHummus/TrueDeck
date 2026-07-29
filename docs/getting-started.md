@@ -20,7 +20,7 @@ Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `
 | Requirement | Notes |
 |-------------|--------|
 | **OS** | Windows x64 builds are published first; macOS / Linux when available |
-| **Agent CLIs** (optional) | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, … |
+| **Agent CLIs** | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, … |
 | **Node.js 20+** | Only for **building from source** (contributors) |
 | **Rust toolchain** (contributors) | Required to build the main `truedeck-backend` binary from source |
 
@@ -67,7 +67,7 @@ Memory is automatic after this: TrueDeck writes `.truedeck/auto-context.md`, ens
 ## First project
 
 1. Press **Ctrl+O** (or use **Project ▾** in the title bar).
-2. Choose a folder. TrueDeck stores it under app data as a project with optional on-open commands and default agents.
+2. Choose a folder. TrueDeck stores it under app data as a project with on-open commands and default agents.
 3. The folder name appears in the project menu (VS Code-style chevron + recents).
 
 Project metadata lives in app data (`projects.json`), not only inside the repo. Per-repo agent context still uses `.memory/` and `.truedeck/` under the project root.
@@ -80,7 +80,7 @@ Project metadata lives in app data (`projects.json`), not only inside the repo. 
 4. A PTY session opens in the active pane group. TrueDeck:
  - Resolves the CLI binary (never Cursor IDE for the Cursor agent)
  - Injects memory env vars
- - Optionally wraps the process in the [agent frame](./agent-frame.md)
+ - Wraps the process in the [agent frame](./agent-frame.md) when enabled
 
 If a CLI is missing, the palette / spawn error shows an install one-liner. Example for Cursor Agent on Windows:
 
@@ -88,7 +88,7 @@ If a CLI is missing, the palette / spawn error shows an install one-liner. Examp
 irm https://cursor.com/install?win=1 | iex
 ```
 
-## First task (optional)
+## First task
 
 1. Press **Ctrl+B** to open the task board.
 2. Create a task (title + details).

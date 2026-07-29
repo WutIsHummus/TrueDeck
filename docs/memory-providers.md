@@ -24,7 +24,7 @@ default path is fully automatic.
 |----------|---------|---------|------------|
 | **TrueMemory** | On (always) | No | Markdown in `.memory/` (per repo) + global app data |
 | **MemPalace** | On | **No** (native `mempalace-mcp`) | Graph/vector palace at `~/.mempalace/palace` |
-| **OpenMemory** | Off | Optional | Mem0 OpenMemory MCP - enable when installed |
+| **OpenMemory** | Off | Off by default | Mem0 OpenMemory MCP - enable when installed |
 
 ## Design rules
 
@@ -100,6 +100,6 @@ When agents start, TrueDeck can inject which memory layers are enabled (file pat
 
 1. Memory panel → uncheck **MemPalace**
 2. Keep **TrueMemory** for repo notes
-3. Optionally enable **OpenMemory** or a custom MCP
+3. Enable **OpenMemory** or a custom MCP when you use them
 
 No reinstall required.

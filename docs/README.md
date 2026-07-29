@@ -14,7 +14,7 @@ GitHub Pages deploys automatically via [`.github/workflows/docs.yml`](../.github
 
 ---
 
-**TrueDeck 0.3.x** - terminal-first multi-agent coding deck (Electron + React + xterm, optional Rust backend).
+**TrueDeck 0.3.x** - terminal-first multi-agent coding deck (Electron + React + xterm, Rust `truedeck-backend`).
 
 TrueDeck runs coding agent CLIs (Grok, Codex, Cursor Agent, Claude, Gemini, and more) as live terminal tabs with VS Code-style pane groups, automatic memory inject, a task board, and a unified MCP hub.
 
@@ -64,7 +64,7 @@ TrueDeck runs coding agent CLIs (Grok, Codex, Cursor Agent, Claude, Gemini, and 
 
 ## Version
 
-Documentation targets **TrueDeck 0.3.x** (`package.json` version `0.3.0`). Features described here match the Studio UI (`npm start`) unless noted otherwise for the optional TUI (`npm run tui`).
+Documentation targets **TrueDeck 0.3.x**. Features described here match the Studio UI (`npm start`) unless noted otherwise for the TUI (`npm run tui`).
 
 ## Repo map (quick)
 
@@ -76,7 +76,7 @@ TrueDeck/
  electron/shared/ # Shared TypeScript types
  resources/agent-frame/ # truedeck-frame.mjs
  resources/mcp-server/ # truedeck-mcp.mjs
- crates/ # Optional Rust backend / PTY
+ crates/ # Rust backend / PTY
  tui/ # Terminal-only deck
  docs/ # This documentation
 ```

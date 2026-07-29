@@ -20,7 +20,7 @@ Generated markdown at `.truedeck/auto-context.md` summarizing project memory poi
 
 ## Backend (Rust)
 
-Optional `truedeck-backend` sidecar owning PTY and related RPC. Falls back to TypeScript + node-pty. See [RUST-BACKEND.md](./RUST-BACKEND.md).
+Primary `truedeck-backend` process owning PTY and related RPC. See [RUST-BACKEND.md](./RUST-BACKEND.md).
 
 ## Tasks / launch
 
@@ -28,7 +28,7 @@ Task records + MCP launch (`truedeck_launch`) that dispatch to real agent PTYs. 
 
 ## Command session
 
-A PTY started from an on-open or ad-hoc shell command (`kind: 'command'`), not a named agent preset. Optionally framed only if `frameShellPanes` is on.
+A PTY started from an on-open or ad-hoc shell command (`kind: 'command'`), not a named agent preset. Framed only if `frameShellPanes` is on.
 
 ## Dispatch
 
@@ -52,7 +52,7 @@ Markdown notes under `.memory/` (repo) and the global memory directory. Always a
 
 ## MemPalace / palace
 
-Optional native memory backend (graph/vector “palace”). Path often `~/.mempalace/palace` or Settings `palacePath`. See [memory-providers.md](./memory-providers.md).
+Native memory backend (graph/vector palace) when enabled. Path often `~/.mempalace/palace` or Settings `palacePath`. See [memory-providers.md](./memory-providers.md).
 
 ## On-open command
 
@@ -92,15 +92,15 @@ A pane-tree node with direction (`row` / `column`), ratio, and two children. Cre
 
 ## Studio UI
 
-Electron + React + xterm interface (`npm start`). Contrasts with the optional Blessed TUI (`npm run tui`).
+Electron + React + xterm interface (`npm start`). Contrasts with the Blessed TUI (`npm run tui`).
 
 ## Task
 
-Kanban card (`Task`) with status, assignee agent, and optional session/run links.
+Kanban card (`Task`) with status, assignee agent, and session/run links when present.
 
 ## TUI
 
-1. TrueDeck’s optional terminal-only app mode 
+1. TrueDeck’s terminal-only app mode 
 2. Any agent’s full-screen terminal UI (Codex, Claude Code, …)
 
 ## Wing
