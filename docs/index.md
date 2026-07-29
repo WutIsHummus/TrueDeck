@@ -1,67 +1,45 @@
 ---
 layout: home
 title: TrueDeck
-titleTemplate: Terminal-first multi-agent deck
+titleTemplate: Agentic programming without the ops
 hero:
   name: TrueDeck
-  text: Terminal-first multi-agent coding deck
-  tagline: Run Grok, Codex, Cursor, Claude, and more as live terminal tabs - with pane groups, automatic memory, and shortcuts that work inside the TUI.
+  text: Agentic programming, without the ops
+  tagline: Run Grok, Codex, Cursor, Claude, and more side by side on the same project. Real agent CLIs, multi-pane studio, context handled for you.
   image:
-    src: /studio-preview.svg
-    alt: TrueDeck studio preview
+    src: /screenshot.png
+    alt: TrueDeck multi-pane studio with Grok, Codex, Claude, and Cursor
   actions:
     - theme: brand
+      text: Download
+      link: https://github.com/WutIsHummus/TrueDeck/releases
+    - theme: alt
       text: Get started
       link: /getting-started
     - theme: alt
-      text: User guide
-      link: /user-guide
-    - theme: alt
-      text: View on GitHub
+      text: GitHub
       link: https://github.com/WutIsHummus/TrueDeck
 features:
-  - title: Multi-agent tabs
-    details: Grok · Codex · Cursor · Claude · Gemini · Shell and more - each in its own live PTY tab.
-  - title: Pane groups
-    details: Split vertical or horizontal like VS Code. Drag tabs between groups; each group keeps its own tab strip.
-  - title: Shortcuts that work
-    details: Ctrl+T / Ctrl+D / Ctrl+Arrow and friends are claimed before the agent TUI, so they always reach TrueDeck.
-  - title: Automatic memory
-    details: Project notes and MCP wiring inject into your CLIs on open - no badge babysitting.
-  - title: Session restore
-    details: Reopen last project and respawn agent tabs after quit, including multi-pane layouts.
-  - title: MCP deck tools
-    details: Agents launch briefed CLIs via truedeck_launch and related hub tools from inside the terminal.
+  - icon: ⬡
+    title: Multi-agent by default
+    details: Several coding agents on one codebase at once, each in a live terminal tab, not a chat webview.
+  - icon: ⊞
+    title: A desk for agents
+    details: Split panes, focus, restore. Layout that stays out of the way while agents keep their own TUIs.
+  - icon: ◌
+    title: Memory you ignore
+    details: Project context and MCP wiring sync under the hood. No notes app, no memory dashboard, no Docker checklist.
+  - icon: ⌨
+    title: Shortcuts that stick
+    details: Ctrl+T, splits, and pane focus work even when an agent TUI has keyboard focus.
 ---
 
-## Download
+<div class="home-cta">
 
-Prebuilt apps (no clone required):
+### Install from Releases
 
-**[GitHub Releases](https://github.com/WutIsHummus/TrueDeck/releases)** - Windows installer + portable `.exe`.
+Do not clone the repo to run TrueDeck. Grab a build from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab, open a project, launch agents.
 
-## Develop from source
+[Getting started →](/getting-started) · [User guide →](/user-guide) · [Keyboard shortcuts →](/keyboard-shortcuts)
 
-```bash
-git clone https://github.com/WutIsHummus/TrueDeck.git
-cd TrueDeck
-npm install
-npm start
-```
-
-Requires **Node.js 20+**. Contributors only - end users should use Releases.
-
-## Where next
-
-| Goal | Page |
-|------|------|
-| First project & agent | [Getting started](/getting-started) |
-| Day-to-day Studio use | [User guide](/user-guide) |
-| Full shortcut table | [Keyboard shortcuts](/keyboard-shortcuts) |
-| Settings & paths | [Configuration](/configuration) |
-| How it works | [Architecture](/architecture) |
-| Something broke | [Troubleshooting](/troubleshooting) |
-
-## Version
-
-Documentation targets **TrueDeck 0.3.x**. The Studio UI (`npm start`) is the primary product; an optional terminal-only deck is available via `npm run tui`.
+</div>

@@ -12,11 +12,12 @@ const base = process.env.DOCS_BASE || '/'
 export default defineConfig({
  title: 'TrueDeck',
  description:
- 'Terminal-first multi-agent coding deck - Grok, Codex, Cursor, Claude with pane groups, automatic memory, and MCP.',
+ 'Agentic programming without the ops. Multi-agent coding deck for Grok, Codex, Cursor, Claude - real CLIs, panes, memory abstracted.',
  lang: 'en-US',
  cleanUrls: true,
  lastUpdated: true,
  base,
+ appearance: 'dark',
  ignoreDeadLinks: [
  // Repo root files are outside the docs source tree
  /LICENSE/,
@@ -27,15 +28,16 @@ export default defineConfig({
  ['link', { rel: 'icon', href: `${base}favicon.svg`, type: 'image/svg+xml' }],
  ['meta', { name: 'theme-color', content: '#0a0e14' }],
  ['meta', { property: 'og:type', content: 'website' }],
- ['meta', { property: 'og:title', content: 'TrueDeck Docs' }],
+ ['meta', { property: 'og:title', content: 'TrueDeck' }],
  [
  'meta',
  {
  property: 'og:description',
  content:
- 'Terminal-first multi-agent coding deck documentation - install, panes, agents, MCP, architecture.'
+ 'Agentic programming without the ops. Multi-agent deck, real CLIs, memory handled for you.'
  }
  ],
+ ['meta', { property: 'og:image', content: `${base}screenshot.png` }],
  ['meta', { name: 'twitter:card', content: 'summary_large_image' }]
  ],
 

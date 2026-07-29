@@ -29,14 +29,7 @@ Memory, MCP wiring, and project context are **handled for you**. No note apps to
 
 ## Download
 
-**Do not clone this repo to run the app.** Install from **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)**:
-
-| Asset | Platform | Notes |
-|-------|----------|--------|
-| `TrueDeck Setup 0.3.1.exe` | Windows x64 | Installer (recommended) |
-| `TrueDeck 0.3.1.exe` | Windows x64 | Portable - no install |
-
-macOS / Linux builds will appear in the same Releases tab when available.
+**Do not clone this repo to run the app.** Get installers and portable builds from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab.
 
 ## Docs
 
