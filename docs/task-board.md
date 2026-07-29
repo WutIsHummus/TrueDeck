@@ -96,7 +96,7 @@ Agents with the TrueDeck hub MCP can manage the shared store:
 
 | Tool | Purpose |
 |------|---------|
-| `truedeck_list_tasks` | List tasks (optional `projectRoot`) |
+| `truedeck_list_tasks` | List tasks (`projectRoot` when set) |
 | `truedeck_create_task` | Create card (does not auto-dispatch a PTY) |
 | `truedeck_update_task` | Patch title/body/status/assignee |
 

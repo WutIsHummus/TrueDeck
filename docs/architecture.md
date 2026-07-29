@@ -96,7 +96,7 @@ Runtime layout is a tree of **leaves** (groups with tab lists) and **splits** (`
 
 Persisted form (`SessionLayout`):
 
-- `version: 2` with optional `paneTree`
+- `version: 2` with `paneTree` when multi-pane is used
 - `tabs[]` as agent/command snapshots (not live PTY ids)
 - Indices map tree leaves back to restored session order
 

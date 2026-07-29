@@ -120,7 +120,7 @@ Configure on-open commands under Settings → **Project**.
 | `TRUEDECK_TASK_IDEA` | Idea line for frame |
 | `TRUEDECK_FRAME` | `1` when framed |
 | `TRUEDECK_FRAME_HEADER` | Header row count for frame |
-| `TRUEDECK_INTENT` | Optional intent/idea |
+| `TRUEDECK_INTENT` | Intent / idea when set |
 | `TERM_PROGRAM` | `TrueDeck` |
 
 ## Agents config

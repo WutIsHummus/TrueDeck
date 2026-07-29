@@ -41,10 +41,10 @@ When agents connect to **TrueDeck MCP Hub** (`truedeck-hub`), they can call:
 | Tool | Description |
 |------|-------------|
 | `truedeck_list_mcp` | List hub servers |
-| `truedeck_add_mcp` | Add/update a user MCP server; optional auto-sync (`sync` default true) |
+| `truedeck_add_mcp` | Add/update a user MCP server; auto-sync when `sync` is true (default) |
 | `truedeck_remove_mcp` | Remove user server + re-sync |
 | `truedeck_set_mcp_enabled` | Enable/disable user server + re-sync |
-| `truedeck_apply_mcp` | Force-sync hub into all CLI configs (optional `projectRoot` for `.mcp.json`) |
+| `truedeck_apply_mcp` | Force-sync hub into all CLI configs (`projectRoot` for repo `.mcp.json` when set) |
 | `truedeck_export_mcp` | Export unified map as JSON |
 | `truedeck_launch` | **Primary:** create goal + open live agent PTY in TrueDeck (app must be running) |
 | `truedeck_dispatch` | Dispatch an existing task id to a live PTY |

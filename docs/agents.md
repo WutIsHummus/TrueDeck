@@ -17,7 +17,7 @@ Defaults live in `electron/main/agents.ts` (merged with `agents.json` so new def
 | `opencode` | OpenCode | `opencode` | `npm install -g opencode-ai` |
 | `aider` | Aider | `aider` | `pip install aider-chat` |
 
-Each preset has `color`, `icon`, `description`, and optional `installCommand` for UI hints.
+Each preset has `color`, `icon`, `description`, and `installCommand` for UI hints when present.
 
 User overrides in `agents.json` may change names/colors; **command / args / install for built-ins prefer defaults** so the CLI-only Cursor policy stays enforced.
 
@@ -69,7 +69,7 @@ UI / task-dispatch
  → load agent preset
  → resolveAgentCommand
  → memory env (TRUEDECK_*)
- → maybeWrapAgentFrame (optional)
+ → maybeWrapAgentFrame (when agent frame is enabled)
  → PtyManager.spawn (rust or node-pty)
  → SessionInfo to renderer
 ```
