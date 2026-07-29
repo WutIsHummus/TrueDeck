@@ -105,8 +105,7 @@ Details: [Task board](./task-board.md).
 | `npm run tui` | Terminal-only deck |
 | `npm run build` | Production compile (`out/`) |
 | `npm run dist:win` | Windows installer (electron-builder) |
-| `npm run build:backend` | Build main Rust backend (`truedeck-backend`) |
-| `npm run build:pty` | Build legacy Rust PTY sidecar |
+| `npm run build:backend` | Build Rust backend (`truedeck-backend`) |
 
 ## Next steps
 

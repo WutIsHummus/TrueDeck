@@ -4,12 +4,6 @@ import { v4 as uuid } from 'uuid'
 import type { AgentPreset, SessionInfo } from '../shared/types'
 import { resolveAgentCommand } from './resolve-command'
 import { memoryEnv } from './memory-service'
-import {
- getRustPtyHost,
- shutdownRustPtyHost,
- type RustPtyHost,
- findRustPtyBinary
-} from './rust-pty-host'
 import { maybeWrapAgentFrame } from './agent-frame'
 
 // node-pty is a native module; require keeps electron-vite externalization happy
@@ -18,26 +12,23 @@ const pty = require('node-pty') as typeof import('node-pty')
 
 interface LiveSession {
  info: SessionInfo
- /** Present when using node-pty backend */
  proc?: IPty
- backend: 'node' | 'rust'
  /** Last applied size - skip no-op WINCH (agent TUIs clear+redraw on every resize) */
  cols?: number
  rows?: number
 }
 
-export type PtyBackendKind = 'node' | 'rust' | 'none'
+export type PtyBackendKind = 'node' | 'none'
 
 /**
- * PTY session manager - prefers Rust sidecar (`truedeck-pty`) when built,
- * otherwise falls back to node-pty (ConPTY).
+ * Emergency PTY manager using node-pty only.
+ * Primary sessions use Rust `truedeck-backend` via BackendBridge in index.ts.
+ * This path runs only when the Rust backend is unavailable.
  */
 export class PtyManager {
  private sessions = new Map<string, LiveSession>()
  private win: BrowserWindow | null = null
- private rust: RustPtyHost | null = null
  private backend: PtyBackendKind = 'none'
- private initPromise: Promise<void> | null = null
 
  setWindow(win: BrowserWindow | null): void {
  this.win = win
@@ -56,53 +47,18 @@ export class PtyManager {
  }
  }
 
- /** Which engine will host new sessions. */
  getBackend(): PtyBackendKind {
- return this.backend === 'none' ? (findRustPtyBinary() ? 'rust' : 'node') : this.backend
+ return this.backend === 'none' ? 'node' : this.backend
  }
 
- /** Ensure Rust host is probed once (non-blocking after first call). */
+ /** Mark node-pty as the active fallback engine. */
  async ensureBackend(): Promise<PtyBackendKind> {
- if (!this.initPromise) {
- this.initPromise = this.initBackend()
- }
- await this.initPromise
- return this.backend
- }
-
- private async initBackend(): Promise<void> {
- try {
- const host = await getRustPtyHost()
- if (host?.isReady) {
- this.rust = host
- this.backend = 'rust'
- host.onEvent((ev) => {
- if (ev.type === 'data') {
- // Carry incomplete UTF-8 across chunks (see RustPtyHost.decodeUtf8)
- const text = host.decodeUtf8(ev.id, ev.data_b64)
- if (text) this.safeSend('pty:data', { id: ev.id, data: text })
- } else if (ev.type === 'exit') {
- host.clearUtf8Carry(ev.id)
- const live = this.sessions.get(ev.id)
- if (live) {
- live.info.status = 'exited'
- live.info.exitCode = ev.code
- }
- this.sessions.delete(ev.id)
- this.safeSend('pty:exit', { id: ev.id, exitCode: ev.code })
- }
- })
- return
- }
- } catch {
- // fall through
- }
- this.rust = null
  this.backend = 'node'
  console.warn(
- '[pty] Rust PTY host unavailable - using node-pty emergency fallback. ' +
- 'Prefer shipping truedeck-backend / truedeck-pty.'
+ '[pty] Using node-pty fallback. Primary engine is Rust truedeck-backend - ' +
+ 'run `npm run build:backend` or install a release build.'
  )
+ return this.backend
  }
 
  list(): SessionInfo[] {
@@ -210,31 +166,7 @@ export class PtyManager {
  worktreeLabel
  }
 
- if (this.backend === 'rust' && this.rust) {
- try {
- // Strip undefined env values
- const cleanEnv: Record<string, string> = {}
- for (const [k, v] of Object.entries(env)) {
- if (typeof v === 'string') cleanEnv[k] = v
- }
- await this.rust.spawn({
- id,
- command: shell,
- args,
- cwd,
- cols,
- rows,
- env: cleanEnv
- })
- this.sessions.set(id, { info, backend: 'rust', cols, rows })
- this.safeSend('pty:spawned', info)
- return info
- } catch (err) {
- // One-shot fallback to node-pty for this spawn
- console.warn('[pty] rust spawn failed, falling back to node-pty', err)
- }
- }
-
+ this.backend = 'node'
  return this.spawnNode(info, shell, args, cwd, env, cols, rows)
  }
 
@@ -293,7 +225,7 @@ export class PtyManager {
  this.sessions.delete(id)
  })
 
- this.sessions.set(id, { info, proc, backend: 'node', cols, rows })
+ this.sessions.set(id, { info, proc, cols, rows })
  this.safeSend('pty:spawned', info)
  return info
  }
@@ -331,14 +263,6 @@ export class PtyManager {
  write(id: string, data: string): void {
  const live = this.sessions.get(id)
  if (!live) return
- if (live.backend === 'rust' && this.rust) {
- try {
- this.rust.write(id, data)
- } catch {
- // ignore
- }
- return
- }
  live.proc?.write(data)
  }
 
@@ -354,14 +278,6 @@ export class PtyManager {
  if (!force && live.cols === c && live.rows === r) return
  live.cols = c
  live.rows = r
- if (live.backend === 'rust' && this.rust) {
- try {
- this.rust.resize(id, c, r)
- } catch {
- // ignore
- }
- return
- }
  try {
  live.proc?.resize(c, r)
  } catch {
@@ -375,13 +291,6 @@ export class PtyManager {
  // Remove first so re-entrant dispose/exit handlers cannot double-kill
  this.sessions.delete(id)
  try {
- if (live.backend === 'rust' && this.rust) {
- try {
- this.rust.kill(id)
- } catch {
- // ignore
- }
- } else {
  const proc = live.proc
  live.proc = undefined
  if (proc) {
@@ -391,11 +300,9 @@ export class PtyManager {
  // ignore - ConPTY often already torn down on quit
  }
  try {
- // Some node-pty builds throw "Object has been destroyed" on second kill
  proc.kill('SIGKILL')
  } catch {
  // ignore
- }
  }
  }
  } catch {
@@ -421,14 +328,7 @@ export class PtyManager {
  }
  }
  this.sessions.clear()
- try {
- shutdownRustPtyHost()
- } catch {
- // ignore
- }
- this.rust = null
  this.backend = 'none'
- this.initPromise = null
  this.win = null
  } catch {
  // last-resort: never throw out of dispose during app.quit

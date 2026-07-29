@@ -31,7 +31,6 @@
  "dev:tui": "tsx tui/index.ts",
  "dev:gui": "electron-vite dev",
  "icons": "node tools/generate-icons.mjs",
- "build:pty": "node tools/build-rust-pty.mjs",
  "build:backend": "node tools/build-rust-backend.mjs",
  "build": "electron-vite build",
  "preview": "electron-vite preview",

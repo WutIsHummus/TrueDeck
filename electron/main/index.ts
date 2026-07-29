@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { ptyManager } from './pty-manager'
-import { findRustPtyBinary } from './rust-pty-host'
+
 import {
  getBackend,
  findBackendBinary,
@@ -851,12 +851,11 @@ function registerIpc(): void {
  }
  }
  const kind = await ptyManager.ensureBackend()
- return { backend: kind, rustBinary: findRustPtyBinary() || findBackendBinary() }
+ return { backend: kind, rustBinary: findBackendBinary() }
  })
  /**
  * Route I/O to the backend that actually owns the session.
- * Bug: rust backend ready + session spawned via ptyManager (restore / fallback)
- * used to swallow write/resize → TUI never got input or correct size.
+ * Primary: Rust truedeck-backend. Fallback: node-pty via PtyManager.
  */
  ipcMain.handle('sessions:write', async (_e, id: string, data: string) => {
  if (ptyManager.has(id)) {
@@ -868,7 +867,7 @@ function registerIpc(): void {
  await rustBackend.request('sessions.write', { id, data })
  return
  } catch {
- // not a rust session (or died) - try node/rust-pty host
+ // not a rust session (or died) - try node-pty host
  }
  }
  ptyManager.write(id, data)
@@ -1409,23 +1408,16 @@ app.whenReady().then(() => {
  mkdirSync(getGlobalDataDir(), { recursive: true })
  ensureGlobalMemory()
  registerIpc()
- // Rust truedeck-backend is the main session engine (always prefer).
- // node-pty / legacy truedeck-pty only if Rust cannot start.
+ // Rust truedeck-backend is the only primary session engine.
+ // node-pty is emergency fallback only (no truedeck-pty sidecar).
  void (async () => {
  rustBackend = await getBackend()
  if (rustBackend) {
  if (mainWindow) rustBackend.setWindow(mainWindow)
  return
  }
- console.warn(
- '[backend] Rust primary backend unavailable - emergency fallback path'
- )
- const b = await ptyManager.ensureBackend()
- console.warn(
- b === 'rust'
- ? '[pty] fallback engine: rust truedeck-pty (legacy sidecar)'
- : '[pty] fallback engine: node-pty (last resort)'
- )
+ console.warn('[backend] Rust primary backend unavailable - node-pty fallback only')
+ await ptyManager.ensureBackend()
  })()
  createWindow()
 

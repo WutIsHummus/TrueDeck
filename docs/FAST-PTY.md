@@ -4,13 +4,13 @@
 
 ## Architecture
 
+`truedeck-pty` is **removed from the runtime path**. Sessions use **`truedeck-backend`** only.
+
 | Layer | Role |
 |-------|------|
-| **truedeck-backend** | Primary session engine (preferred over this sidecar) |
-| **truedeck-pty** | Legacy PTY-only Rust sidecar; JSON-lines over stdio |
-| **rust-pty-host.ts** | Spawn sidecar, parse events, hand off to PtyManager |
-| **pty-manager.ts** | Session map, SessionInfo, IPC to renderer |
-| **node-pty** | Last-resort fallback native module |
+| **truedeck-backend** | Session engine (PTY + projects + settings RPC) |
+| **backend-bridge.ts** | Electron ↔ Rust JSON-RPC |
+| **pty-manager.ts** | node-pty emergency fallback only |
 
 ## Build the Rust host
 

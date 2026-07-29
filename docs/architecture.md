@@ -56,9 +56,8 @@ Single source for `AgentPreset`, `AppSettings`, `SessionInfo`, `SessionLayout`, 
 
 | Priority | Backend | Build | Docs |
 |----------|---------|-------|------|
-| **1 (primary)** | **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
-| 2 | truedeck-pty | `npm run build:pty` | [FAST-PTY.md](./FAST-PTY.md) |
-| 3 (last resort) | node-pty | npm postinstall | Built-in native module |
+| **Primary** | **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
+| Emergency only | node-pty | npm postinstall | Built-in native module |
 
 Env overrides:
 

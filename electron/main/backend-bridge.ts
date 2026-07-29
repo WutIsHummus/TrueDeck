@@ -1,6 +1,6 @@
 /**
  * Bridge from Electron IPC → Rust truedeck-backend (JSON-RPC over stdio).
- * Falls back to null when the binary is missing so legacy TS handlers can run.
+ * Primary session engine. Returns null only when the binary is missing.
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process'
 import { existsSync } from 'fs'
@@ -8,7 +8,7 @@ import { join } from 'path'
 import { app, BrowserWindow } from 'electron'
 import { createInterface, type Interface } from 'readline'
 import { getGlobalDataDir } from './paths'
-import { incompleteUtf8Tail } from './rust-pty-host'
+import { incompleteUtf8Tail } from './utf8-carry'
 
 type RpcResponse = {
   id: number
@@ -39,11 +39,6 @@ function candidateBinaries(): string[] {
     list.push(join(root, 'crates', 'truedeck-backend', 'target', 'release', name))
     list.push(join(root, 'crates', 'truedeck-backend', 'target', 'debug', name))
     list.push(join(root, 'resources', 'bin', name))
-  }
-  // Legacy pty binary name (if user only built pty)
-  const ptyName = process.platform === 'win32' ? 'truedeck-pty.exe' : 'truedeck-pty'
-  if (root) {
-    list.push(join(root, 'crates', 'truedeck-pty', 'target', 'release', ptyName))
   }
   return list
 }
