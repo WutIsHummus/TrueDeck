@@ -29,7 +29,7 @@ Memory, MCP wiring, and project context are **handled for you**. No note apps to
 
 ## Download
 
-**Do not clone this repo to run the app.** Get installers and portable builds from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab.
+Get installers and portable builds from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab.
 
 ## Docs
 
