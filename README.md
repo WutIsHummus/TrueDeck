@@ -37,17 +37,6 @@ Guides, shortcuts, agents, configuration, troubleshooting:
 
 **https://wutishummus.github.io/TrueDeck/**
 
-## Develop from source
-
-Contributors only. End users should use **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)**.
-
-```bash
-git clone https://github.com/WutIsHummus/TrueDeck.git
-cd TrueDeck
-npm install
-npm start
-```
-
 ## License
 
 MIT
