@@ -1,23 +1,26 @@
 /**
  * TrueDeck docs - dark terminal aesthetic on VitePress default theme.
+ * Brand accent: signature orange (#f0a050), not cyan.
  * No em dashes in copy (see .memory/context/writing-style.md).
  */
 :root {
-  --vp-c-brand-1: #22d3ee;
-  --vp-c-brand-2: #67e8f9;
-  --vp-c-brand-3: #06b6d4;
-  --vp-c-brand-soft: rgba(34, 211, 238, 0.14);
+  /* Signature orange */
+  --vp-c-brand-1: #f0a050;
+  --vp-c-brand-2: #ffc078;
+  --vp-c-brand-3: #d97706;
+  --vp-c-brand-soft: rgba(240, 160, 80, 0.14);
 
-  --vp-button-brand-bg: #0e7490;
-  --vp-button-brand-hover-bg: #0891b2;
-  --vp-button-brand-active-bg: #155e75;
+  --vp-button-brand-bg: #d97706;
+  --vp-button-brand-hover-bg: #f0a050;
+  --vp-button-brand-active-bg: #b45309;
+  --vp-button-brand-text: #0a0e14;
 
   --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #f0a050 10%, #22d3ee 70%);
+  --vp-home-hero-name-background: linear-gradient(120deg, #ffc078 10%, #f0a050 70%);
   --vp-home-hero-image-background-image: radial-gradient(
     ellipse 80% 60% at 70% 40%,
-    #f0a05033 0%,
-    #22d3ee18 45%,
+    #f0a05044 0%,
+    #f0a05018 45%,
     transparent 70%
   );
   --vp-home-hero-image-filter: blur(56px);
@@ -28,9 +31,14 @@
 }
 
 html:not(.dark) {
-  --vp-c-brand-1: #0e7490;
-  --vp-c-brand-2: #0891b2;
-  --vp-c-brand-3: #155e75;
+  --vp-c-brand-1: #c2410c;
+  --vp-c-brand-2: #ea580c;
+  --vp-c-brand-3: #9a3412;
+  --vp-c-brand-soft: rgba(194, 65, 12, 0.12);
+  --vp-button-brand-bg: #c2410c;
+  --vp-button-brand-hover-bg: #ea580c;
+  --vp-button-brand-active-bg: #9a3412;
+  --vp-button-brand-text: #fff;
 }
 
 .dark {
@@ -44,9 +52,18 @@ html:not(.dark) {
   --vp-c-text-1: #e2e8f0;
   --vp-c-text-2: #94a3b8;
   --vp-c-text-3: #64748b;
+
+  --vp-c-brand-1: #f0a050;
+  --vp-c-brand-2: #ffc078;
+  --vp-c-brand-3: #d97706;
+  --vp-c-brand-soft: rgba(240, 160, 80, 0.16);
+
+  --vp-button-brand-bg: #d97706;
+  --vp-button-brand-hover-bg: #f0a050;
+  --vp-button-brand-active-bg: #b45309;
 }
 
-/* Hero: agentic positioning, screenshot as product shot */
+/* Hero (if home layout used again) */
 .VPHero {
   padding-top: 48px !important;
 }
@@ -67,7 +84,6 @@ html:not(.dark) {
   line-height: 1.55;
 }
 
-/* Product screenshot (not a decorative SVG blob) */
 .VPHero .image-src {
   max-width: min(100%, 640px) !important;
   border-radius: 12px;
@@ -75,14 +91,13 @@ html:not(.dark) {
   box-shadow:
     0 0 0 1px #0006,
     0 24px 64px #000a,
-    0 0 80px #22d3ee14;
+    0 0 80px #f0a05018;
 }
 
 .VPHero .image-bg {
   opacity: 0.85;
 }
 
-/* Feature cards */
 .VPFeatures {
   padding-top: 12px !important;
 }
@@ -95,7 +110,7 @@ html:not(.dark) {
 }
 
 .VPFeature:hover {
-  border-color: #22d3ee55 !important;
+  border-color: #f0a05066 !important;
 }
 
 .VPFeature .icon {
@@ -112,14 +127,13 @@ html:not(.dark) {
   letter-spacing: -0.01em;
 }
 
-/* Home footer CTA strip */
 .home-cta {
   max-width: 52rem;
   margin: 2.5rem auto 4rem;
   padding: 1.75rem 1.5rem;
   border: 1px solid var(--vp-c-border);
   border-radius: 14px;
-  background: linear-gradient(160deg, #0c1520 0%, #070a0f 100%);
+  background: linear-gradient(160deg, #14100c 0%, #070a0f 100%);
   text-align: center;
 }
 
@@ -139,7 +153,6 @@ html:not(.dark) {
   font-weight: 600;
 }
 
-/* Code blocks feel more terminal */
 .vp-doc div[class*='language-'] {
   border: 1px solid var(--vp-c-border);
   border-radius: 10px;
@@ -150,18 +163,24 @@ html:not(.dark) {
   width: 100%;
 }
 
+.vp-doc a {
+  color: var(--vp-c-brand-1);
+}
+
+.vp-doc a:hover {
+  color: var(--vp-c-brand-2);
+}
+
 /* Brand accent on sidebar active */
 .VPSidebarItem.level-1.is-active > .item .link > .text,
 .VPSidebarItem.level-0.is-active > .item .link > .text {
   color: var(--vp-c-brand-1);
 }
 
-/* Doc footer nav */
 .VPDocFooter .pager-link {
   border-radius: 10px;
 }
 
-/* Kbd-like emphasis in docs */
 .vp-doc kbd {
   font-family: var(--vp-font-family-mono);
   font-size: 0.85em;

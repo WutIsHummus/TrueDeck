@@ -26,7 +26,7 @@ export default defineConfig({
 
  head: [
  ['link', { rel: 'icon', href: `${base}favicon.svg`, type: 'image/svg+xml' }],
- ['meta', { name: 'theme-color', content: '#0a0e14' }],
+ ['meta', { name: 'theme-color', content: '#f0a050' }],
  ['meta', { property: 'og:type', content: 'website' }],
  ['meta', { property: 'og:title', content: 'TrueDeck' }],
  [
