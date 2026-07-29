@@ -20,8 +20,8 @@ Memory, MCP wiring, and project context are **handled for you**. No note apps to
 
 ## Why TrueDeck
 
-| | |
-|--|--|
+| Feature | Description |
+| :--- | :--- |
 | **Agentic, multi-CLI** | Several agents on one codebase at once, each in its own live terminal |
 | **Abstracted memory** | Context and MCP sync run under the hood so you can ignore the plumbing |
 | **Real TUIs** | Grok, Claude, Codex, Cursor keep their own interfaces |
