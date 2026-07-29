@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/public/logo.png" width="112" height="112" alt="TrueDeck logo" />
+ <img src="docs/public/logo.png" width="112" height="112" alt="TrueDeck logo" />
 </p>
 
 # TrueDeck
@@ -11,7 +11,7 @@
 [![Docs](https://img.shields.io/badge/docs-GitHub%20Pages-22d3ee)](https://wutishummus.github.io/TrueDeck/)
 
 <p align="center">
-  <img src="docs/public/screenshot.png" alt="TrueDeck multi-pane studio with Grok, Codex, Claude, and Cursor" width="100%" />
+ <img src="docs/public/screenshot.png" alt="TrueDeck multi-pane studio with Grok, Codex, Claude, and Cursor" width="100%" />
 </p>
 
 ## Download
@@ -21,7 +21,7 @@
 | Asset | Platform | Notes |
 |-------|----------|--------|
 | `TrueDeck Setup 0.3.1.exe` | Windows x64 | Installer (recommended) |
-| `TrueDeck 0.3.1.exe` | Windows x64 | Portable — no install |
+| `TrueDeck 0.3.1.exe` | Windows x64 | Portable - no install |
 
 macOS / Linux builds will land in the same Releases tab when available.
 
@@ -33,7 +33,7 @@ Full guides (install, panes, shortcuts, agents, MCP, architecture, troubleshooti
 
 ## About
 
-TrueDeck is a thin Electron studio around real coding CLIs — not a chat webview. Agents keep their own TUIs; TrueDeck handles multi-pane layout, project folders, session restore, and memory/MCP wiring.
+TrueDeck is a thin Electron studio around real coding CLIs - not a chat webview. Agents keep their own TUIs; TrueDeck handles multi-pane layout, project folders, session restore, and memory/MCP wiring.
 
 | | |
 |--|--|

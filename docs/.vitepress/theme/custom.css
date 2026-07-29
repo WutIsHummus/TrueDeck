@@ -1,30 +1,30 @@
 /**
- * TrueDeck docs — dark terminal aesthetic on VitePress default theme.
+ * TrueDeck docs - dark terminal aesthetic on VitePress default theme.
  */
 :root {
-  --vp-c-brand-1: #22d3ee;
-  --vp-c-brand-2: #67e8f9;
-  --vp-c-brand-3: #06b6d4;
-  --vp-c-brand-soft: rgba(34, 211, 238, 0.14);
+ --vp-c-brand-1: #22d3ee;
+ --vp-c-brand-2: #67e8f9;
+ --vp-c-brand-3: #06b6d4;
+ --vp-c-brand-soft: rgba(34, 211, 238, 0.14);
 
-  --vp-button-brand-bg: #0e7490;
-  --vp-button-brand-hover-bg: #0891b2;
-  --vp-button-brand-active-bg: #155e75;
+ --vp-button-brand-bg: #0e7490;
+ --vp-button-brand-hover-bg: #0891b2;
+ --vp-button-brand-active-bg: #155e75;
 
-  --vp-home-hero-name-color: transparent;
-  --vp-home-hero-name-background: linear-gradient(120deg, #f0a050 10%, #22d3ee 70%);
-  --vp-home-hero-image-background-image: linear-gradient(135deg, #f0a05044 0%, #22d3ee33 100%);
-  --vp-home-hero-image-filter: blur(44px);
+ --vp-home-hero-name-color: transparent;
+ --vp-home-hero-name-background: linear-gradient(120deg, #f0a050 10%, #22d3ee 70%);
+ --vp-home-hero-image-background-image: linear-gradient(135deg, #f0a05044 0%, #22d3ee33 100%);
+ --vp-home-hero-image-filter: blur(44px);
 
-  --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
-    'Helvetica Neue', Arial, sans-serif;
-  --vp-font-family-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+ --vp-font-family-base: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+ 'Helvetica Neue', Arial, sans-serif;
+ --vp-font-family-mono: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
 }
 
 html:not(.dark) {
-  --vp-c-brand-1: #0e7490;
-  --vp-c-brand-2: #0891b2;
-  --vp-c-brand-3: #155e75;
+ --vp-c-brand-1: #0e7490;
+ --vp-c-brand-2: #0891b2;
+ --vp-c-brand-3: #155e75;
 }
 
 .dark {

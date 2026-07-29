@@ -5,9 +5,9 @@
 Built with [VitePress](https://vitepress.dev/). From the repo root:
 
 ```bash
-npm run docs:dev       # local server (port 5174)
-npm run docs:build     # output → docs/.vitepress/dist
-npm run docs:preview   # preview production build
+npm run docs:dev # local server (port 5174)
+npm run docs:build # output → docs/.vitepress/dist
+npm run docs:preview # preview production build
 ```
 
 GitHub Pages deploys automatically via [`.github/workflows/docs.yml`](../.github/workflows/docs.yml) on pushes to `docs/**` (enable **Settings → Pages → Source: GitHub Actions** once).

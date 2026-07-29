@@ -66,12 +66,12 @@ When you pick an agent or dispatch a task:
 
 ```
 UI / task-dispatch
-    → load agent preset
-    → resolveAgentCommand
-    → memory env (TRUEDECK_*)
-    → maybeWrapAgentFrame (optional)
-    → PtyManager.spawn (rust or node-pty)
-    → SessionInfo to renderer
+ → load agent preset
+ → resolveAgentCommand
+ → memory env (TRUEDECK_*)
+ → maybeWrapAgentFrame (optional)
+ → PtyManager.spawn (rust or node-pty)
+ → SessionInfo to renderer
 ```
 
 Environment always includes (among others):

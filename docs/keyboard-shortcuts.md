@@ -46,7 +46,7 @@ These change **terminal font size** (saved in settings), not Chromium page zoom.
 
 | Shortcut | Action |
 |----------|--------|
-| **Ctrl+=** or **Ctrl++** | Larger font (11–20px) |
+| **Ctrl+=** or **Ctrl++** | Larger font (11-20px) |
 | **Ctrl+-** | Smaller font |
 | **Ctrl+0** | Reset to 13px |
 
@@ -66,7 +66,7 @@ TrueDeck intentionally leaves many combos to the shell / agent TUI, for example:
 | Shortcut | Typical meaning |
 |----------|-----------------|
 | **Ctrl+C** | Interrupt / copy (agent-dependent) |
-| **Ctrl+A** | Start of line / agent TUI select-all — **not** the agent palette |
+| **Ctrl+A** | Start of line / agent TUI select-all - **not** the agent palette |
 | **Ctrl+L** | Clear / redraw (agent-dependent) |
 
 ## Settings cheatsheet

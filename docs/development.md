@@ -89,17 +89,17 @@ Outputs under `release/` (see `package.json` `build.directories.output`). Extra 
 ## Repo layout for contributors
 
 ```
-src/                    # Studio UI
-electron/main/          # Main process services
-electron/preload/       # IPC surface
+src/ # Studio UI
+electron/main/ # Main process services
+electron/preload/ # IPC surface
 electron/shared/types.ts
-resources/agent-frame/  # truedeck-frame.mjs
-resources/mcp-server/   # truedeck-mcp.mjs
+resources/agent-frame/ # truedeck-frame.mjs
+resources/mcp-server/ # truedeck-mcp.mjs
 crates/truedeck-backend/
 crates/truedeck-pty/
-tui/                    # Non-Electron deck
-tools/                  # icon generator, rust build helpers, MemPalace scripts
-docs/                   # Documentation site (this folder)
+tui/ # Non-Electron deck
+tools/ # icon generator, rust build helpers, MemPalace scripts
+docs/ # Documentation site (this folder)
 ```
 
 ## Coding notes

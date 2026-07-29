@@ -32,7 +32,7 @@ If the binary is missing, TrueDeck falls back to **TypeScript + node-pty**.
 
 ```powershell
 $env:TRUEDECK_BACKEND_BIN = "C:\path\to\truedeck-backend.exe"
-$env:TRUEDECK_DATA_DIR = "C:\path\to\TrueDeck\data"   # optional; default = app userData/data
+$env:TRUEDECK_DATA_DIR = "C:\path\to\TrueDeck\data" # optional; default = app userData/data
 ```
 
 ## Protocol
@@ -52,15 +52,15 @@ Methods: `sessions.*`, `projects.*`, `agents.*`, `settings.*`, `layout.*`, `memo
 
 ```
 crates/truedeck-backend/
-  src/
-    main.rs          # RPC loop
-    sessions.rs      # portable-pty
-    projects.rs
-    agents.rs
-    settings.rs
-    memory/
-    resolve.rs
-    protocol.rs
+ src/
+ main.rs # RPC loop
+ sessions.rs # portable-pty
+ projects.rs
+ agents.rs
+ settings.rs
+ memory/
+ resolve.rs
+ protocol.rs
 ```
 
 Legacy `crates/truedeck-pty` remains as a PTY-only experiment; prefer `truedeck-backend`.
