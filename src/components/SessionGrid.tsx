@@ -1,5 +1,7 @@
 import type { SessionInfo } from '../../electron/shared/types'
+import { sessionTabLabel, sessionTabTitle } from '../lib/session-label'
 import { TerminalPane } from './TerminalPane'
+import { CloseIcon } from './CloseIcon'
 
 interface Props {
   sessions: SessionInfo[]
@@ -55,6 +57,7 @@ export function SessionGrid({
             key={s.id}
             sessionId={s.id}
             visible={activeSessionId === s.id}
+            focused={activeSessionId === s.id}
           />
         ))}
       </div>
@@ -80,24 +83,30 @@ export function SessionGrid({
         >
           <div className="grid-cell-header" style={{ borderTopColor: s.color }}>
             <span className="dot" style={{ background: s.color }} />
-            <span className="grid-cell-title">{s.agentName}</span>
+            <span className="grid-cell-title" title={sessionTabTitle(s)}>
+              {sessionTabLabel(s)}
+            </span>
             {s.status === 'exited' && <span className="badge">exit</span>}
             <button
               type="button"
-              className="tab-close grid-close"
+              className="tab-close-btn grid-close"
               title="Close tab (Ctrl+W)"
-              aria-label={`Close ${s.agentName}`}
+              aria-label={`Close ${sessionTabLabel(s)}`}
               onClick={(e) => {
                 e.preventDefault()
                 e.stopPropagation()
                 onClose(s.id)
               }}
             >
-              ×
+              <CloseIcon size={10} />
             </button>
           </div>
           <div className="grid-cell-body">
-            <TerminalPane sessionId={s.id} visible />
+            <TerminalPane
+              sessionId={s.id}
+              visible
+              focused={activeSessionId === s.id}
+            />
           </div>
         </div>
       ))}

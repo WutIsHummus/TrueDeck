@@ -1,328 +1,225 @@
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
 import type { ProjectConfig } from '../../electron/shared/types'
-
-type StepId = 'welcome' | 'chrome' | 'repo' | 'agent' | 'done'
+import { AgentIcon } from './AgentIcon'
 
 interface Props {
-  open: boolean
-  projects: ProjectConfig[]
-  hasActiveProject: boolean
-  hasSessions: boolean
-  onAddProject: () => Promise<void>
-  onOpenProject: (p: ProjectConfig) => Promise<void>
-  onLaunchAgent: (id: string) => Promise<void>
-  onComplete: (skipped?: boolean) => void
-  shortPath: (p: string) => string
+ open: boolean
+ projects: ProjectConfig[]
+ hasActiveProject: boolean
+ activeProjectRoot?: string | null
+ preferredAgentId?: string | null
+ onAddProject: () => Promise<void>
+ onOpenProject: (p: ProjectConfig) => Promise<void>
+ onLaunchAgent: (id: string) => Promise<void>
+ onSetPreferredAgent: (id: string) => Promise<void>
+ /** Kept for App wiring; default palace path is applied by inject. */
+ onSetPalacePath?: (path: string) => Promise<void>
+ onInjectMemory: (
+ agentId: string,
+ projectRoot?: string,
+ palacePath?: string,
+ agentIds?: string[]
+ ) => Promise<string>
+ onSetSyncedAgents?: (ids: string[]) => Promise<void>
+ onComplete: (skipped?: boolean) => void
+ shortPath: (p: string) => string
 }
 
-const STEPS: StepId[] = ['welcome', 'chrome', 'repo', 'agent', 'done']
+const AGENTS = [
+ { id: 'claude', label: 'Claude' },
+ { id: 'grok', label: 'Grok' },
+ { id: 'cursor', label: 'Cursor' },
+ { id: 'codex', label: 'Codex' },
+ { id: 'gemini', label: 'Gemini' },
+ { id: 'shell', label: 'Shell' }
+] as const
 
 /**
- * First-run walkthrough: explain chrome, connect a repo, launch an agent.
+ * Minimal first-run: pick a default agent, optionally open a project, go.
+ * No multi-step wizard, memory path, or setup log.
  */
 export function Onboarding({
-  open,
-  projects,
-  hasActiveProject,
-  hasSessions,
-  onAddProject,
-  onOpenProject,
-  onLaunchAgent,
-  onComplete,
-  shortPath
+ open,
+ projects,
+ hasActiveProject,
+ activeProjectRoot,
+ preferredAgentId,
+ onAddProject,
+ onOpenProject,
+ onLaunchAgent,
+ onSetPreferredAgent,
+ onInjectMemory,
+ onSetSyncedAgents,
+ onComplete,
+ shortPath
 }: Props): JSX.Element | null {
-  const [step, setStep] = useState<StepId>('welcome')
-  const [busy, setBusy] = useState(false)
+ const [agentId, setAgentId] = useState(preferredAgentId || 'claude')
+ const [busy, setBusy] = useState(false)
+ const [error, setError] = useState<string | null>(null)
 
-  const idx = STEPS.indexOf(step)
-  const progress = ((idx + 1) / STEPS.length) * 100
+ if (!open) return null
 
-  const canNext = useMemo(() => {
-    if (step === 'repo') return hasActiveProject || projects.length > 0
-    if (step === 'agent') return hasSessions
-    return true
-  }, [step, hasActiveProject, hasSessions, projects.length])
+ const start = async (): Promise<void> => {
+ setBusy(true)
+ setError(null)
+ try {
+ await onSetPreferredAgent(agentId)
+ const syncIds =
+ agentId === 'shell'
+ ? []
+ : AGENTS.filter((a) => a.id !== 'shell').map((a) => a.id)
+ if (onSetSyncedAgents) await onSetSyncedAgents(syncIds)
 
-  if (!open) return null
+ // Wire memory quietly - defaults are fine; settings cover the rest
+ try {
+ await onInjectMemory(
+ agentId === 'shell' ? 'all' : agentId,
+ activeProjectRoot || undefined,
+ undefined,
+ syncIds.length ? syncIds : undefined
+ )
+ } catch {
+ // Non-fatal - user can still use the app
+ }
 
-  const go = (s: StepId): void => setStep(s)
-  const next = (): void => {
-    const i = STEPS.indexOf(step)
-    if (i < STEPS.length - 1) go(STEPS[i + 1])
-  }
-  const back = (): void => {
-    const i = STEPS.indexOf(step)
-    if (i > 0) go(STEPS[i - 1])
-  }
+ if (hasActiveProject && agentId !== 'shell') {
+ await onLaunchAgent(agentId)
+ }
 
-  return (
-    <div className="onboard-backdrop">
-      <div className="onboard" role="dialog" aria-label="Welcome to TrueDeck">
-        <div className="onboard-progress">
-          <div className="onboard-progress-bar" style={{ width: `${progress}%` }} />
-        </div>
+ onComplete(false)
+ } catch (e) {
+ setError(e instanceof Error ? e.message : String(e))
+ setBusy(false)
+ }
+ }
 
-        <header className="onboard-header">
-          <div className="onboard-logo">TRUEDECK</div>
-          <button type="button" className="onboard-skip" onClick={() => onComplete(true)}>
-            Skip
-          </button>
-        </header>
+ return (
+ <div className="onboard-backdrop">
+ <div className="onboard" role="dialog" aria-label="Welcome to TrueDeck">
+ <header className="onboard-header">
+ <span className="onboard-logo">TRUEDECK</span>
+ <button
+ type="button"
+ className="onboard-skip"
+ disabled={busy}
+ onClick={() => onComplete(true)}
+ >
+ Skip
+ </button>
+ </header>
 
-        <div className="onboard-body">
-          {step === 'welcome' && (
-            <div className="onboard-step">
-              <h1>Your agent deck</h1>
-              <p className="onboard-lead">
-                TrueDeck is a terminal-first workspace for AI coding agents — Grok, Codex, Cursor,
-                Claude — with <strong>automatic memory</strong>. No Docker memory setup. No note
-                panels to babysit.
-              </p>
-              <ul className="onboard-bullets">
-                <li>Connect a local repo (folder)</li>
-                <li>Open agents as tabs</li>
-                <li>Drag tabs, split, ship code</li>
-              </ul>
-              <button type="button" className="onboard-primary" onClick={next}>
-                Get started →
-              </button>
-            </div>
-          )}
+ <div className="onboard-body">
+ <p className="onboard-tagline">Multi-agent terminal deck</p>
 
-          {step === 'chrome' && (
-            <div className="onboard-step">
-              <h1>Quick map of the app</h1>
-              <p className="onboard-lead">
-                Nothing to click on this screen — just read, then hit <strong>Next</strong>.
-              </p>
+ <div className="onboard-section">
+ <div className="onboard-label">Memory and clients (automatic)</div>
+ <ul className="onboard-facts">
+ <li>
+ <strong>Memory.</strong> Project notes live in <code>.memory/</code>.
+ Context is written for you when you open a project and when an agent
+ starts. No badges to manage.
+ </li>
+ <li>
+ <strong>MCP hub.</strong> One server list syncs to Cursor, Claude Code,
+ Grok, Codex, and Gemini so tools match across CLIs.
+ </li>
+ <li>
+ <strong>Inject on start.</strong> Agents get project paths and memory
+ pointers via env and config files. You just pick a CLI and work.
+ </li>
+ </ul>
+ </div>
 
-              <ol className="onboard-guide">
-                <li>
-                  <div className="onboard-guide-label">
-                    <span className="onboard-sample">mem·auto</span>
-                  </div>
-                  <div>
-                    <strong>Status only</strong> — not a button. Means memory is automatic for your
-                    agents. You can ignore it.
-                  </div>
-                </li>
-                <li>
-                  <div className="onboard-guide-label">
-                    <span className="onboard-sample primary">+ agent</span>
-                  </div>
-                  <div>
-                    <strong>Start an AI agent here</strong> — opens a list (Grok, Codex, Cursor,
-                    Claude…). Also <kbd>Ctrl+A</kbd>.
-                  </div>
-                </li>
-                <li>
-                  <div className="onboard-guide-label">
-                    <span className="onboard-sample">⚙</span>
-                  </div>
-                  <div>
-                    <strong>Settings</strong> — font size, theme, on-open commands (like{' '}
-                    <code>rojo serve</code>). Also <kbd>Ctrl+S</kbd>.
-                  </div>
-                </li>
-                <li>
-                  <div className="onboard-guide-label">
-                    <span className="onboard-sample">project chip</span>
-                  </div>
-                  <div>
-                    <strong>Your folder</strong> — shows the connected repo path. Click it (or use{' '}
-                    <kbd>Ctrl+O</kbd>) to open a different one.
-                  </div>
-                </li>
-              </ol>
+ <div className="onboard-section">
+ <div className="onboard-label">Default agent</div>
+ <div className="onboard-chips">
+ {AGENTS.map((a) => (
+ <button
+ key={a.id}
+ type="button"
+ className={`onboard-chip ${agentId === a.id ? 'selected' : ''}`}
+ disabled={busy}
+ onClick={() => setAgentId(a.id)}
+ >
+ <AgentIcon agentId={a.id} size={12} />
+ {a.label}
+ </button>
+ ))}
+ </div>
+ </div>
 
-              <p className="muted" style={{ marginBottom: 16 }}>
-                Next step: connect a real project folder. After that you can launch an agent.
-              </p>
+ <div className="onboard-section">
+ <div className="onboard-label">Project</div>
+ {hasActiveProject && activeProjectRoot ? (
+ <p className="onboard-project-ok" title={activeProjectRoot}>
+ {shortPath(activeProjectRoot)}
+ </p>
+ ) : (
+ <>
+ {projects.length > 0 && (
+ <div className="onboard-recent">
+ {projects.slice(0, 4).map((p) => (
+ <button
+ key={p.id}
+ type="button"
+ className="onboard-recent-item"
+ disabled={busy}
+ onClick={() => {
+ void (async () => {
+ setBusy(true)
+ try {
+ await onOpenProject(p)
+ } finally {
+ setBusy(false)
+ }
+ })()
+ }}
+ >
+ <span className="name">{p.name}</span>
+ <span className="path">{shortPath(p.root)}</span>
+ </button>
+ ))}
+ </div>
+ )}
+ <button
+ type="button"
+ className="onboard-secondary"
+ disabled={busy}
+ onClick={() => {
+ void (async () => {
+ setBusy(true)
+ try {
+ await onAddProject()
+ } finally {
+ setBusy(false)
+ }
+ })()
+ }}
+ >
+ Open folder…
+ </button>
+ </>
+ )}
+ </div>
 
-              <div className="onboard-nav">
-                <button type="button" onClick={back}>
-                  ← Back
-                </button>
-                <button type="button" className="onboard-primary" onClick={next}>
-                  Got it — Next →
-                </button>
-              </div>
-            </div>
-          )}
+ {error && <p className="onboard-error">{error}</p>}
 
-          {step === 'repo' && (
-            <div className="onboard-step">
-              <h1>Connect a repo</h1>
-              <p className="onboard-lead">
-                TrueDeck works on <strong>local folders</strong> (git repos). Pick one to open —
-                agents run inside that directory.
-              </p>
+ <button
+ type="button"
+ className="onboard-primary"
+ disabled={busy}
+ onClick={() => void start()}
+ >
+ {busy ? 'Starting…' : hasActiveProject ? 'Start' : 'Start without project'}
+ </button>
 
-              {projects.length > 0 && (
-                <div className="onboard-repo-list">
-                  <div className="onboard-label">Your projects</div>
-                  {projects.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      className={`onboard-repo ${hasActiveProject ? '' : ''}`}
-                      disabled={busy}
-                      onClick={() => {
-                        void (async () => {
-                          setBusy(true)
-                          try {
-                            await onOpenProject(p)
-                          } finally {
-                            setBusy(false)
-                          }
-                        })()
-                      }}
-                    >
-                      <span className="name">{p.name}</span>
-                      <span className="path">{shortPath(p.root)}</span>
-                      <span className="cta">Open →</span>
-                    </button>
-                  ))}
-                </div>
-              )}
+ <p className="onboard-hints">
+ <kbd>Ctrl+T</kbd> new agent · <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+W</kbd> close
+ </p>
+ </div>
 
-              <button
-                type="button"
-                className="onboard-primary"
-                disabled={busy}
-                onClick={() => {
-                  void (async () => {
-                    setBusy(true)
-                    try {
-                      await onAddProject()
-                    } finally {
-                      setBusy(false)
-                    }
-                  })()
-                }}
-              >
-                {busy ? 'Opening…' : 'Browse for a folder…'}
-              </button>
-
-              {hasActiveProject && (
-                <p className="onboard-ok">✓ Project connected — continue when ready.</p>
-              )}
-
-              <div className="onboard-nav">
-                <button type="button" onClick={back}>
-                  ← Back
-                </button>
-                <button
-                  type="button"
-                  className="onboard-primary"
-                  disabled={!hasActiveProject}
-                  onClick={next}
-                >
-                  Next →
-                </button>
-              </div>
-            </div>
-          )}
-
-          {step === 'agent' && (
-            <div className="onboard-step">
-              <h1>Launch an agent</h1>
-              <p className="onboard-lead">
-                Open a coding agent in a tab. You can run several at once and drag tabs to reorder
-                or split.
-              </p>
-
-              <div className="onboard-agent-grid">
-                {(
-                  [
-                    { id: 'cursor', label: 'Cursor', hint: 'cursor-agent' },
-                    { id: 'grok', label: 'Grok', hint: 'Grok Build' },
-                    { id: 'codex', label: 'Codex', hint: 'OpenAI CLI' },
-                    { id: 'claude', label: 'Claude', hint: 'Claude Code' },
-                    { id: 'shell', label: 'Shell', hint: 'plain terminal' }
-                  ] as const
-                ).map((a) => (
-                  <button
-                    key={a.id}
-                    type="button"
-                    className="onboard-agent-card"
-                    disabled={busy || !hasActiveProject}
-                    onClick={() => {
-                      void (async () => {
-                        setBusy(true)
-                        try {
-                          await onLaunchAgent(a.id)
-                        } finally {
-                          setBusy(false)
-                        }
-                      })()
-                    }}
-                  >
-                    <span className="name">{a.label}</span>
-                    <span className="hint">{a.hint}</span>
-                  </button>
-                ))}
-              </div>
-
-              {hasSessions && (
-                <p className="onboard-ok">✓ Agent tab open — you’re ready to code.</p>
-              )}
-
-              <div className="onboard-nav">
-                <button type="button" onClick={back}>
-                  ← Back
-                </button>
-                <button
-                  type="button"
-                  className="onboard-primary"
-                  disabled={!hasSessions}
-                  onClick={next}
-                >
-                  Finish →
-                </button>
-              </div>
-              {!hasSessions && (
-                <p className="muted" style={{ marginTop: 8 }}>
-                  Launch any agent above to continue (or skip if tools aren’t installed yet).
-                </p>
-              )}
-              <button type="button" className="onboard-skip-inline" onClick={next}>
-                Skip agent for now
-              </button>
-            </div>
-          )}
-
-          {step === 'done' && (
-            <div className="onboard-step">
-              <h1>You’re set</h1>
-              <p className="onboard-lead">Quick map:</p>
-              <ul className="onboard-bullets">
-                <li>
-                  Shortcuts: hold <strong>Ctrl</strong>, then a letter
-                </li>
-                <li>
-                  <strong>A</strong> agents · <strong>O</strong> project · <strong>W</strong> close ·{' '}
-                  <strong>S</strong> settings · <strong>T</strong> next tab
-                </li>
-                <li>
-                  <code>mem·auto</code> = automatic memory (status only — ignore it)
-                </li>
-              </ul>
-              <p className="muted">
-                Example: hold Ctrl, tap <strong>A</strong> → agent list.
-              </p>
-              <button type="button" className="onboard-primary" onClick={() => onComplete(false)}>
-                Enter TrueDeck →
-              </button>
-            </div>
-          )}
-        </div>
-
-        <footer className="onboard-footer">
-          Step {idx + 1} of {STEPS.length}
-          {canNext ? '' : ''}
-        </footer>
-      </div>
-    </div>
-  )
+ <div className="onboard-rule" aria-hidden />
+ </div>
+ </div>
+ )
 }

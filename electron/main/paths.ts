@@ -22,6 +22,10 @@ export function getAgentsConfigPath(): string {
   return join(getGlobalDataDir(), 'agents.json')
 }
 
+export function getSessionLayoutPath(): string {
+  return join(getGlobalDataDir(), 'session-layout.json')
+}
+
 export function getRepoMemoryDir(projectRoot: string): string {
   return join(projectRoot, '.memory')
 }
