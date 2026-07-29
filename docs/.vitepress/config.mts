@@ -68,7 +68,6 @@ export default defineConfig({
  { text: 'Guide', link: '/' },
  { text: 'Get started', link: '/getting-started' },
  { text: 'Shortcuts', link: '/keyboard-shortcuts' },
- { text: 'Architecture', link: '/architecture' },
  {
  text: 'Reference',
  items: [
@@ -76,7 +75,6 @@ export default defineConfig({
  { text: 'MCP', link: '/mcp' },
  { text: 'Agents', link: '/agents' },
  { text: 'Memory', link: '/memory-providers' },
- { text: 'Glossary', link: '/glossary' },
  { text: 'Troubleshooting', link: '/troubleshooting' }
  ]
  },
@@ -114,20 +112,8 @@ export default defineConfig({
  { text: 'Agent chrome & frame', link: '/agent-frame' },
  { text: 'Configuration', link: '/configuration' },
  { text: 'MCP hub', link: '/mcp' },
- { text: 'Memory providers', link: '/memory-providers' }
- ]
- },
- {
- text: 'Internals',
- collapsed: false,
- items: [
- { text: 'Architecture', link: '/architecture' },
- { text: 'Fast PTY', link: '/FAST-PTY' },
- { text: 'Rust backend', link: '/RUST-BACKEND' },
- { text: 'Development', link: '/development' },
- { text: 'Troubleshooting', link: '/troubleshooting' },
- { text: 'Glossary', link: '/glossary' },
- { text: 'BridgeSpace parity', link: '/bridgespace-parity' }
+ { text: 'Memory providers', link: '/memory-providers' },
+ { text: 'Troubleshooting', link: '/troubleshooting' }
  ]
  }
  ]
