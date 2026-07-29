@@ -1,9 +1,3 @@
----
-# Keep old /guide links working
----
+# Guide
 
-# Introduction
-
-This page moved to the docs home.
-
-**[Continue to Introduction →](/)**
+**[Open the Guide →](/)**

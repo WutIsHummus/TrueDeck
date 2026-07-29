@@ -1409,20 +1409,23 @@ app.whenReady().then(() => {
  mkdirSync(getGlobalDataDir(), { recursive: true })
  ensureGlobalMemory()
  registerIpc()
- // Prefer full Rust backend; else node-pty / legacy TS modules
+ // Rust truedeck-backend is the main session engine (always prefer).
+ // node-pty / legacy truedeck-pty only if Rust cannot start.
  void (async () => {
  rustBackend = await getBackend()
  if (rustBackend) {
- console.log('[backend] rust truedeck-backend', rustBackend.version || '')
  if (mainWindow) rustBackend.setWindow(mainWindow)
- } else {
- const b = await ptyManager.ensureBackend()
- console.log(
- b === 'rust'
- ? '[pty] backend: rust (truedeck-pty legacy)'
- : '[pty] backend: node-pty (TS fallback)'
- )
+ return
  }
+ console.warn(
+ '[backend] Rust primary backend unavailable - emergency fallback path'
+ )
+ const b = await ptyManager.ensureBackend()
+ console.warn(
+ b === 'rust'
+ ? '[pty] fallback engine: rust truedeck-pty (legacy sidecar)'
+ : '[pty] fallback engine: node-pty (last resort)'
+ )
  })()
  createWindow()
 

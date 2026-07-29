@@ -1,48 +1,116 @@
-# Introduction
+# Guide
 
-**TrueDeck** is for agentic programming: run coding agents side by side on the same project without babysitting memory or ops.
+Day-to-day use of TrueDeck Studio. Install from **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** (do not clone the repo just to run the app). For first-time setup detail, see [Getting started](/getting-started).
 
-It is a terminal-first multi-agent deck (Electron + React + xterm, optional Rust backend). Put **Grok**, **Codex**, **Cursor Agent**, **Claude**, **Gemini**, and more in live terminal tabs with VS Code-style pane groups. Memory, MCP wiring, and project context stay under the hood so you can open a folder and ship.
-
-| Audience | Start here |
-|----------|------------|
-| New users | [Getting started](/getting-started) |
-| Daily use | [User guide](/user-guide) · [Keyboard shortcuts](/keyboard-shortcuts) |
-| Contributors | [Development](/development) · [Architecture](/architecture) |
-| Agents and tooling | [Agents](/agents) · [MCP](/mcp) · [Task board](/task-board) |
-
-## What TrueDeck is
-
-- **Agentic multi-CLI** - several agents on one codebase, each in a live PTY tab
-- **Studio UI** - thin chrome, almost all terminal (not a three-column IDE)
-- **Pane groups** - side-by-side or stacked; each group keeps its own tabs
-- **Abstracted memory** - context and MCP inject automatically; no notes dashboard to manage
-- **Session restore** - reopen last project and respawn agent tabs after quit
-
-## What it is not
-
-- Not a chat webview (agents keep their own TUIs)
-- Not a full IDE (open folders and run agents; no built-in file tree editor)
-- Not a memory product you operate (plumbing is automatic)
-
-## Download
-
-Install from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab. Do not clone the repo just to run the app.
-
-## Repo map
+## Studio UI layout
 
 ```
-TrueDeck/
-  src/                 # Studio UI (React + xterm + pane groups)
-  electron/main/       # PTY, tasks, MCP hub, memory, session restore
-  electron/preload/    # IPC bridge
-  electron/shared/     # Shared TypeScript types
-  resources/           # Icons, agent frame, MCP server
-  crates/              # Optional Rust backend / PTY
-  tui/                 # Terminal-only deck
-  docs/                # This documentation site
+┌─ title bar: icon · TRUEDECK · [Project ▾] · board · ⚙ · ? · window ─┐
+├─ layout toolbar: split hints · merge · + · clear ────────────────────┤
+├─ Group A tabs ──────────────┬─ Group B tabs ────────────────────────┤
+│  terminal                   │  terminal                              │
+│  (active agent)             │  (or stacked below)                    │
+└─────────────────────────────┴────────────────────────────────────────┘
 ```
 
-## License
+- **Project ▾** - recent projects and Open Folder (**Ctrl+O**)
+- **Board** - task board (**Ctrl+B**)
+- **⚙** - settings (**Ctrl+S**)
+- **?** - help / replay onboarding
+- **+** or **Ctrl+T** - agent palette
+- **Drag a tab** onto Left / Right / Top / Bottom zones to split panes; center drop joins a group
 
-MIT - see the [repository LICENSE](https://github.com/WutIsHummus/TrueDeck/blob/master/LICENSE).
+Almost all of the window is terminal chrome. TrueDeck is not a three-column IDE.
+
+## Projects
+
+A **project** is a folder TrueDeck tracks in app data (`projects.json`):
+
+| Field | Role |
+|-------|------|
+| `name` | Display name (usually folder basename) |
+| `root` | Absolute path |
+| `onOpenCommands` | Shell commands run as panes when you open the project |
+| `defaultAgents` | Preferred agent ids for that project |
+| `lastOpened` | Recents ordering |
+
+### Open / switch
+
+- **Ctrl+O** - native folder picker (adds project if new)
+- Project menu - switch among recents
+
+### On-open commands
+
+Settings → **Project** → On-open commands. Example: `rojo serve` as a shell pane when you open a Roblox repo. These are **not** agent presets; they spawn as command sessions and can be restored with the session layout.
+
+### Reopen last project
+
+Default: **on**. On launch, TrueDeck restores the last project and respawns saved tabs (capped). See [Session restore](#session-restore).
+
+## Tabs and sessions
+
+Each agent or command pane is a **session** (PTY):
+
+- Running sessions stream into an xterm instance
+- **Ctrl+W** closes the active tab
+- **Ctrl+Tab** / **Ctrl+Shift+Tab** cycles tabs inside the focused pane group
+- **Ctrl+1-9** jumps to tab index 1-9
+- **Ctrl+N** opens a plain **Shell** tab in the project root
+
+Sessions show agent name, color, and exit status when the process ends.
+
+## Pane groups (splits)
+
+| Action | Shortcut |
+|--------|----------|
+| Split vertical (side-by-side) | **Ctrl+D** |
+| Split horizontal (top/bottom) | **Ctrl+X** |
+| Merge all groups to one pane | **Ctrl+Alt+D** (or **Ctrl+Alt+X**) |
+
+You need at least two tabs (or two leaves) to split. Hard cap: **16** panes. Soft warning around 12 panes.
+
+Drag-and-drop zones:
+
+- **Left / Right / Top / Bottom** - create or target a split edge
+- **Center** - move the tab into that group
+
+Selecting a tab focuses its group without collapsing the other pane.
+
+## Task board
+
+**Ctrl+B** toggles the board. Create tasks, set status, assign an agent, and dispatch. Full detail: [Task board](/task-board).
+
+## Settings
+
+**Ctrl+S** opens Settings. Tabs:
+
+| Tab | Contents |
+|-----|----------|
+| **General** | Theme, memory abstraction notes, palace path, inject-on-start |
+| **MCP** | Unified MCP list, add/remove user servers, sync/export |
+| **Terminal** | Font size, layout mode, agent frame TUI, PTY engine label, shortcut hint |
+| **Project** | Current project name/path, on-open commands |
+| **Agents** | Agent list / reset presets |
+| **About** | Version, update check, replay onboarding |
+
+See [Configuration](/configuration).
+
+## Session restore
+
+On quit, TrueDeck saves `session-layout.json` (tabs, multi-pane tree, active project). On next launch it respawns those PTYs (max 16 tabs).
+
+## Memory (automatic)
+
+You do not manage a memory badge. On project open and agent spawn, TrueDeck ensures `.memory/`, refreshes `.truedeck/auto-context.md`, injects env paths, and optionally warms MemPalace. Details: [Memory providers](/memory-providers).
+
+## PTY backend
+
+**Rust (`truedeck-backend`) is the main backend** for sessions. `node-pty` is only an emergency fallback if the Rust binary is missing or fails to start.
+
+## Tips
+
+- Open a project before **Ctrl+T** / **Ctrl+N** / board dispatch
+- Prefer fewer simultaneous agent panes for machine load
+- Install CLIs system-wide so resolve finds them on `PATH`
+- On Windows, use `cursor-agent` install, not Cursor IDE shortcuts
+- Full shortcut list: [Keyboard shortcuts](/keyboard-shortcuts)

@@ -233,20 +233,35 @@ export class BackendBridge {
 
 let shared: BackendBridge | null = null
 
+/**
+ * Start the primary session backend: Rust `truedeck-backend`.
+ * This is the main engine; TS/node-pty is only an emergency fallback elsewhere.
+ */
 export async function getBackend(): Promise<BackendBridge | null> {
   if (shared?.isReady) return shared
-  if (!findBackendBinary()) return null
+  const bin = findBackendBinary()
+  if (!bin) {
+    console.error(
+      '[backend] truedeck-backend not found. Rust is the main backend - ' +
+        'run `npm run build:backend` or use a release that ships resources/bin/truedeck-backend.'
+    )
+    return null
+  }
   if (!shared) shared = new BackendBridge()
   if (!shared.start()) {
+    console.error('[backend] failed to start truedeck-backend at', bin)
     shared = null
     return null
   }
-  const ok = await shared.waitReady(3500)
+  // Give the native process a bit longer on cold Windows starts
+  const ok = await shared.waitReady(8000)
   if (!ok) {
+    console.error('[backend] truedeck-backend did not become ready in time')
     shared.shutdown()
     shared = null
     return null
   }
+  console.log('[backend] primary engine: rust truedeck-backend', shared.version || bin)
   return shared
 }
 

@@ -22,7 +22,7 @@ Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `
 | **OS** | Windows x64 builds are published first; macOS / Linux when available |
 | **Agent CLIs** (optional) | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, … |
 | **Node.js 20+** | Only for **building from source** (contributors) |
-| **Rust** (optional) | Only if you build `truedeck-backend` / `truedeck-pty` from source |
+| **Rust toolchain** (contributors) | Required to build the main `truedeck-backend` binary from source |
 
 > Tools like **Rojo** are not coding-agent CLIs. You can still run them as **on-open project commands** (Settings → Project) so they open as shell panes when you open that folder.
 
@@ -105,8 +105,8 @@ Details: [Task board](./task-board.md).
 | `npm run tui` | Terminal-only deck |
 | `npm run build` | Production compile (`out/`) |
 | `npm run dist:win` | Windows installer (electron-builder) |
-| `npm run build:backend` | Build optional Rust backend |
-| `npm run build:pty` | Build optional Rust PTY sidecar |
+| `npm run build:backend` | Build main Rust backend (`truedeck-backend`) |
+| `npm run build:pty` | Build legacy Rust PTY sidecar |
 
 ## Next steps
 

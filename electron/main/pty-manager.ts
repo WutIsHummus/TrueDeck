@@ -99,6 +99,10 @@ export class PtyManager {
  }
  this.rust = null
  this.backend = 'node'
+ console.warn(
+ '[pty] Rust PTY host unavailable - using node-pty emergency fallback. ' +
+ 'Prefer shipping truedeck-backend / truedeck-pty.'
+ )
  }
 
  list(): SessionInfo[] {

@@ -65,7 +65,7 @@ export default defineConfig({
  },
 
  nav: [
- { text: 'Introduction', link: '/' },
+ { text: 'Guide', link: '/' },
  { text: 'Get started', link: '/getting-started' },
  { text: 'Shortcuts', link: '/keyboard-shortcuts' },
  { text: 'Architecture', link: '/architecture' },
@@ -100,9 +100,8 @@ export default defineConfig({
  text: 'Start',
  collapsed: false,
  items: [
- { text: 'Introduction', link: '/' },
+ { text: 'Guide', link: '/' },
  { text: 'Getting started', link: '/getting-started' },
- { text: 'User guide', link: '/user-guide' },
  { text: 'Keyboard shortcuts', link: '/keyboard-shortcuts' }
  ]
  },

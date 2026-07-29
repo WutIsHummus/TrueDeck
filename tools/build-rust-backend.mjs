@@ -1,6 +1,7 @@
 /**
  * Build crates/truedeck-backend → resources/bin/truedeck-backend(.exe)
- * Skips cleanly if cargo is missing (app uses TS + node-pty fallback).
+ * Rust is the primary session backend. node-pty is emergency fallback only.
+ * Skips cleanly if cargo is missing (dev machines without Rust).
  */
 import { spawnSync } from 'child_process'
 import { existsSync, mkdirSync, copyFileSync } from 'fs'
@@ -32,8 +33,10 @@ function findCargo() {
 
 const cargo = findCargo()
 if (!cargo) {
- console.warn('[build:backend] cargo not found - skipping (TS/node-pty fallback).')
- console.warn(' Install https://rustup.rs then: npm run build:backend')
+ console.warn(
+ '[build:backend] cargo not found - cannot build primary Rust backend. ' +
+ 'Install https://rustup.rs then: npm run build:backend'
+ )
  process.exit(0)
 }
 
