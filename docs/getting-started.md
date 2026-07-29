@@ -2,43 +2,52 @@
 
 Get TrueDeck running, open a project, and launch your first coding agent.
 
+## Download (recommended)
+
+**End users should not clone the repo.** Install a prebuilt binary from GitHub Releases:
+
+**https://github.com/WutIsHummus/TrueDeck/releases**
+
+| Asset | Use |
+|-------|-----|
+| **TrueDeck Setup … .exe** | Windows installer (recommended) |
+| **TrueDeck … .exe** | Windows portable (no installer) |
+
+Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `claude`, `cursor-agent`, …).
+
 ## Requirements
 
 | Requirement | Notes |
 |-------------|--------|
-| **Node.js 20+** | Required for Electron, electron-vite, and the agent frame script |
-| **OS** | Windows, macOS, or Linux (Windows is the primary development target) |
-| **Agent CLIs** (optional) | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, `opencode`, `aider`, … |
-| **Rust** (optional) | Only if you build `truedeck-backend` or `truedeck-pty` - see [Rust backend](./RUST-BACKEND.md) and [Fast PTY](./FAST-PTY.md) |
+| **OS** | Windows x64 builds are published first; macOS / Linux when available |
+| **Agent CLIs** (optional) | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, … |
+| **Node.js 20+** | Only for **building from source** (contributors) |
+| **Rust** (optional) | Only if you build `truedeck-backend` / `truedeck-pty` from source |
 
 > Tools like **Rojo** are not coding-agent CLIs. You can still run them as **on-open project commands** (Settings → Project) so they open as shell panes when you open that folder.
 
-## Install
+## First launch (from a release)
+
+1. Install or run the `.exe` from Releases.
+2. Open a project (**Ctrl+O** or the project menu).
+3. Launch an agent (**Ctrl+T**).
+
+## Develop from source (contributors)
 
 ```bash
 git clone https://github.com/WutIsHummus/TrueDeck.git
 cd TrueDeck
 npm install
-```
-
-On Windows, open a terminal that has Node on `PATH` (PowerShell is fine). After `npm install`, native deps such as `node-pty` are linked via `electron-builder install-app-deps` (postinstall).
-
-## First launch
-
-### Studio UI (default)
-
-```bash
 npm start
 ```
 
-This runs `electron-vite dev` - Electron window with thin chrome and almost all of the area as terminals.
+| Command | What |
+|---------|------|
+| `npm start` | Studio UI (dev) |
+| `npm run tui` | Terminal-only deck |
+| `npm run dist:win` | Build Windows installer + portable |
 
-### Terminal-only deck
-
-```bash
-npm run tui
-```
-
+See [Development](./development) for packaging details.
 Runs the Blessed-based TUI (`tui/index.ts`) without Electron. Prefer Studio for pane groups, task board, and settings.
 
 ## First-run onboarding

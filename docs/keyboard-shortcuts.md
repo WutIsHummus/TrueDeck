@@ -38,7 +38,26 @@ Notes:
 
 - You need **2+ tabs** (or an existing multi-pane layout) to split.
 - Max **16** panes.
-- Split moves another tab into a new leaf relative to the focused group.
+- Split moves the **active** tab into a new leaf relative to the focused group.
+
+## Terminal font zoom
+
+These change **terminal font size** (saved in settings), not Chromium page zoom.
+
+| Shortcut | Action |
+|----------|--------|
+| **Ctrl+=** or **Ctrl++** | Larger font (11–20px) |
+| **Ctrl+-** | Smaller font |
+| **Ctrl+0** | Reset to 13px |
+
+## Agent TUI scroll (Grok, etc.)
+
+| Input | Action |
+|-------|--------|
+| **Mouse wheel** | Sent to the agent’s custom TUI scroll (mouse reporting) |
+| **Shift+wheel** | Host xterm scrollback (when available) |
+
+Native scrollbars are suppressed while the agent owns the wheel so reporting is not stolen.
 
 ## Terminal (not claimed)
 
@@ -47,21 +66,19 @@ TrueDeck intentionally leaves many combos to the shell / agent TUI, for example:
 | Shortcut | Typical meaning |
 |----------|-----------------|
 | **Ctrl+C** | Interrupt / copy (agent-dependent) |
-| **Ctrl+A** | Start of line / agent TUI select-all - **not** the agent palette |
+| **Ctrl+A** | Start of line / agent TUI select-all — **not** the agent palette |
 | **Ctrl+L** | Clear / redraw (agent-dependent) |
-
-Older README drafts mapped **Ctrl+A** to the agent palette and **Ctrl+T** to “next tab”; **0.3.x Studio code uses the table above** (`src/App.tsx`).
 
 ## Settings cheatsheet
 
 Settings → Terminal shows a short hint:
 
-> **T** new agent · **O** project · **W** close · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab
+> **T** new agent · **O** project · **W** close · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab · **+/-** font zoom
 
 ## Source of truth
 
 | Area | File |
 |------|------|
 | Global handlers | `src/App.tsx` |
-| xterm attach filter | `src/components/TerminalPane.tsx` |
-| UI titles | `TabBar`, `TaskBoard`, `SettingsMenu`, title-bar buttons |
+| xterm attach filter + wheel | `src/components/TerminalPane.tsx` |
+| UI titles | `TabBar`, chrome, Settings, title-bar buttons |

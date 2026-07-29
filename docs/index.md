@@ -34,7 +34,13 @@ features:
     details: Agents launch briefed CLIs via truedeck_launch and related hub tools from inside the terminal.
 ---
 
-## Quick install
+## Download
+
+Prebuilt apps (no clone required):
+
+**[GitHub Releases](https://github.com/WutIsHummus/TrueDeck/releases)** — Windows installer + portable `.exe`.
+
+## Develop from source
 
 ```bash
 git clone https://github.com/WutIsHummus/TrueDeck.git
@@ -43,8 +49,7 @@ npm install
 npm start
 ```
 
-Requires **Node.js 20+**. Windows is the primary development target; macOS and Linux work too.
-
+Requires **Node.js 20+**. Contributors only — end users should use Releases.
 ## Where next
 
 | Goal | Page |

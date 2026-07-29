@@ -512,10 +512,10 @@ export function SettingsMenu({
  <p className="hint">
  Shortcuts (hold <strong>Ctrl</strong>, then a letter):
  <br />
- <strong>T</strong> new agent · <strong>B</strong> board · <strong>O</strong> project ·{' '}
- <strong>W</strong> close · <strong>S</strong> settings · <strong>D</strong> v-split ·{' '}
- <strong>X</strong> h-split · <strong>←↑↓→</strong> panes · <strong>N</strong> shell ·{' '}
- <strong>1-9</strong> jump
+ <strong>T</strong> new agent · <strong>O</strong> project · <strong>W</strong> close ·{' '}
+ <strong>S</strong> settings · <strong>D</strong> v-split · <strong>X</strong> h-split ·{' '}
+ <strong>←↑↓→</strong> panes · <strong>N</strong> shell · <strong>1-9</strong> jump ·{' '}
+ <strong>+/−</strong> font zoom
  </p>
  <div className="settings-row">
  <span>PTY engine</span>
