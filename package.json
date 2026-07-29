@@ -7,135 +7,134 @@
  "license": "MIT",
  "homepage": "https://github.com/WutIsHummus/TrueDeck",
  "repository": {
- "type": "git",
- "url": "https://github.com/WutIsHummus/TrueDeck.git"
+  "type": "git",
+  "url": "https://github.com/WutIsHummus/TrueDeck.git"
  },
  "keywords": [
- "ai",
- "agents",
- "coding",
- "terminal",
- "electron",
- "codex",
- "claude",
- "grok",
- "cursor",
- "memory"
+  "ai",
+  "agents",
+  "coding",
+  "terminal",
+  "electron",
+  "codex",
+  "claude",
+  "grok",
+  "cursor",
+  "memory"
  ],
  "scripts": {
- "start": "electron-vite dev",
- "studio": "electron-vite dev",
- "tui": "tsx tui/index.ts",
- "gui": "electron-vite dev",
- "dev": "electron-vite dev",
- "dev:tui": "tsx tui/index.ts",
- "dev:gui": "electron-vite dev",
- "icons": "node tools/generate-icons.mjs",
- "build:backend": "node tools/build-rust-backend.mjs",
- "build": "electron-vite build",
- "preview": "electron-vite preview",
- "docs:dev": "vitepress dev docs",
- "docs:build": "vitepress build docs",
- "docs:preview": "vitepress preview docs",
- "dist": "npm run icons && npm run build:backend && npm run build && electron-builder --dir",
- "dist:win": "npm run icons && npm run build:backend && npm run build && electron-builder --win",
- "postinstall": "electron-builder install-app-deps"
+  "start": "electron-vite dev",
+  "studio": "electron-vite dev",
+  "tui": "tsx tui/index.ts",
+  "gui": "electron-vite dev",
+  "dev": "electron-vite dev",
+  "dev:tui": "tsx tui/index.ts",
+  "dev:gui": "electron-vite dev",
+  "icons": "node tools/generate-icons.mjs",
+  "build:backend": "node tools/build-rust-backend.mjs",
+  "build": "electron-vite build",
+  "preview": "electron-vite preview",
+  "docs:dev": "vitepress dev docs",
+  "docs:build": "vitepress build docs",
+  "docs:preview": "vitepress preview docs",
+  "dist": "npm run icons && npm run build:backend && npm run build && electron-builder --dir",
+  "dist:win": "npm run icons && npm run build:backend && npm run build && electron-builder --win",
+  "postinstall": "electron-builder install-app-deps"
  },
  "bin": {
- "truedeck": "./bin/truedeck.js"
+  "truedeck": "./bin/truedeck.js"
  },
  "dependencies": {
- "@types/blessed": "^0.1.27",
- "@xterm/addon-fit": "^0.10.0",
- "@xterm/addon-web-links": "^0.11.0",
- "blessed": "^0.1.81",
- "node-pty": "^1.0.0",
- "react": "^18.3.1",
- "react-dom": "^18.3.1",
- "uuid": "^11.1.0",
- "xterm": "^5.3.0",
- "zustand": "^5.0.3"
+  "@types/blessed": "^0.1.27",
+  "@xterm/addon-fit": "^0.10.0",
+  "@xterm/addon-web-links": "^0.11.0",
+  "blessed": "^0.1.81",
+  "react": "^18.3.1",
+  "react-dom": "^18.3.1",
+  "uuid": "^11.1.0",
+  "xterm": "^5.3.0",
+  "zustand": "^5.0.3"
  },
  "devDependencies": {
- "@resvg/resvg-js": "^2.6.2",
- "@types/react": "^18.3.18",
- "@types/react-dom": "^18.3.5",
- "@types/uuid": "^10.0.0",
- "@vitejs/plugin-react": "^4.3.4",
- "electron": "^34.0.0",
- "electron-builder": "^25.1.8",
- "electron-vite": "^2.3.0",
- "png-to-ico": "^3.0.2",
- "tsx": "^4.23.1",
- "typescript": "^5.7.3",
- "vite": "^5.4.14",
- "vitepress": "^1.6.3"
+  "@resvg/resvg-js": "^2.6.2",
+  "@types/react": "^18.3.18",
+  "@types/react-dom": "^18.3.5",
+  "@types/uuid": "^10.0.0",
+  "@vitejs/plugin-react": "^4.3.4",
+  "electron": "^34.0.0",
+  "electron-builder": "^25.1.8",
+  "electron-vite": "^2.3.0",
+  "png-to-ico": "^3.0.2",
+  "tsx": "^4.23.1",
+  "typescript": "^5.7.3",
+  "vite": "^5.4.14",
+  "vitepress": "^1.6.3"
  },
  "build": {
- "appId": "dev.truedeck.app",
- "productName": "TrueDeck",
- "directories": {
- "output": "release",
- "buildResources": "build"
- },
- "icon": "build/icon.png",
- "files": [
- "out/**/*",
- "package.json"
- ],
- "extraResources": [
- {
- "from": "resources/icon.ico",
- "to": "icon.ico"
- },
- {
- "from": "resources/icon.png",
- "to": "icon.png"
- },
- {
- "from": "resources/icon.svg",
- "to": "icon.svg"
- },
- {
- "from": "resources/bin",
- "to": "bin",
- "filter": [
- "**/*"
- ]
- },
- {
- "from": "resources/mcp-server",
- "to": "mcp-server",
- "filter": [
- "**/*"
- ]
- },
- {
- "from": "resources/agent-frame",
- "to": "agent-frame",
- "filter": [
- "**/*"
- ]
- }
- ],
- "win": {
- "icon": "build/icon.ico",
- "target": [
- "nsis",
- "portable"
- ]
- },
- "mac": {
- "icon": "build/icon.png",
- "target": [
- "dmg"
- ]
- },
- "linux": {
- "icon": "build/icon.png",
- "target": [
- "AppImage"
- ]
- }
+  "appId": "dev.truedeck.app",
+  "productName": "TrueDeck",
+  "directories": {
+   "output": "release",
+   "buildResources": "build"
+  },
+  "icon": "build/icon.png",
+  "files": [
+   "out/**/*",
+   "package.json"
+  ],
+  "extraResources": [
+   {
+    "from": "resources/icon.ico",
+    "to": "icon.ico"
+   },
+   {
+    "from": "resources/icon.png",
+    "to": "icon.png"
+   },
+   {
+    "from": "resources/icon.svg",
+    "to": "icon.svg"
+   },
+   {
+    "from": "resources/bin",
+    "to": "bin",
+    "filter": [
+     "**/*"
+    ]
+   },
+   {
+    "from": "resources/mcp-server",
+    "to": "mcp-server",
+    "filter": [
+     "**/*"
+    ]
+   },
+   {
+    "from": "resources/agent-frame",
+    "to": "agent-frame",
+    "filter": [
+     "**/*"
+    ]
+   }
+  ],
+  "win": {
+   "icon": "build/icon.ico",
+   "target": [
+    "nsis",
+    "portable"
+   ]
+  },
+  "mac": {
+   "icon": "build/icon.png",
+   "target": [
+    "dmg"
+   ]
+  },
+  "linux": {
+   "icon": "build/icon.png",
+   "target": [
+    "AppImage"
+   ]
+  }
  }
 }

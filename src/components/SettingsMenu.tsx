@@ -83,12 +83,10 @@ export function SettingsMenu({
  setPtyBackend(
  b.backend === 'rust'
  ? `Rust backend${b.version ? ` v${b.version}` : ''}`
- : b.backend === 'node'
- ? 'node-pty (TS fallback)'
- : 'probing…'
+ : 'unavailable'
  )
  } catch {
- setPtyBackend('unknown')
+ setPtyBackend('Rust backend required - run npm run build:backend')
  }
  })()
  }, [open])
@@ -519,16 +517,16 @@ export function SettingsMenu({
  </p>
  <div className="settings-row">
  <span>PTY engine</span>
- <span className="meta" title="Rust sidecar when built; else node-pty">
+ <span className="meta" title="Rust truedeck-backend (required)">
  {ptyBackend}
  </span>
  </div>
  <p className="hint">
- Native Rust host: install{' '}
+ Sessions use Rust <code>truedeck-backend</code> only. Contributors: install{' '}
  <a href="https://rustup.rs" target="_blank" rel="noreferrer">
  rustup
  </a>
- , free disk space, then <code>npm run build:pty</code>. See docs/FAST-PTY.md.
+ , then <code>npm run build:backend</code>.
  </p>
  </section>
  )}

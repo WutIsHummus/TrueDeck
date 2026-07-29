@@ -1,14 +1,23 @@
 import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
 import { join } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
-import { ptyManager } from './pty-manager'
-
 import {
  getBackend,
  findBackendBinary,
  shutdownBackend,
  type BackendBridge
 } from './backend-bridge'
+import {
+ setSessionsWindow,
+ requireRustBackend,
+ listSessions,
+ spawnAgent as rustSpawnAgent,
+ spawnCommand as rustSpawnCommand,
+ writeSession,
+ resizeSession,
+ killSession,
+ backendStatus
+} from './sessions-rust'
 import { loadAgents, saveAgents, getDefaultAgents } from './agents'
 import { probeAgents, resolveAgentCommand, clearResolveCache } from './resolve-command'
 import {
@@ -198,28 +207,14 @@ async function rustCall<T>(method: string, params: unknown = {}): Promise<T | nu
  try {
  return await rustBackend.request<T>(method, params)
  } catch (e) {
- console.warn(`[backend] ${method} failed, will try TS fallback`, e)
+ console.warn(`[backend] ${method} failed`, e)
  return null
  }
 }
 
-/**
- * Merge sessions from Rust backend + ptyManager.
- * UI spawn prefers truedeck-backend; restore/openProject often use ptyManager - 
- * either side alone is incomplete for persist / on-open dedupe.
- */
+/** Live sessions from the Rust backend only. */
 async function listLiveSessions(): Promise<SessionInfo[]> {
- const byId = new Map<string, SessionInfo>()
- for (const s of ptyManager.list()) {
- byId.set(s.id, s)
- }
- const viaRust = await rustCall<SessionInfo[]>('sessions.list', {})
- if (Array.isArray(viaRust)) {
- for (const s of viaRust) {
- if (s?.id) byId.set(s.id, s)
- }
- }
- return Array.from(byId.values())
+ return listSessions()
 }
 
 function resolveAppIcon(): string | undefined {
@@ -444,12 +439,12 @@ function createWindow(): void {
  return { action: 'deny' }
  })
 
- ptyManager.setWindow(mainWindow)
+ setSessionsWindow(mainWindow)
  rustBackend?.setWindow(mainWindow)
 
  mainWindow.on('closed', () => {
  try {
- ptyManager.setWindow(null)
+ setSessionsWindow(null)
  } catch {
  /* ignore */
  }
@@ -618,7 +613,7 @@ function registerIpc(): void {
  agent.installCommand ||
  `echo "No install command for ${agent.name}"`
  const isWin = process.platform === 'win32'
- const info = await ptyManager.spawnCommand({
+ const info = await rustSpawnCommand({
  projectRoot: opts.projectRoot,
  label: `install ${agent.name}`,
  command: isWin
@@ -626,6 +621,7 @@ function registerIpc(): void {
  : `echo "=== Install ${agent.name} CLI ==="; echo ""; echo "Run:"; echo '${install.replace(/'/g, `'\\''`)}'; echo ""; echo "Then re-open the agent palette in TrueDeck."; echo ""; printf "Type y to run install now: "; read ans; if [ "$ans" = "y" ]; then ${install}; else echo Skipped.; fi`,
  color: agent.color
  })
+ mainWindow?.webContents.send('pty:spawned', info)
  return { alreadyInstalled: false, session: info, installCommand: install }
  }
  )
@@ -780,8 +776,7 @@ function registerIpc(): void {
  }
  void maybeWrapAgentFrame
 
- // Prefer Rust backend with absolute (possibly frame-wrapped) command
- const viaRust = await rustCall('sessions.spawn', {
+ const viaRust = await rustSpawnAgent({
  projectRoot: opts.projectRoot,
  agentId: opts.agentId,
  cols: opts.cols,
@@ -792,7 +787,6 @@ function registerIpc(): void {
  color: agent.color,
  env: extraEnv
  })
- if (viaRust) {
  const taskId =
  typeof extraEnv.TRUEDECK_TASK === 'string' ? extraEnv.TRUEDECK_TASK : undefined
  const withFocus = {
@@ -814,14 +808,6 @@ function registerIpc(): void {
  mainWindow?.webContents.send('pty:spawned', withFocus)
  return withFocus
  }
- return ptyManager.spawn({
- projectRoot: opts.projectRoot,
- agent: { ...agent, command: spawnCommand, args: spawnArgs },
- cols: opts.cols,
- rows: opts.rows,
- extraEnv
- })
- }
  )
  ipcMain.handle(
  'sessions:spawnCommand',
@@ -829,67 +815,24 @@ function registerIpc(): void {
  _e,
  opts: { projectRoot: string; label: string; command: string; color?: string; cols?: number; rows?: number }
  ) => {
- const viaRust = await rustCall('sessions.spawnCommand', opts)
- if (viaRust) {
- mainWindow?.webContents.send('pty:spawned', viaRust)
- return viaRust
- }
- return ptyManager.spawnCommand(opts)
+ const info = await rustSpawnCommand(opts)
+ mainWindow?.webContents.send('pty:spawned', info)
+ return info
  }
  )
- ipcMain.handle('sessions:list', async () => {
- const viaRust = await rustCall<unknown[]>('sessions.list', {})
- if (viaRust) return viaRust
- return ptyManager.list()
- })
+ ipcMain.handle('sessions:list', async () => listSessions())
  ipcMain.handle('sessions:backend', async () => {
- if (rustBackend?.isReady) {
- return {
- backend: 'rust' as const,
- rustBinary: findBackendBinary(),
- version: rustBackend.version
- }
- }
- const kind = await ptyManager.ensureBackend()
- return { backend: kind, rustBinary: findBackendBinary() }
+ await requireRustBackend()
+ return backendStatus()
  })
- /**
- * Route I/O to the backend that actually owns the session.
- * Primary: Rust truedeck-backend. Fallback: node-pty via PtyManager.
- */
+ /** Session I/O - Rust backend only. */
  ipcMain.handle('sessions:write', async (_e, id: string, data: string) => {
- if (ptyManager.has(id)) {
- ptyManager.write(id, data)
- return
- }
- if (rustBackend?.isReady) {
- try {
- await rustBackend.request('sessions.write', { id, data })
- return
- } catch {
- // not a rust session (or died) - try node-pty host
- }
- }
- ptyManager.write(id, data)
+ await writeSession(id, data)
  })
  ipcMain.handle(
  'sessions:resize',
- async (_e, id: string, cols: number, rows: number, force?: boolean) => {
- const forceWinch = force === true
- if (ptyManager.has(id)) {
- ptyManager.resize(id, cols, rows, forceWinch)
- return
- }
- if (rustBackend?.isReady) {
- try {
- // Backend always applies; no skip-same-size on the wire
- await rustBackend.request('sessions.resize', { id, cols, rows })
- return
- } catch {
- // fall through
- }
- }
- ptyManager.resize(id, cols, rows, forceWinch)
+ async (_e, id: string, cols: number, rows: number, _force?: boolean) => {
+ await resizeSession(id, cols, rows)
  }
  )
  ipcMain.handle('sessions:kill', async (_e, id: string) => {
@@ -900,29 +843,14 @@ function registerIpc(): void {
  }
  const sid = id.trim()
  try {
- const live =
- ptyManager.list().find((s) => s.id === sid) ||
- (await listLiveSessions()).find((s) => s.id === sid)
+ const live = (await listLiveSessions()).find((s) => s.id === sid)
  endRun(sid, -1)
  taskOnSessionExit(sid, -1)
  if (live?.projectRoot) scheduleGraphifySync(live.projectRoot, 'update')
  } catch {
  // ignore
  }
- if (ptyManager.has(sid)) {
- ptyManager.kill(sid)
- return
- }
- if (rustBackend?.isReady) {
- try {
- await rustBackend.request('sessions.kill', { id: sid })
- return
- } catch {
- // fall through
- }
- }
- // Last resort: only this id (ptyManager.kill no-ops if missing)
- ptyManager.kill(sid)
+ await killSession(sid)
  })
 
  // ── Tasks (BridgeBoard) ──
@@ -969,11 +897,14 @@ function registerIpc(): void {
  ipcMain.handle('runs:list', (_e, opts?: { projectRoot?: string; taskId?: string; limit?: number }) =>
  listRuns(opts)
  )
- ipcMain.handle('tasks:onSessionExit', (_e, sessionId: string, exitCode?: number) => {
+ ipcMain.handle('tasks:onSessionExit', async (_e, sessionId: string, exitCode?: number) => {
  endRun(sessionId, exitCode)
- const live = ptyManager.list().find((s) => s.id === sessionId)
- const root = live?.projectRoot
- if (root) scheduleGraphifySync(root, 'update')
+ try {
+ const live = (await listLiveSessions()).find((s) => s.id === sessionId)
+ if (live?.projectRoot) scheduleGraphifySync(live.projectRoot, 'update')
+ } catch {
+ /* ignore */
+ }
  return taskOnSessionExit(sessionId, exitCode)
  })
 
@@ -995,7 +926,8 @@ function registerIpc(): void {
  // Trust renderer sessionOrder + tabs[]; do not append orphan live PTYs
  // (that desynced paneTree indices and collapsed multi-pane on next launch).
  // live is optional - when missing (sync quit), renderer tabs are enough.
- const sessions = live ?? ptyManager.list()
+ // Prefer explicit live list; on sync quit renderer tabs alone are enough
+ const sessions = live ?? []
  const built = layoutFromPersistSnapshot(
  snapshot || ({} as PersistSnapshot),
  sessions
@@ -1027,8 +959,8 @@ function registerIpc(): void {
 
  /** Respawn tabs from the last saved layout (app restart). Hard-capped. */
  ipcMain.handle('sessions:restore', async () => {
- // Always go through TS path so MAX_SAVED_TABS clamp applies (Rust may lag).
- // Still prefer Rust for actual PTY spawn when available via ptyManager.
+ // TS clamp + Rust-only PTY spawn
+ await requireRustBackend()
  const layout = loadSessionLayout()
  if (!layout.tabs.length) {
  return { layout, sessions: [] as SessionInfo[], restored: 0 }
@@ -1043,7 +975,6 @@ function registerIpc(): void {
  /** Original saved tab index → index in `sessions` (skips failed spawns). */
  const oldToNew = new Map<number, number>()
  const rootsWarmed = new Set<string>()
- // Snapshot once; spawn path below uses ptyManager so new ids appear in `sessions`.
  let backendLive = await listLiveSessions()
 
  for (let ti = 0; ti < layout.tabs.length; ti++) {
@@ -1085,12 +1016,13 @@ function registerIpc(): void {
  }
  continue
  }
- const info = await ptyManager.spawnCommand({
+ const info = await rustSpawnCommand({
  projectRoot: tab.projectRoot,
  label: tab.agentName || 'cmd',
  command: tab.commandLine || 'echo restored',
  color: tab.color
  })
+ mainWindow?.webContents.send('pty:spawned', info)
  oldToNew.set(ti, sessions.length)
  sessions.push(info)
  continue
@@ -1112,11 +1044,18 @@ function registerIpc(): void {
  continue
  }
  const { env } = onAgentSpawnFast(tab.projectRoot)
- const info = await ptyManager.spawn({
+ const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
+ if (!resolved.available) throw new Error(`${agent.name} not available`)
+ const info = await rustSpawnAgent({
  projectRoot: tab.projectRoot,
- agent,
- extraEnv: env
+ agentId: agent.id,
+ command: resolved.command,
+ args: resolved.args,
+ agentName: agent.name,
+ color: agent.color,
+ env
  })
+ mainWindow?.webContents.send('pty:spawned', info)
  oldToNew.set(ti, sessions.length)
  sessions.push(info)
  } catch {
@@ -1190,12 +1129,13 @@ function registerIpc(): void {
  console.log(`[openProject] skip on-open "${cmd.label}" - already running`)
  continue
  }
- const info = await ptyManager.spawnCommand({
+ const info = await rustSpawnCommand({
  projectRoot: project.root,
  label: cmd.label,
  command: cmd.command,
  color: '#3b82f6'
  })
+ mainWindow?.webContents.send('pty:spawned', info)
  launched.push(info.id)
  liveHere.push(info)
  }
@@ -1212,11 +1152,18 @@ function registerIpc(): void {
  console.log(`[openProject] skip default agent "${agentId}" - already running`)
  continue
  }
- const info = await ptyManager.spawn({
+ const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
+ if (!resolved.available) continue
+ const info = await rustSpawnAgent({
  projectRoot: project.root,
- agent,
- extraEnv: env
+ agentId: agent.id,
+ command: resolved.command,
+ args: resolved.args,
+ agentName: agent.name,
+ color: agent.color,
+ env
  })
+ mainWindow?.webContents.send('pty:spawned', info)
  launched.push(info.id)
  liveHere.push(info)
  }
@@ -1408,16 +1355,21 @@ app.whenReady().then(() => {
  mkdirSync(getGlobalDataDir(), { recursive: true })
  ensureGlobalMemory()
  registerIpc()
- // Rust truedeck-backend is the only primary session engine.
- // node-pty is emergency fallback only (no truedeck-pty sidecar).
+ // Rust truedeck-backend is required (no node-pty fallback).
  void (async () => {
+ try {
  rustBackend = await getBackend()
  if (rustBackend) {
- if (mainWindow) rustBackend.setWindow(mainWindow)
- return
+ setSessionsWindow(mainWindow)
+ console.log('[backend] ready')
+ } else {
+ console.error(
+ '[backend] truedeck-backend failed to start - sessions will not work until it is available'
+ )
  }
- console.warn('[backend] Rust primary backend unavailable - node-pty fallback only')
- await ptyManager.ensureBackend()
+ } catch (e) {
+ console.error('[backend] startup error', e)
+ }
  })()
  createWindow()
 
@@ -1464,32 +1416,11 @@ function persistAndDisposeSessions(): void {
  if (shuttingDown) return
  shuttingDown = true
  try {
- // Drop renderer refs first so kill/dispose never IPC into a dead window
- try {
- ptyManager.setWindow(null)
- } catch {
- /* ignore */
- }
- const live = ptyManager.list()
+ setSessionsWindow(null)
  // Renderer owns full paneTree + sessionOrder via sessions:persist.
- // layoutFromLiveSessions reorders tabs by PTY map iteration and desyncs
- // paneTree indices - only fill disk if nothing was ever saved.
- // Never overwrite a non-empty layout with empty live (Rust sessions are
- // not in ptyManager - that used to wipe session-layout.json on quit).
- if (live.length > 0) {
- const prev = loadSessionLayout()
- if (!prev.tabs.length) {
- saveSessionLayout(layoutFromLiveSessions(live, prev))
- }
- // else: leave renderer's last snapshot intact
- }
+ // Do not rebuild layout from live PTY order on quit.
  } catch {
  // ignore
- }
- try {
- ptyManager.dispose()
- } catch {
- // never surface "Object has been destroyed" as a main-process dialog
  }
 }
 

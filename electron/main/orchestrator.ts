@@ -151,10 +151,10 @@ async function waitForSessionExit(
  sessionId: string,
  timeoutMs = 2 * 60 * 60 * 1000
 ): Promise<number | undefined> {
- const { ptyManager } = await import('./pty-manager')
+ const { listSessions } = await import('./sessions-rust')
  const start = Date.now()
  while (Date.now() - start < timeoutMs) {
- const live = ptyManager.list().find((s) => s.id === sessionId)
+ const live = (await listSessions()).find((s) => s.id === sessionId)
  if (!live || live.status !== 'running') {
  return live?.exitCode
  }

@@ -9,7 +9,7 @@ TrueDeck is a desktop app: **Electron main** owns processes and data, **preload*
 | **Renderer** (`src/`) | React, zustand store, xterm panes, TaskBoard, Settings |
 | **IPC** | `contextBridge` / preload (`window.truedeck`) |
 | **Electron main** (`electron/main/`) | App lifecycle, pty-manager, tasks, mcp-hub, memory, agents, session layout |
-| **Session engine** | **Rust `truedeck-backend`** (primary); `node-pty` only if Rust cannot start |
+| **Session engine** | **Rust `truedeck-backend`** (required) |
 | **Agents** | Real CLIs in ConPTY / PTY under the project root |
 
 ## Process roles
@@ -54,10 +54,9 @@ Single source for `AgentPreset`, `AppSettings`, `SessionInfo`, `SessionLayout`, 
 
 ## PTY backends
 
-| Priority | Backend | Build | Docs |
-|----------|---------|-------|------|
-| **Primary** | **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
-| Emergency only | node-pty | npm postinstall | Built-in native module |
+| Backend | Build | Docs |
+|---------|-------|------|
+| **truedeck-backend** | `npm run build:backend` | [RUST-BACKEND.md](./RUST-BACKEND.md) |
 
 Env overrides:
 

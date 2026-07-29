@@ -5,7 +5,8 @@
 import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { loadAgents } from './agents'
-import { ptyManager } from './pty-manager'
+import { resolveAgentCommand } from './resolve-command'
+import { spawnAgent as rustSpawnAgent, writeSession } from './sessions-rust'
 import { onAgentSpawnFast } from './memory-service'
 import { getTask, attachRun, updateTask } from './tasks'
 import { startRun } from './runs'
@@ -186,10 +187,18 @@ export async function dispatchTask(
  ...(opts?.pipelineRunId ? { TRUEDECK_PIPELINE_RUN: opts.pipelineRunId } : {})
  }
 
- const session = await ptyManager.spawn({
+ const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
+ if (!resolved.available) {
+ throw new Error(`${agent.name} CLI not available`)
+ }
+ const session = await rustSpawnAgent({
  projectRoot: cwd,
- agent,
- extraEnv
+ agentId: agent.id,
+ command: resolved.command,
+ args: resolved.args,
+ agentName: agent.name,
+ color: agent.color,
+ env: extraEnv
  })
  // Keep session metadata pointing at main project for board filters
  session.projectRoot = task.projectRoot
@@ -227,7 +236,7 @@ export async function dispatchTask(
  try {
  const payload =
  process.platform === 'win32' ? seed.replace(/\n/g, '\r') + '\r' : seed + '\n'
- ptyManager.write(session.id, payload)
+ void writeSession(session.id, payload)
  } catch {
  // ignore
  }

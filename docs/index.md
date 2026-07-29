@@ -117,7 +117,7 @@ You do not manage a memory badge. On project open and agent spawn, TrueDeck ensu
 
 ## PTY backend
 
-**Rust (`truedeck-backend`) is the session backend.** `node-pty` is only an emergency fallback if the Rust binary is missing or fails to start.
+**Rust (`truedeck-backend`) is the session backend.** There is no node-pty fallback.
 
 ## Tips
 

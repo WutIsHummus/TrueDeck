@@ -174,7 +174,7 @@ async function executeCommand(cmd: DeckCommand): Promise<DeckCommand> {
 
 /**
  * Poll pending queue and execute. Returns stop fn.
- * Sessions are spawned via ptyManager (emits pty:spawned to renderer).
+ * Sessions are spawned via the Rust backend (emits pty:spawned to renderer).
  */
 export function startDeckCommandWorker(opts?: {
  onSession?: (session: SessionInfo) => void
