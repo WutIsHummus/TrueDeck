@@ -28,7 +28,7 @@ TrueDeck is a desktop app: **Electron main** owns processes and data, **preload*
 | `memory-service.ts` / `memory-providers.ts` / `mempalace.ts` | Auto-context, env inject, providers |
 | `agent-frame.ts` | Wrap spawn in `truedeck-frame.mjs` when enabled |
 | `backend-bridge.ts` | JSON-RPC stdio to `truedeck-backend` |
-| `rust-pty-host.ts` | JSON-lines host for `truedeck-pty` |
+| `utf8-carry.ts` | Shared UTF-8 chunk decoding for ConPTY streams |
 | `paths.ts` | App data and memory directory helpers |
 | `projects.ts` | Project list CRUD |
 | `first-run.ts` / `onboarding.ts` | First-run / onboarding flow |
@@ -64,7 +64,7 @@ Env overrides:
 | Variable | Purpose |
 |----------|---------|
 | `TRUEDECK_BACKEND_BIN` | Path to `truedeck-backend` executable |
-| `TRUEDECK_PTY_BIN` | Path to `truedeck-pty` executable |
+
 | `TRUEDECK_DATA_DIR` | Override app data directory (also used by hub MCP) |
 
 Every session gets terminal identity env: `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=TrueDeck`.

@@ -29,7 +29,7 @@ npm install
 | `npm run build` | Production compile → `out/` |
 | `npm run preview` | electron-vite preview |
 | `npm run icons` | Regenerate PNG/ICO from `resources/icon.svg` |
-| `npm run build:pty` | Build `truedeck-pty` → `resources/bin/` |
+
 | `npm run build:backend` | Build `truedeck-backend` → `resources/bin/` |
 | `npm run dist` | icons + backend + build + electron-builder `--dir` |
 | `npm run dist:win` | Windows NSIS + portable installer |
@@ -61,8 +61,8 @@ Details: [RUST-BACKEND.md](./RUST-BACKEND.md).
 ### PTY-only sidecar
 
 ```bash
-npm run build:pty
-# log: [pty] backend: rust (truedeck-pty)
+npm run build:backend
+# log: [backend] primary engine: rust truedeck-backend
 ```
 
 Details: [FAST-PTY.md](./FAST-PTY.md).
@@ -96,7 +96,7 @@ electron/shared/types.ts
 resources/agent-frame/ # truedeck-frame.mjs
 resources/mcp-server/ # truedeck-mcp.mjs
 crates/truedeck-backend/
-crates/truedeck-pty/
+
 tui/ # Non-Electron deck
 tools/ # icon generator, rust build helpers, MemPalace scripts
 docs/ # Documentation site (this folder)

@@ -67,4 +67,4 @@ crates/truedeck-backend/
  protocol.rs
 ```
 
-Legacy `crates/truedeck-pty` remains as a PTY-only experiment; prefer `truedeck-backend`.
+Use `truedeck-backend` only. The old `truedeck-pty` sidecar is no longer used at runtime.

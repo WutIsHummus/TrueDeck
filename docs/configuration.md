@@ -95,7 +95,7 @@ Configure on-open commands under Settings → **Project**.
 |----------|---------|
 | `TRUEDECK_DATA_DIR` | Override app data directory |
 | `TRUEDECK_BACKEND_BIN` | Path to `truedeck-backend` executable |
-| `TRUEDECK_PTY_BIN` | Path to `truedeck-pty` executable |
+
 | `SHELL` | Unix shell for shell agent |
 | `TERM` / `COLORTERM` | Inherited; TrueDeck sets defaults on spawn if missing |
 
