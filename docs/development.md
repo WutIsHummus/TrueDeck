@@ -99,8 +99,7 @@ Extra resources include:
 [`.github/workflows/release.yml`](../.github/workflows/release.yml) packages on:
 
 - **windows-latest** → Windows x64
-- **macos-latest** → macOS arm64
-- **macos-13** → macOS x64
+- **macos-latest** → macOS arm64 (native) and macOS x64 (cross-compiled Electron + Rust target)
 
 Triggers:
 

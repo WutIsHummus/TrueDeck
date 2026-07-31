@@ -30,14 +30,18 @@ jobs:
             os: windows-latest
             electron_args: --win --x64
             artifact: TrueDeck-windows-x64
+            rust_target: ''
+          # Both Mac archs on macos-latest (arm64 host). Avoid macos-13 queue starvation.
           - name: macos-arm64
             os: macos-latest
             electron_args: --mac --arm64
             artifact: TrueDeck-macos-arm64
+            rust_target: ''
           - name: macos-x64
-            os: macos-13
+            os: macos-latest
             electron_args: --mac --x64
             artifact: TrueDeck-macos-x64
+            rust_target: x86_64-apple-darwin
 
     steps:
       - uses: actions/checkout@v4
@@ -57,8 +61,22 @@ jobs:
         run: npm run icons
 
       # Sidecar is gitignored; every packaged build must compile it for this OS/arch.
-      - name: Build Rust backend
+      - name: Build Rust backend (host)
+        if: matrix.rust_target == ''
         run: npm run build:backend
+
+      - name: Build Rust backend (cross-target)
+        if: matrix.rust_target != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup target add "${{ matrix.rust_target }}"
+          cargo build --release --target "${{ matrix.rust_target }}" \
+            --manifest-path crates/truedeck-backend/Cargo.toml
+          mkdir -p resources/bin
+          cp "crates/truedeck-backend/target/${{ matrix.rust_target }}/release/truedeck-backend" \
+            resources/bin/truedeck-backend
+          ls -la resources/bin/
 
       - name: Build Electron app
         run: npm run build
@@ -91,8 +109,11 @@ jobs:
     runs-on: ubuntu-latest
     # Tag push, or manual dispatch with an explicit release_tag.
     if: >
-      startsWith(github.ref, 'refs/tags/v') ||
-      (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+      always() &&
+      !cancelled() &&
+      (startsWith(github.ref, 'refs/tags/v') ||
+       (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')) &&
+      (needs.package.result == 'success' || needs.package.result == 'failure')
     steps:
       - name: Download all package artifacts
         uses: actions/download-artifact@v4
@@ -100,9 +121,20 @@ jobs:
           path: dist
           pattern: TrueDeck-*
           merge-multiple: true
+          # Allow partial matrix success so arm64 can ship if one arch fails.
+        continue-on-error: true
 
-      - name: List release files
-        run: find dist -type f | sort
+      - name: Require at least one asset
+        shell: bash
+        run: |
+          set -euo pipefail
+          count=$(find dist -type f 2>/dev/null | wc -l | tr -d ' ')
+          echo "Asset files: $count"
+          find dist -type f 2>/dev/null | sort || true
+          if [[ "${count}" -lt 1 ]]; then
+            echo "No package artifacts downloaded"
+            exit 1
+          fi
 
       - name: Create or update GitHub Release
         uses: softprops/action-gh-release@v2
