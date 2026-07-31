@@ -43,6 +43,8 @@
   "docs:preview": "vitepress preview docs",
   "dist": "npm run icons && npm run build:backend && npm run build && electron-builder --dir",
   "dist:win": "npm run icons && npm run build:backend && npm run build && electron-builder --win",
+  "dist:mac": "npm run icons && npm run build:backend && npm run build && electron-builder --mac",
+  "dist:linux": "npm run icons && npm run build:backend && npm run build && electron-builder --linux",
   "postinstall": "electron-builder install-app-deps"
  },
  "bin": {
@@ -134,15 +136,20 @@
   },
   "mac": {
    "icon": "build/icon.png",
+   "category": "public.app-category.developer-tools",
    "target": [
-    "dmg"
-   ]
+    "dmg",
+    "zip"
+   ],
+   "hardenedRuntime": true,
+   "gatekeeperAssess": false
   },
   "linux": {
    "icon": "build/icon.png",
    "target": [
     "AppImage"
-   ]
+   ],
+   "category": "Development"
   }
  }
 }

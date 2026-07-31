@@ -12,6 +12,8 @@ Get TrueDeck running, open a project, and launch your first coding agent.
 |-------|-----|
 | **TrueDeck Setup … .exe** | Windows installer (recommended) |
 | **TrueDeck … .exe** | Windows portable (no installer) |
+| **TrueDeck-…-arm64.dmg** / **…-x64.dmg** | macOS disk image (Apple Silicon / Intel) |
+| **TrueDeck-…-arm64.zip** / **…-x64.zip** | macOS app zip (same arch choices) |
 
 Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `claude`, `cursor-agent`, …).
 
@@ -19,7 +21,7 @@ Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `
 
 | Requirement | Notes |
 |-------------|--------|
-| **OS** | Windows x64 builds are published first; macOS / Linux when available |
+| **OS** | Windows x64; macOS arm64 (Apple Silicon) and x64 (Intel) from Releases |
 | **Agent CLIs** | Install the CLIs you want on `PATH`: `grok`, `codex`, `claude`, `gemini`, `cursor-agent`, … |
 | **Node.js 20+** | Only for **building from source** (contributors) |
 | **Rust toolchain** (contributors) | Required to build the main `truedeck-backend` binary from source |
@@ -28,9 +30,19 @@ Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `
 
 ## First launch (from a release)
 
+### Windows
+
 1. Install or run the `.exe` from Releases.
 2. Open a project (**Ctrl+O** or the project menu).
 3. Launch an agent (**Ctrl+T**).
+
+### macOS
+
+1. Download the **arm64** DMG if you have Apple Silicon, or **x64** for Intel Macs.
+2. Open the DMG and drag **TrueDeck** into Applications.
+3. First open: right-click the app → **Open** (builds are unsigned OSS; Gatekeeper may block a normal double-click once).
+   - If macOS still blocks it: `xattr -cr /Applications/TrueDeck.app` then open again.
+4. Open a project and launch an agent as on Windows.
 
 ## Develop from source (contributors)
 
@@ -46,6 +58,8 @@ npm start
 | `npm start` | Studio UI (dev) |
 | `npm run tui` | Terminal-only deck |
 | `npm run dist:win` | Build Windows installer + portable |
+| `npm run dist:mac` | Build macOS DMG + zip (run on a Mac) |
+| `npm run dist:linux` | Build Linux AppImage |
 
 See [Development](./development) for packaging details.
 Runs the Blessed-based TUI (`tui/index.ts`) without Electron. Prefer Studio for pane groups, task board, and settings.

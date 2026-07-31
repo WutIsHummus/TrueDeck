@@ -22,8 +22,14 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: npm ci
+
+      - name: Build Rust backend
+        run: npm run build:backend
 
       - name: Build
         run: npm run build
@@ -33,4 +39,63 @@ jobs:
         with:
           name: out-${{ matrix.os }}
           path: out/
+          retention-days: 7
+
+  # Smoke-test electron-builder packaging (unsigned) without publishing a release.
+  # Master only — full installers are heavy; PRs still compile backend + app above.
+  package:
+    name: Package smoke (${{ matrix.name }})
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main')
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            electron_args: --win --x64
+          - name: macos-arm64
+            os: macos-latest
+            electron_args: --mac --arm64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate icons
+        run: npm run icons
+
+      - name: Build Rust backend
+        run: npm run build:backend
+
+      - name: Build Electron app
+        run: npm run build
+
+      - name: Package
+        run: npx electron-builder ${{ matrix.electron_args }} --publish never
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.name }}
+          path: |
+            release/*
+            !release/*-unpacked/**
+            !release/mac/**
+            !release/mac-arm64/**
+            !release/win-unpacked/**
+          if-no-files-found: error
           retention-days: 7

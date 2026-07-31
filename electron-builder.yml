@@ -1,3 +1,5 @@
+# Secondary config; primary packaging lives in package.json "build".
+# Kept for CLI defaults (output dir, platform icons).
 appId: dev.truedeck.app
 productName: TrueDeck
 directories:
@@ -14,9 +16,17 @@ win:
     - portable
 mac:
   icon: resources/icon.svg
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  hardenedRuntime: true
+  gatekeeperAssess: false
 linux:
   icon: resources/icon.svg
-
+  target:
+    - AppImage
+  category: Development
 nsis:
   oneClick: false
   allowToChangeInstallationDirectory: true

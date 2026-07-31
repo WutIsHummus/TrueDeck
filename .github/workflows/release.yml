@@ -1,17 +1,44 @@
 name: Release
 
+# Package installers on Windows + macOS (and optionally attach to a GitHub Release).
+# Trigger: push tag v*  OR  workflow_dispatch (artifacts always; optional upload to a tag).
+
 on:
   push:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Existing release tag to attach assets to (e.g. v0.3.2). Leave empty for artifacts only.'
+        required: false
+        type: string
+        default: ''
 
 permissions:
   contents: write
 
 jobs:
-  release:
-    runs-on: windows-latest
+  package:
+    name: Package (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            electron_args: --win --x64
+            artifact: TrueDeck-windows-x64
+          - name: macos-arm64
+            os: macos-latest
+            electron_args: --mac --arm64
+            artifact: TrueDeck-macos-arm64
+          - name: macos-x64
+            os: macos-13
+            electron_args: --mac --x64
+            artifact: TrueDeck-macos-x64
+
     steps:
       - uses: actions/checkout@v4
 
@@ -20,32 +47,70 @@ jobs:
           node-version: 22
           cache: npm
 
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Generate icons
+        run: npm run icons
+
+      # Sidecar is gitignored; every packaged build must compile it for this OS/arch.
+      - name: Build Rust backend
+        run: npm run build:backend
+
+      - name: Build Electron app
         run: npm run build
 
-      - name: Package Windows
-        run: npx electron-builder --win --publish never
+      - name: Package
+        run: npx electron-builder ${{ matrix.electron_args }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Unsigned OSS builds (no Apple Developer cert in CI).
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
 
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          files: |
-            release/*.exe
-            release/*.yml
-            release/*.blockmap
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload artifacts (manual dispatch)
-        if: github.event_name == 'workflow_dispatch'
+      - name: Upload package artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: TrueDeck-windows
-          path: release/
+          name: ${{ matrix.artifact }}
+          path: |
+            release/*
+            !release/*-unpacked/**
+            !release/mac/**
+            !release/mac-arm64/**
+            !release/mac-universal/**
+            !release/win-unpacked/**
+            !release/linux-unpacked/**
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish GitHub Release
+    needs: package
+    runs-on: ubuntu-latest
+    # Tag push, or manual dispatch with an explicit release_tag.
+    if: >
+      startsWith(github.ref, 'refs/tags/v') ||
+      (github.event_name == 'workflow_dispatch' && inputs.release_tag != '')
+    steps:
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: TrueDeck-*
+          merge-multiple: true
+
+      - name: List release files
+        run: find dist -type f | sort
+
+      - name: Create or update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
+          files: |
+            dist/**
+          fail_on_unmatched_files: false
+          generate_release_notes: ${{ startsWith(github.ref, 'refs/tags/v') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

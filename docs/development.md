@@ -71,20 +71,44 @@ Without binaries, TypeScript + **node-pty** is the fallback.
 
 ## Packaging
 
-Windows example:
+Requires **Rust** (`cargo` on `PATH`) so `truedeck-backend` is compiled into `resources/bin/` (gitignored) before electron-builder packs it.
+
+| Script | Platform | Outputs (under `release/`) |
+|--------|----------|----------------------------|
+| `npm run dist:win` | Windows | NSIS installer + portable `.exe` |
+| `npm run dist:mac` | macOS | `.dmg` + `.zip` |
+| `npm run dist:linux` | Linux | `.AppImage` |
+| `npm run dist` | current OS | unpacked dir only (`--dir`) |
 
 ```bash
-npm run dist:win
+npm run dist:win   # on Windows
+npm run dist:mac   # on macOS
 ```
 
-Outputs under `release/` (see `package.json` `build.directories.output`). Extra resources include:
+Extra resources include:
 
-- `resources/bin` (native backends)
+- `resources/bin` (native `truedeck-backend` for that OS/arch)
 - `resources/mcp-server`
 - `resources/agent-frame`
 - icons
 
 `appId`: `dev.truedeck.app`.
+
+### CI / GitHub Releases
+
+[`.github/workflows/release.yml`](../.github/workflows/release.yml) packages on:
+
+- **windows-latest** → Windows x64
+- **macos-latest** → macOS arm64
+- **macos-13** → macOS x64
+
+Triggers:
+
+- Push a version tag (`v*`) → build all platforms and publish assets to that release
+- **workflow_dispatch** with `release_tag` (e.g. `v0.3.2`) → rebuild and attach assets to an existing release
+- **workflow_dispatch** without a tag → upload workflow artifacts only
+
+macOS CI builds are **unsigned** (`CSC_IDENTITY_AUTO_DISCOVERY=false`). Users may need right-click → Open or `xattr -cr` on first launch.
 
 ## Repo layout for contributors
 
