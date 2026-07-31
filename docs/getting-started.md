@@ -12,8 +12,8 @@ Get TrueDeck running, open a project, and launch your first coding agent.
 |-------|-----|
 | **TrueDeck Setup … .exe** | Windows installer (recommended) |
 | **TrueDeck … .exe** | Windows portable (no installer) |
-| **TrueDeck-…-arm64.dmg** / **…-x64.dmg** | macOS disk image (Apple Silicon / Intel) |
-| **TrueDeck-…-arm64.zip** / **…-x64.zip** | macOS app zip (same arch choices) |
+| **TrueDeck-…-arm64.dmg** | macOS Apple Silicon (M1/M2/M3/…) |
+| **TrueDeck-….dmg** (no arm64 in name) | macOS Intel (x64) |
 
 Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `claude`, `cursor-agent`, …).
 
@@ -58,7 +58,7 @@ npm start
 | `npm start` | Studio UI (dev) |
 | `npm run tui` | Terminal-only deck |
 | `npm run dist:win` | Build Windows installer + portable |
-| `npm run dist:mac` | Build macOS DMG + zip (run on a Mac) |
+| `npm run dist:mac` | Build macOS DMG (run on a Mac) |
 | `npm run dist:linux` | Build Linux AppImage |
 
 See [Development](./development) for packaging details.

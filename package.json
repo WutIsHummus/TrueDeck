@@ -138,8 +138,7 @@
    "icon": "build/icon.png",
    "category": "public.app-category.developer-tools",
    "target": [
-    "dmg",
-    "zip"
+    "dmg"
    ],
    "hardenedRuntime": true,
    "gatekeeperAssess": false

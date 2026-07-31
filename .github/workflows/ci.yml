@@ -92,10 +92,7 @@ jobs:
         with:
           name: package-${{ matrix.name }}
           path: |
-            release/*
-            !release/*-unpacked/**
-            !release/mac/**
-            !release/mac-arm64/**
-            !release/win-unpacked/**
+            release/*.exe
+            release/*.dmg
           if-no-files-found: error
           retention-days: 7

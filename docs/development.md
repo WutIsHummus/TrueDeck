@@ -76,7 +76,7 @@ Requires **Rust** (`cargo` on `PATH`) so `truedeck-backend` is compiled into `re
 | Script | Platform | Outputs (under `release/`) |
 |--------|----------|----------------------------|
 | `npm run dist:win` | Windows | NSIS installer + portable `.exe` |
-| `npm run dist:mac` | macOS | `.dmg` + `.zip` |
+| `npm run dist:mac` | macOS | `.dmg` only (arm64/x64) |
 | `npm run dist:linux` | Linux | `.AppImage` |
 | `npm run dist` | current OS | unpacked dir only (`--dir`) |
 
