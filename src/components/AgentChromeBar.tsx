@@ -247,36 +247,50 @@ export function AgentChromeBar({
  ? doc?.name || basename(session.documentPath || session.title || 'File')
  : `${agentName}${proj ? ` · ${proj}` : ''}`
  const minList = minimizedSessions.filter(Boolean)
- const showMinList = minList.length > 0 && !isDoc
+ // Always show chips when the pane is minimized-only (including document tabs).
+ // On a focused document chrome, keep chips off the toolbar to save space.
+ const showMinList = minList.length > 0 && (minimizedOnly || !isDoc)
  const minChips = showMinList ? (
  <>
  <span className="agent-chrome-min-label muted" title="Minimized tabs still running">
  {minList.length} minimized
  </span>
  <div className="agent-chrome-min-list" role="list">
- {minList.map((s) => (
+ {minList.map((s) => {
+ const isMinDoc = s.kind === 'document' || Boolean(s.documentPath)
+ const minLabel = isMinDoc
+ ? basename(s.documentPath || s.title || 'File')
+ : s.agentName || s.title || 'tab'
+ return (
  <button
  key={s.id}
  type="button"
  role="listitem"
- className="agent-chrome-min-chip"
- title={`Restore ${s.agentName || s.title || 'tab'}`}
+ className={`agent-chrome-min-chip${isMinDoc ? ' is-document' : ''}`}
+ title={`Restore ${minLabel}`}
  onClick={(e) => {
  e.stopPropagation()
  onRestore?.(s.id)
  }}
  onMouseDown={(e) => e.stopPropagation()}
  >
+ {isMinDoc ? (
+ <LanguageIcon
+ pathOrLang={s.documentPath || s.title || ''}
+ size={12}
+ title={minLabel}
+ />
+ ) : (
  <AgentIcon
  agentId={s.agentId}
  size={12}
  color={s.color || '#e8e8e8'}
  />
- <span className="agent-chrome-min-name">
- {s.agentName || s.title || 'tab'}
- </span>
+ )}
+ <span className="agent-chrome-min-name">{minLabel}</span>
  </button>
- ))}
+ )
+ })}
  </div>
  </>
  ) : null

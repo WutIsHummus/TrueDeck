@@ -2441,6 +2441,15 @@ textarea:focus {
   cursor: pointer;
 }
 
+.agent-chrome-min-chip .language-icon {
+  display: block;
+  flex-shrink: 0;
+}
+
+.agent-chrome-min-chip.is-document {
+  border-color: #a78bfa44;
+}
+
 .agent-chrome-min-chip:hover {
   border-color: var(--border-strong);
   background: #161616;

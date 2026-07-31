@@ -597,6 +597,32 @@ export function TerminalPane({
  }
  }
 
+ /**
+ * Follow live output (LLM stream) on the *normal* buffer unless the user
+ * scrolled into history. Never call scrollToBottom on the alternate screen —
+ * Codex/Grok redraw the full TUI there; forcing host scroll fights each frame
+ * and looks like the UI bouncing up and down on open/stream.
+ */
+ let stickToBottom = true
+ const syncStickFromViewport = (): void => {
+ try {
+ if (term.buffer.active.type === 'alternate') return
+ stickToBottom = !isScrolledUp()
+ } catch {
+ /* disposed */
+ }
+ }
+ const scrollLiveIfFollowing = (): void => {
+ if (!stickToBottom) return
+ try {
+ // Alt-screen TUI owns its viewport via CSI redraws — do not host-scroll.
+ if (term.buffer.active.type === 'alternate') return
+ if (isScrolledUp()) term.scrollToBottom()
+ } catch {
+ /* disposed */
+ }
+ }
+
  /** Session agent id (e.g. grok, codex) — used for TUI scroll ownership. */
  const sessionAgentId = (): string => {
  try {
@@ -609,15 +635,15 @@ export function TerminalPane({
  }
 
  /**
- * Agents that run a full-screen TUI with *custom* in-app scroll (not xterm
- * host scrollback). Grok is the main case — Cursor/Codex usually stay on the
- * normal buffer so host wheel works without mouse reports.
+ * Agents that *always* need wheel → PTY mouse reports (custom in-app scroll).
+ * Grok is the main case. Codex uses alt-screen + mouse when active — handled
+ * via isMouseTrackingOn / isAltScreen in tuiOwnsWheel(), not forced here.
+ * Forcing Codex from frame 0 caused scrollbar/fit thrash on first open.
  *
  * https://docs.x.ai/build/cli/terminal-support
  */
  const isCustomScrollTuiAgent = (): boolean => {
  const id = sessionAgentId()
- // Full-screen agent TUIs that need wheel → PTY mouse reports
  return id === 'grok' || id === 'gemini' || id === 'kiro'
  }
 
@@ -670,6 +696,15 @@ export function TerminalPane({
  const isAltScreen = (): boolean => {
  try {
  return term.buffer.active.type === 'alternate'
+ } catch {
+ return false
+ }
+ }
+
+ /** Full-screen TUI (Codex/Grok/…) — host forceRefresh/fit fights each paint. */
+ const isStreamingTui = (): boolean => {
+ try {
+ return term.buffer.active.type === 'alternate' || isMouseTrackingOn()
  } catch {
  return false
  }
@@ -831,19 +866,24 @@ export function TerminalPane({
  const tuiScrollKeys = tuiOwnsWheel()
  if (ev.key === 'PageUp' || ev.code === 'PageUp') {
  if (tuiScrollKeys && !ev.shiftKey) {
+ stickToBottom = false
  void window.truedeck.writeSession(sessionId, '\x1b[5~')
  return blockEvent(ev)
  }
  term.scrollPages(-1)
+ syncStickFromViewport()
  forceRefresh()
  return blockEvent(ev)
  }
  if (ev.key === 'PageDown' || ev.code === 'PageDown') {
  if (tuiScrollKeys && !ev.shiftKey) {
  void window.truedeck.writeSession(sessionId, '\x1b[6~')
+ // PageDown toward live edge — re-sync after TUI moves
+ window.setTimeout(() => syncStickFromViewport(), 0)
  return blockEvent(ev)
  }
  term.scrollPages(1)
+ syncStickFromViewport()
  forceRefresh()
  return blockEvent(ev)
  }
@@ -854,6 +894,7 @@ export function TerminalPane({
  (ev.shiftKey || (isScrolledUp() && !tuiScrollKeys))
  ) {
  term.scrollLines(ev.shiftKey ? -5 : -1)
+ syncStickFromViewport()
  forceRefresh()
  return blockEvent(ev)
  }
@@ -862,16 +903,19 @@ export function TerminalPane({
  (ev.shiftKey || (isScrolledUp() && !tuiScrollKeys))
  ) {
  term.scrollLines(ev.shiftKey ? 5 : 1)
+ syncStickFromViewport()
  forceRefresh()
  return blockEvent(ev)
  }
  if ((ev.key === 'Home' || ev.code === 'Home') && ev.shiftKey) {
  term.scrollToTop()
+ stickToBottom = false
  forceRefresh()
  return blockEvent(ev)
  }
  if ((ev.key === 'End' || ev.code === 'End') && ev.shiftKey) {
  term.scrollToBottom()
+ stickToBottom = true
  forceRefresh()
  return blockEvent(ev)
  }
@@ -1048,6 +1092,9 @@ export function TerminalPane({
  let lineBuf = ''
  let capturedFirstLine = false
  const onData = term.onData((data) => {
+ // Typing / sending a prompt resumes live follow (chat-style stick-to-bottom)
+ stickToBottom = true
+ scrollLiveIfFollowing()
  void window.truedeck.writeSession(sessionId, data)
  if (capturedFirstLine) return
  for (const ch of data) {
@@ -1111,6 +1158,8 @@ export function TerminalPane({
  writing = true
  term.write(chunk, () => {
  writing = false
+ // Normal buffer only — alt-screen scrollToBottom causes Codex stream jitter
+ if (!isStreamingTui()) scrollLiveIfFollowing()
  // If more arrived while the parser was busy, schedule another flush
  if (writeBuf && rafId == null) {
  rafId = requestAnimationFrame(flushWrites)
@@ -1120,13 +1169,16 @@ export function TerminalPane({
 
  const scheduleIdleRefresh = (): void => {
  if (idleRefreshTimer != null) window.clearTimeout(idleRefreshTimer)
+ // Alt-screen TUIs repaint themselves; full-row forceRefresh mid-stream = jitter
+ const delay = isStreamingTui() ? 280 : 48
  idleRefreshTimer = window.setTimeout(() => {
  idleRefreshTimer = null
- // Only refresh when quiet - mid-stream refresh can fight the agent
  if (!writeBuf && !writing && rafId == null) {
+ // Skip forced refresh while still on alt-screen — parser already painted
+ if (isStreamingTui()) return
  forceRefresh()
  }
- }, 48)
+ }, delay)
  }
 
  const offPty = window.truedeck.onPtyData(({ id, data }) => {
@@ -1324,16 +1376,25 @@ export function TerminalPane({
  }
  }
 
+ // Debounce fit when TUI mouse ownership flips (Codex mode-set spam → jitter)
+ let tuiOwnerFitTimer: number | null = null
  const markTuiWheelOwner = (owns: boolean): void => {
  if (agentTuiMouseRef.current === owns) return
+ // Hysteresis: once the TUI owns the wheel, don't drop on one flaky mode probe
+ // mid-stream (Codex toggles mouse/alt around redraws).
+ if (!owns && agentTuiMouseRef.current && isStreamingTui()) return
  agentTuiMouseRef.current = owns
  setAgentTuiMouse(owns)
  // Hiding the classic scrollbar changes clientWidth; re-fit so cols use
  // the full pane (avoids a permanent black strip on the right).
- requestAnimationFrame(() => {
+ if (tuiOwnerFitTimer != null) window.clearTimeout(tuiOwnerFitTimer)
+ tuiOwnerFitTimer = window.setTimeout(() => {
+ tuiOwnerFitTimer = null
+ if (closingRef.current) return
  fitAndResize(true)
- forceRefresh()
- })
+ // Only one refresh after ownership settles — not every CSI
+ if (!isStreamingTui()) forceRefresh()
+ }, 100)
  }
 
  const onWheel = (e: WheelEvent): void => {
@@ -1353,6 +1414,7 @@ export function TerminalPane({
  e.stopPropagation()
  try {
  term.scrollLines(lines)
+ syncStickFromViewport()
  forceRefresh()
  } catch {
  /* disposed */
@@ -1361,20 +1423,23 @@ export function TerminalPane({
  }
 
  if (tuiOwns) {
- // Kill native scrollbar / browser scroll so Grok mouse reporting works
+ // Kill native scrollbar / browser scroll so Grok/Codex mouse reporting works
  e.preventDefault()
  e.stopPropagation()
+ // Manual TUI scroll pauses stick-to-bottom until user returns (or types)
+ stickToBottom = false
  sendAppWheel(e, lines)
  return
  }
 
- // Normal shell buffer: xterm scrollback (Cursor / Codex / shell)
+ // Normal shell buffer: xterm scrollback
  e.preventDefault()
  e.stopPropagation()
  try {
  const before = term.buffer.active.viewportY
  term.scrollLines(lines)
  if (term.buffer.active.viewportY !== before) forceRefresh()
+ syncStickFromViewport()
  } catch {
  /* disposed */
  }
@@ -1385,11 +1450,21 @@ export function TerminalPane({
  // panes after restore. Our capture-phase onWheel already owns the event.
 
  const onViewportScroll = (): void => {
- forceRefresh()
+ syncStickFromViewport()
+ // Full refresh on every scroll event thrashes Codex mid-token paint
+ if (!isStreamingTui()) forceRefresh()
  }
 
  /** Mark when the bar can actually move (buffer taller than the screen). */
- const syncScrollableClass = (): void => {
+ let lastScrollSyncAt = 0
+ const syncScrollableClass = (fromRender = false): void => {
+ // onRender fires every CSI paint — throttle so we don't flip classes/fit
+ // on every streamed character (main Codex jitter source).
+ if (fromRender) {
+ const now = Date.now()
+ if (now - lastScrollSyncAt < 120) return
+ lastScrollSyncAt = now
+ }
  const vp = hostRef.current?.querySelector('.xterm-viewport') as HTMLElement | null
  if (!vp) return
  try {
@@ -1405,10 +1480,13 @@ export function TerminalPane({
  markTuiWheelOwner(tuiOwns)
  // Bar shown/hidden changes available width - re-fit so no gap
  if (was !== canScroll) {
- requestAnimationFrame(() => {
+ if (tuiOwnerFitTimer != null) window.clearTimeout(tuiOwnerFitTimer)
+ tuiOwnerFitTimer = window.setTimeout(() => {
+ tuiOwnerFitTimer = null
+ if (closingRef.current) return
  fitAndResize(true)
- forceRefresh()
- })
+ if (!isStreamingTui()) forceRefresh()
+ }, 100)
  }
  } catch {
  vp.classList.remove('xterm-viewport-scrollable')
@@ -1422,10 +1500,10 @@ export function TerminalPane({
  const xtermEl = term.element
  const viewportEl = xtermEl?.querySelector('.xterm-viewport') as HTMLElement | null
  viewportEl?.addEventListener('scroll', onViewportScroll, { passive: true })
- const offScrollable = term.onRender(() => syncScrollableClass())
- const offScrollPos = term.onScroll(() => syncScrollableClass())
+ const offScrollable = term.onRender(() => syncScrollableClass(true))
+ const offScrollPos = term.onScroll(() => syncScrollableClass(false))
  // Only claim TUI wheel when mouse/alt actually active (syncScrollableClass updates this)
- syncScrollableClass()
+ syncScrollableClass(false)
  // Fit after layout settles (important when spawning into a new dock pane)
  const fitSoon = (): void => {
  requestAnimationFrame(() => {
@@ -1477,6 +1555,7 @@ export function TerminalPane({
  window.clearTimeout(t2)
  if (resizeTimer != null) window.clearTimeout(resizeTimer)
  if (idleRefreshTimer != null) window.clearTimeout(idleRefreshTimer)
+ if (tuiOwnerFitTimer != null) window.clearTimeout(tuiOwnerFitTimer)
  if (rafId != null) cancelAnimationFrame(rafId)
  // Flush any pending bytes before dispose so we don't drop the last frame
  if (writeBuf) {
