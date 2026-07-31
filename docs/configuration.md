@@ -67,7 +67,9 @@ Edit via **Settings** UI when possible. Invalid JSON falls back to defaults merg
 | `.truedeck/tasks/*.md` | Dispatched task instructions |
 | `.truedeck/current-focus.md` | Focus line for agent frame |
 | `.mcp.json` | Project MCP map (when hub injects) |
-| `AGENTS.md` / `CLAUDE.md` | Often receive a TrueDeck memory pointer |
+| `.agents/AGENTS.md` | **Unified** multi-CLI agent instructions + memory pointer |
+| `.agents/mcp.json` | Project MCP map (mirrored to root `.mcp.json`) |
+| `AGENTS.md` / `CLAUDE.md` | Thin bridges pointing at `.agents/` |
 
 ## Project config shape
 

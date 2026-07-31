@@ -76,12 +76,13 @@ See [Agent frame](./agent-frame.md).
 
 ## TERM / colors / broken agent TUI
 
-**Symptom:** Agent UI lacks color, alt-screen, or mouse.
+**Symptom:** Agent UI is black-and-white, or lacks alt-screen / mouse.
 
 **Fix:**
 
-- TrueDeck sets `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=TrueDeck` on spawn
-- Do not override `TERM` to `dumb` in the parent environment if you can avoid it
+- TrueDeck forces color-capable env on every PTY: `TERM=xterm-256color`, `COLORTERM=truecolor`, `TERM_PROGRAM=TrueDeck`, `FORCE_COLOR=3`, `CLICOLOR=1`
+- Parent `NO_COLOR` / `FORCE_COLOR=0` / `TERM=dumb` (common when TrueDeck is launched from Cursor, Claude Code, or Grok Build) are stripped so CLIs keep their native colors
+- Rebuild the backend after pulling color fixes: `npm run build:backend`
 - Resize the pane after spawn so xterm FitAddon / PTY rows match
 - Try with agent frame off if the CLI assumes full terminal ownership incorrectly
 

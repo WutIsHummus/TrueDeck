@@ -33,6 +33,16 @@ Settings → **MCP**:
 
 Docker-based memory commands are discouraged/blocked for MemPalace-style memory (prefer native `mempalace-mcp`).
 
+## Requires TrueDeck open
+
+`truedeck-hub` **only connects while the TrueDeck app is running**.
+
+- On start, the hub checks `app.lock` (written by Electron under the data dir).
+- If TrueDeck is closed (or the lock pid is dead), the MCP process **exits** and clients show the server as disconnected/failed.
+- When you quit TrueDeck, an attached hub disconnects within a couple of seconds.
+
+Do not expect hub tools (`truedeck_show`, `truedeck_launch`, …) offline. Open TrueDeck, then reconnect MCP.
+
 ## Built-in hub tools
 
 When agents connect to **TrueDeck MCP Hub** (`truedeck-hub`), they can call:
@@ -46,6 +56,7 @@ When agents connect to **TrueDeck MCP Hub** (`truedeck-hub`), they can call:
 | `truedeck_apply_mcp` | Force-sync hub into all CLI configs (`projectRoot` for repo `.mcp.json` when set) |
 | `truedeck_export_mcp` | Export unified map as JSON |
 | `truedeck_launch` | **Primary:** create goal + open live agent PTY in TrueDeck (app must be running) |
+| `truedeck_show` | **Show content:** open text/code/markdown in a **separate TrueDeck app window** (scroll, select, copy — not the system browser; TrueDeck must be running) |
 | `truedeck_dispatch` | Dispatch an existing task id to a live PTY |
 | `truedeck_start_pipeline` | Start multi-agent pipeline (Feature, Bugfix, …) |
 | `truedeck_list_agents` | List agent CLI ids |
@@ -56,6 +67,32 @@ When agents connect to **TrueDeck MCP Hub** (`truedeck-hub`), they can call:
 | `truedeck_update_task` | Update title/body/status/assignee |
 | `truedeck_delete_task` | Delete a task |
 | `truedeck_graph_status` | Graphify knowledge graph status |
+
+### Show content (`truedeck_show`)
+
+When the user asks to **see** a plan, code sample, or file in a readable **TrueDeck window** (not terminal scrollback, not the system browser):
+
+```json
+{
+  "path": "C:/proj/docs/plan.md"
+}
+```
+
+Or inline content (no file yet):
+
+```json
+{
+  "title": "Auth plan",
+  "language": "md",
+  "content": "# Plan\n\n1. …"
+}
+```
+
+- Default: **separate Electron window** owned by TrueDeck (scroll / select / Copy all)
+- Optional `asTab: true` also docks a document tab in the main UI
+- Inline content is written under `{projectRoot}/.truedeck/viewer/`
+- **TrueDeck app must be running** (same `deck-command-queue.json` as `truedeck_launch`)
+- Call via **`truedeck-hub`** (the server named `truedeck` is often MemPalace only)
 
 Deck orchestration is **MCP-first** (no Ctrl+B panel). Electron polls `deck-command-queue.json` and spawns real PTYs.
 

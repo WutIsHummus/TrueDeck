@@ -17,6 +17,7 @@ import { execFileSync } from 'child_process'
 import { app } from 'electron'
 import { getGlobalDataDir } from './paths'
 import { buildMcpServerMap, loadMemoryProviders } from './memory-providers'
+import { writeProjectMcpMap } from './agents-folder'
 import { getConfiguredPalacePath } from './agent-inject'
 
 export interface McpStdioConfig {
@@ -337,10 +338,25 @@ function mergeMcpJson(
  if (removed.length) {
  console.log(`[mcp-hub] stripped docker MCP from ${filePath}: ${removed.join(', ')}`)
  }
+ // Legacy mistake: id "truedeck" pointed at mempalace-mcp (same as mempalace).
+ // That makes agents think MemPalace tools are "truedeck" and never find truedeck-hub.
+ for (const id of Object.keys(existing)) {
+ if (id.toLowerCase() !== 'truedeck') continue
+ const entry = existing[id] as { command?: string } | undefined
+ const cmd = String(entry?.command || '').toLowerCase().replace(/\\/g, '/')
+ if (cmd.includes('mempalace')) {
+ delete existing[id]
+ console.log(`[mcp-hub] removed legacy truedeck→mempalace alias from ${filePath}`)
+ }
+ }
  // Replace TrueDeck-managed keys; keep unknown third-party servers
  for (const [id, cfg] of Object.entries(servers)) {
  // Never write docker for our servers
  if (isDockerCommand(cfg.command)) continue
+ // Never emit bare "truedeck" as a memory server
+ if (id.toLowerCase() === 'truedeck' && String(cfg.command).toLowerCase().includes('mempalace')) {
+ continue
+ }
  existing[id] = {
  command: cfg.command,
  args: cfg.args || [],
@@ -357,16 +373,27 @@ function toGrokToml(servers: Record<string, McpStdioConfig>): string {
  '# Do not hand-edit if you use TrueDeck Settings → MCP',
  ''
  ]
- for (const [id, cfg] of Object.entries(servers)) {
+ // Load fast servers first; MemPalace (Chroma) is usually the slow cold start.
+ const ordered = Object.entries(servers).sort(([a], [b]) => {
+ const score = (id: string) =>
+ id.toLowerCase().includes('mempalace') ? 1 : id === 'truedeck-hub' ? 0 : 0.5
+ return score(a) - score(b)
+ })
+ for (const [id, cfg] of ordered) {
  const cmd = cfg.command.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
  const args = (cfg.args || [])
  .map((a) => `"${a.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`)
  .join(', ')
+ const isMem =
+ id.toLowerCase().includes('mempalace') ||
+ cfg.command.toLowerCase().includes('mempalace')
  lines.push(`[mcp_servers.${id}]`)
  lines.push(`command = "${cmd}"`)
  lines.push(`args = [${args}]`)
  lines.push('enabled = true')
- lines.push('startup_timeout_sec = 60')
+ // Hub is usually fast; keep 60s so Grok doesn't false-timeout on cold node start.
+ // MemPalace (large Chroma) needs a longer budget.
+ lines.push(`startup_timeout_sec = ${isMem ? 120 : 60}`)
  if (cfg.env && Object.keys(cfg.env).length) {
  lines.push(`[mcp_servers.${id}.env]`)
  for (const [k, v] of Object.entries(cfg.env)) {
@@ -390,25 +417,17 @@ export function injectMcpToAllClients(opts?: {
  const written: string[] = []
  const home = homedir()
 
- // ── Project-local (Claude Code / Cursor / generic) ──
+ // ── Project-local: unified `.agents/mcp.json` (+ root `.mcp.json` mirror) ──
+ // Do not scatter TrueDeck MCP into .cursor/ or .vscode/ project folders.
  if (opts?.projectRoot && existsSync(opts.projectRoot)) {
+ try {
+ written.push(...writeProjectMcpMap(opts.projectRoot, servers))
+ } catch {
  try {
  written.push(mergeMcpJson(join(opts.projectRoot, '.mcp.json'), servers))
  } catch {
  /* ignore */
  }
- try {
- written.push(mergeMcpJson(join(opts.projectRoot, '.cursor', 'mcp.json'), servers))
- } catch {
- /* ignore */
- }
- // VS Code / Copilot style project mcp
- try {
- written.push(
- mergeMcpJson(join(opts.projectRoot, '.vscode', 'mcp.json'), servers, 'servers')
- )
- } catch {
- /* ignore */
  }
  }
 
@@ -523,6 +542,25 @@ export function injectMcpToAllClients(opts?: {
  }
  } catch {
  /* ignore */
+ }
+
+ // ── Kiro CLI (https://kiro.dev/docs/cli/mcp/) ──
+ // User: ~/.kiro/settings/mcp.json · Project: <root>/.kiro/settings/mcp.json
+ try {
+ const kiroUser = join(home, '.kiro', 'settings')
+ mkdirSync(kiroUser, { recursive: true })
+ written.push(mergeMcpJson(join(kiroUser, 'mcp.json'), servers))
+ } catch {
+ /* ignore */
+ }
+ if (opts?.projectRoot && existsSync(opts.projectRoot)) {
+ try {
+ const kiroProj = join(opts.projectRoot, '.kiro', 'settings')
+ mkdirSync(kiroProj, { recursive: true })
+ written.push(mergeMcpJson(join(kiroProj, 'mcp.json'), servers))
+ } catch {
+ /* ignore */
+ }
  }
 
  // ── TrueDeck copy ──

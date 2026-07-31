@@ -479,6 +479,67 @@ export function removeSessionFromLayout(layout: PaneLayout, sessionId: string): 
  return { root, focusedGroupId }
 }
 
+/**
+ * If `sessionId` is the sole tab in one half of a split, return how to reverse-
+ * slide it out (same edge it entered when placed via placeSession).
+ * Used for Ctrl+W / X close so the pane exits the way it came in.
+ */
+export type SessionSplitExit = {
+ /** Edge the pane should leave toward (enter edge). */
+ edge: 'left' | 'right' | 'top' | 'bottom'
+ /** Which child of the parent split holds this session. */
+ exitSide: 'first' | 'second'
+ splitId: string
+ /** Current first-child ratio of that split. */
+ ratio: number
+}
+
+export function findSessionSplitExit(
+ layout: PaneLayout,
+ sessionId: string,
+ /** Optional remembered enter edge from placeSession / Ctrl+D. */
+ rememberedEdge?: 'left' | 'right' | 'top' | 'bottom' | null
+): SessionSplitExit | null {
+ const walk = (
+ node: LayoutNode
+ ): SessionSplitExit | null => {
+ if (node.type === 'leaf') return null
+ const { first, second, direction, id, ratio } = node
+
+ const soleIn = (n: LayoutNode): boolean =>
+ n.type === 'leaf' &&
+ n.group.sessionIds.length === 1 &&
+ n.group.sessionIds[0] === sessionId
+
+ if (soleIn(first)) {
+ const inferred: SessionSplitExit['edge'] =
+ direction === 'row' ? 'left' : 'top'
+ const edge =
+ rememberedEdge &&
+ ((direction === 'row' && (rememberedEdge === 'left' || rememberedEdge === 'right')) ||
+ (direction === 'column' && (rememberedEdge === 'top' || rememberedEdge === 'bottom')))
+ ? rememberedEdge
+ : inferred
+ return { edge, exitSide: 'first', splitId: id, ratio }
+ }
+ if (soleIn(second)) {
+ const inferred: SessionSplitExit['edge'] =
+ direction === 'row' ? 'right' : 'bottom'
+ const edge =
+ rememberedEdge &&
+ ((direction === 'row' && (rememberedEdge === 'left' || rememberedEdge === 'right')) ||
+ (direction === 'column' && (rememberedEdge === 'top' || rememberedEdge === 'bottom')))
+ ? rememberedEdge
+ : inferred
+ return { edge, exitSide: 'second', splitId: id, ratio }
+ }
+
+ return walk(first) || walk(second)
+ }
+
+ return walk(normalizeLayout(layout).root)
+}
+
 // ── Sync live sessions ──────────────────────────────────────────────────────
 
 export function syncSessions(
@@ -864,6 +925,98 @@ export function closeGroup(layout: PaneLayout, groupId: string): PaneLayout {
  }
 }
 
+/**
+ * Stable signature of which sessions sit in which leaf (for no-op collapse checks).
+ */
+export function layoutGroupSignature(layout: PaneLayout): string {
+ return listGroups(normalizeLayout(layout))
+ .map((g) => `${g.id}:${g.sessionIds.join(',')}`)
+ .join(';')
+}
+
+/**
+ * Collapse split leaves that have no *expanded* tabs (only minimized / empty).
+ * Minimized session ids move to a neighbor so the empty pane does not keep
+ * half the stage.
+ *
+ * `expandedSessionIds` = sessions that should still show content (not minimized).
+ * When every leaf is minimized-only, returns a single leaf holding all ids
+ * (caller should not paint a full terminal - only a restore dock).
+ */
+export function collapseLeavesWithoutExpanded(
+ layout: PaneLayout,
+ expandedSessionIds: ReadonlySet<string>
+): PaneLayout {
+ let next = normalizeLayout(layout)
+ for (let guard = 0; guard < MAX_PANES + 2; guard++) {
+ const groups = listGroups(next)
+ if (groups.length < 2) break
+
+ // Any leaf with zero expanded tabs (including empty) must not keep space
+ const emptyLeaf = groups.find(
+ (g) => !g.sessionIds.some((id) => expandedSessionIds.has(id))
+ )
+ if (!emptyLeaf) break
+
+ const before = layoutGroupSignature(next)
+ const collapsed = closeGroup(next, emptyLeaf.id)
+ if (layoutGroupSignature(collapsed) === before) {
+ // closeGroup no-op - force-remove empty leaf by promoting sibling
+ const siblingId = findSiblingGroupId(next.root, emptyLeaf.id)
+ if (!siblingId) break
+ let root = next.root
+ if (emptyLeaf.sessionIds.length) {
+ root = updateGroup(root, siblingId, (g) => ({
+ ...g,
+ sessionIds: [
+ ...g.sessionIds,
+ ...emptyLeaf.sessionIds.filter((id) => !g.sessionIds.includes(id))
+ ]
+ }))
+ }
+ root = removeEmptyGroup(root, emptyLeaf.id) || root
+ next = {
+ root,
+ focusedGroupId: siblingId
+ }
+ } else {
+ next = collapsed
+ }
+
+ const after = listGroups(next)
+ const withExpanded = after.find((g) =>
+ g.sessionIds.some((id) => expandedSessionIds.has(id))
+ )
+ if (withExpanded) {
+ const prefer =
+ withExpanded.sessionIds.find((id) => expandedSessionIds.has(id)) ||
+ withExpanded.activeSessionId
+ if (prefer) next = focusSession(next, prefer)
+ else next = { ...next, focusedGroupId: withExpanded.id }
+ }
+ }
+
+ // Single leaf, nothing expanded - keep session ids for restore, but one group only
+ const groups = listGroups(next)
+ if (
+ groups.length === 1 &&
+ !groups[0].sessionIds.some((id) => expandedSessionIds.has(id))
+ ) {
+ return next
+ }
+ return next
+}
+
+/** True if any session in the layout is expanded (should paint terminal content). */
+export function layoutHasExpandedSession(
+ layout: PaneLayout,
+ expandedSessionIds: ReadonlySet<string>
+): boolean {
+ return listGroups(normalizeLayout(layout)).some((g) =>
+ g.sessionIds.some((id) => expandedSessionIds.has(id))
+ )
+}
+
 function findSiblingGroupId(node: LayoutNode, groupId: string): string | null {
  if (node.type === 'leaf') return null
  if (node.first.type === 'leaf' && node.first.group.id === groupId) {
@@ -1022,20 +1175,27 @@ export function groupIdFromPoint(clientX: number, clientY: number): string | nul
  return null
 }
 
-/** True if pointer is over that pane’s tab strip (join tabs - Studio tab dock). */
+/** True if pointer is over that pane’s tab strip or CLI chrome (join tabs - Studio dock). */
 export function isOverGroupTabBar(clientX: number, clientY: number, groupId: string): boolean {
  if (typeof document === 'undefined') return false
- const bar = document.querySelector(
- `.group-tabbar[data-group="${CSS.escape(groupId)}"]`
- ) as HTMLElement | null
- if (!bar) return false
- const r = bar.getBoundingClientRect()
+ const hit = (sel: string): boolean => {
+ const el = document.querySelector(sel) as HTMLElement | null
+ if (!el) return false
+ const r = el.getBoundingClientRect()
  return (
  clientX >= r.left &&
  clientX <= r.right &&
  clientY >= r.top &&
  clientY <= r.bottom
  )
+ }
+ // Multi-tab strip
+ if (hit(`.group-tabbar[data-group="${CSS.escape(groupId)}"]`)) return true
+ // Single-tab (or always-visible) agent chrome header - same dock as tabs
+ if (hit(`.pane-group[data-group-id="${CSS.escape(groupId)}"] .agent-chrome`)) {
+ return true
+ }
+ return false
 }
 
 // ── Serialize nested layout for disk (tab indices, not PTY ids) ─────────────

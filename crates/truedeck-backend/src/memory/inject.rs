@@ -1,4 +1,8 @@
-//! Wire memory into agent CLI configs (Cursor/Claude MCP, AGENTS.md, etc.).
+//! Wire memory into agent CLI configs (Cursor/Claude MCP, unified `.agents/`, etc.).
+//!
+//! Project source of truth is `.agents/AGENTS.md` + `.agents/mcp.json`.
+//! Prefer the TypeScript inject path in Electron (full MCP hub); this Rust
+//! path is a fallback for backend-only callers.
 
 use crate::memory::palace_path;
 use crate::paths::{data_dir, ensure_dir};
@@ -89,18 +93,20 @@ pub fn inject_for_agent(
 
     if let Some(root) = project_root {
         crate::memory::ensure_repo_memory(root);
-        crate::memory::write_auto_context_fast(root);
-        // project .mcp.json
+        crate::memory::write_auto_context_fast(root); // also ensures .agents/
+        // Project MCP: unified `.agents/mcp.json` + root mirror (no .cursor/)
+        let agents_mcp = Path::new(root).join(".agents").join("mcp.json");
+        if let Ok(w) = merge_mcp_servers(&agents_mcp, &servers) {
+            written.push(w);
+        }
         let p = Path::new(root).join(".mcp.json");
         if let Ok(w) = merge_mcp_servers(&p, &servers) {
             written.push(w);
         }
-        let cp = Path::new(root).join(".cursor").join("mcp.json");
-        if let Ok(w) = merge_mcp_servers(&cp, &servers) {
-            written.push(w);
-        }
+        written.push(Path::new(root).join(".agents").to_string_lossy().into());
     }
 
+    // User-home product MCP (required so each CLI can load servers)
     if agent_id == "cursor" || agent_id == "all" {
         let p = home.join(".cursor").join("mcp.json");
         if let Ok(w) = merge_mcp_servers(&p, &servers) {
@@ -128,12 +134,13 @@ pub fn inject_for_agent(
         }
     }
 
-    if agent_id == "codex" || agent_id == "all" {
-        let dir = home.join(".codex");
+    // Shared global note under ~/.agents/ (not per-CLI ~/.codex / ~/.grok notes)
+    {
+        let dir = home.join(".agents");
         ensure_dir(&dir);
         let note = dir.join("truedeck-memory.md");
         let body = format!(
-            "# TrueDeck memory\n\nRead `.truedeck/auto-context.md` when under TrueDeck.\nPalace: `{}`\n",
+            "# TrueDeck memory (automatic)\n\nRead project `.truedeck/auto-context.md` and `.agents/AGENTS.md` when under TrueDeck.\nPalace: `{}`\n",
             palace.display()
         );
         if fs::write(&note, body).is_ok() {
@@ -181,7 +188,7 @@ pub fn inject_for_agent(
         agent_id: agent_id.into(),
         ok: n > 0,
         message: if n > 0 {
-            format!("Memory wired into {agent_id} ({n} config paths)")
+            format!("Memory + `.agents/` wired into {agent_id} ({n} config paths)")
         } else {
             format!("No config files written for {agent_id}")
         },

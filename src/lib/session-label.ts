@@ -151,6 +151,13 @@ export function sanitizeSessionTitle(text: string | null | undefined): string {
 export function sessionTabLabel(s: SessionInfo, max = 28): string {
  const agent = (s.agentName || s.agentId || 'tab').trim()
 
+ // Document / plan / code reader tabs
+ if (s.kind === 'document' || s.documentPath) {
+ const fromPath = basename(s.documentPath || s.title || '')
+ const label = (s.title || fromPath || 'File').trim()
+ return truncate(label, max)
+ }
+
  // Deck task / dispatch title
  if (s.taskId) {
  const focus = (s.focusTitle || '').trim()

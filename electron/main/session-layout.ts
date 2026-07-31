@@ -309,13 +309,26 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
 }
 
 export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
+ const title =
+ s.title && s.title.trim() && s.title.trim().toLowerCase() !== (s.agentName || '').toLowerCase()
+ ? s.title.trim()
+ : undefined
+ const kind: SavedSessionTab['kind'] =
+ s.kind === 'document' || s.documentPath
+ ? 'document'
+ : s.kind === 'command' || s.commandLine
+ ? 'command'
+ : 'agent'
  return {
  agentId: s.agentId,
  agentName: s.agentName,
  projectRoot: s.projectRoot,
  color: s.color,
- kind: s.kind === 'command' || s.commandLine ? 'command' : 'agent',
- commandLine: s.commandLine
+ kind,
+ commandLine: s.commandLine,
+ ...(s.documentPath ? { documentPath: s.documentPath } : {}),
+ ...(title ? { title } : {}),
+ ...(s.resumeToken ? { resumeToken: s.resumeToken } : {})
  }
 }
 
@@ -430,15 +443,32 @@ export function layoutFromPersistSnapshot(
  if (fromMeta && fromMeta.projectRoot && fromMeta.agentId) {
  // Renderer already filtered to running; do not require ptyManager match
  // (Rust-backend sessions are invisible to ptyManager.list()).
+ const title =
+ fromMeta.title ||
+ (s?.title && s.title.toLowerCase() !== String(fromMeta.agentName || '').toLowerCase()
+ ? s.title
+ : undefined)
+ const resumeToken = fromMeta.resumeToken || s?.resumeToken
+ const kind: SavedSessionTab['kind'] =
+ fromMeta.kind === 'document' || fromMeta.documentPath || s?.documentPath
+ ? 'document'
+ : fromMeta.kind === 'command' || fromMeta.commandLine || s?.commandLine
+ ? 'command'
+ : 'agent'
  tab = {
  agentId: String(fromMeta.agentId),
  agentName: String(fromMeta.agentName || fromMeta.agentId),
  projectRoot: String(fromMeta.projectRoot),
  color: String(fromMeta.color || s?.color || '#6cb6ff'),
- kind: fromMeta.kind === 'command' || fromMeta.commandLine ? 'command' : 'agent',
+ kind,
  commandLine: fromMeta.commandLine
  ? String(fromMeta.commandLine)
- : s?.commandLine
+ : s?.commandLine,
+ documentPath: fromMeta.documentPath
+ ? String(fromMeta.documentPath)
+ : s?.documentPath,
+ ...(title ? { title: String(title) } : {}),
+ ...(resumeToken ? { resumeToken: String(resumeToken) } : {})
  }
  } else if (s && s.status === 'running') {
  tab = sessionInfoToSavedTab(s)
@@ -460,8 +490,18 @@ export function layoutFromPersistSnapshot(
  agentName: String(fromMeta.agentName || fromMeta.agentId),
  projectRoot: String(fromMeta.projectRoot),
  color: String(fromMeta.color || '#6cb6ff'),
- kind: fromMeta.kind === 'command' || fromMeta.commandLine ? 'command' : 'agent',
- commandLine: fromMeta.commandLine ? String(fromMeta.commandLine) : undefined
+ kind:
+ fromMeta.kind === 'document' || fromMeta.documentPath
+ ? 'document'
+ : fromMeta.kind === 'command' || fromMeta.commandLine
+ ? 'command'
+ : 'agent',
+ commandLine: fromMeta.commandLine ? String(fromMeta.commandLine) : undefined,
+ documentPath: fromMeta.documentPath
+ ? String(fromMeta.documentPath)
+ : undefined,
+ ...(fromMeta.title ? { title: String(fromMeta.title) } : {}),
+ ...(fromMeta.resumeToken ? { resumeToken: String(fromMeta.resumeToken) } : {})
  })
  keptIds.push(snapshot.sessionOrder?.[i] || `meta-${i}`)
  }

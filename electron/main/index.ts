@@ -1,6 +1,7 @@
-import { app, BrowserWindow, ipcMain, dialog, shell } from 'electron'
-import { join } from 'path'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { ensureDetachedIpc, setDetachedMainGetter } from './detached-windows'
+import { join, dirname, normalize } from 'path'
+import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync } from 'fs'
 import {
  getBackend,
  findBackendBinary,
@@ -18,8 +19,14 @@ import {
  killSession,
  backendStatus
 } from './sessions-rust'
-import { loadAgents, saveAgents, getDefaultAgents } from './agents'
+import { loadAgents, saveAgents, getDefaultAgents, createCustomAgentPreset } from './agents'
 import { probeAgents, resolveAgentCommand, clearResolveCache } from './resolve-command'
+import {
+ prepareNewSessionSpawn,
+ prepareResumeSpawn,
+ tryDiscoverCodexSessionId,
+ discoverCodexSessionId
+} from './agent-resume'
 import {
  listProjects,
  upsertProject,
@@ -68,7 +75,16 @@ import {
  buildMcpServerMap,
  defaultMemoryProviders
 } from './memory-providers'
-import { onProjectOpen, onAgentSpawnFast, getRuntimeStatus } from './memory-service'
+import {
+ onProjectOpen,
+ onProjectOpenFast,
+ onAgentSpawnFast,
+ getRuntimeStatus,
+ getProjectSetupStatus,
+ setupProject,
+ warmProjectInBackground,
+ reconcileMineStampInBackground
+} from './memory-service'
 import {
  injectMemoryForAgent,
  injectMemoryForSyncedAgents,
@@ -100,6 +116,8 @@ import {
 import { listRuns, endRun } from './runs'
 import { dispatchTask } from './task-dispatch'
 import { startDeckCommandWorker } from './deck-commands'
+import { setDocumentViewerParent } from './document-viewer'
+import { writeAppLock, clearAppLock } from './app-lock'
 import { maybeWrapAgentFrame } from './agent-frame'
 import {
  getGraphifyStatus,
@@ -142,6 +160,23 @@ import type {
 } from '../shared/types'
 
 const isDev = !app.isPackaged
+
+// Never hard-exit on stray async errors during restore/spawn (was killing the window)
+process.on('uncaughtException', (err) => {
+ console.error('[uncaughtException]', err)
+})
+process.on('unhandledRejection', (reason) => {
+ console.error('[unhandledRejection]', reason)
+})
+
+/** Max agent/command tabs to respawn on launch (ConPTY storms crash Electron on Windows). */
+const MAX_RESTORE_TABS = 4
+
+function sameRootPath(a?: string | null, b?: string | null): boolean {
+ if (!a || !b) return false
+ return a.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase() ===
+ b.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+}
 
 function loadSettings(): AppSettings {
  try {
@@ -186,6 +221,10 @@ function defaultSettings(): AppSettings {
  // In-band PTY frame opt-in only (Grok full-screen redraw leaks). Use Electron chrome bar.
  agentFrameTui: false,
  frameShellPanes: false,
+ // Click paths in agent terminals → Document tab (Settings → MCP)
+ openCliPathsInDocument: true,
+ editorVimMode: false,
+ showProjectExplorer: true,
  // Graphify + memory are automatic; these flags are legacy no-ops if present on disk
  graphifyEnabled: true,
  graphifyOnProjectOpen: 'always-update',
@@ -248,13 +287,23 @@ function createWindow(): void {
  const iconPath = resolveAppIcon()
  /** Set after renderer layout flush on close - allows the real destroy pass. */
  let layoutFlushDone = false
+ let shown = false
+ const showMain = (): void => {
+ if (shown || !mainWindow || mainWindow.isDestroyed()) return
+ shown = true
+ mainWindow.show()
+ mainWindow.focus()
+ }
 
  mainWindow = new BrowserWindow({
  width: 1440,
  height: 900,
  minWidth: 960,
  minHeight: 600,
- show: false,
+ // Show immediately so the window is never "running but invisible"
+ show: true,
+ x: 80,
+ y: 60,
  title: 'TrueDeck',
  backgroundColor: '#0c0c0c',
  // Custom title bar - no native Windows frame
@@ -262,16 +311,71 @@ function createWindow(): void {
  titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
  autoHideMenuBar: true,
  icon: iconPath,
+ center: true,
+ alwaysOnTop: true, // brief: force visible above other apps, cleared after load
+ paintWhenInitiallyHidden: true,
  webPreferences: {
  preload: join(__dirname, '../preload/index.js'),
  contextIsolation: true,
  nodeIntegration: false,
- sandbox: false
+ sandbox: false,
+ backgroundThrottling: true
  }
  })
 
- mainWindow.on('ready-to-show', () => {
- mainWindow?.show()
+ // Ensure visible + focused even if Windows lost the HWND
+ showMain()
+ mainWindow.setAlwaysOnTop(true)
+ mainWindow.once('ready-to-show', () => {
+ showMain()
+ mainWindow?.setAlwaysOnTop(true)
+ mainWindow?.focus()
+ })
+ mainWindow.webContents.once('did-finish-load', () => {
+ showMain()
+ // Drop always-on-top after UI is up so it behaves normally
+ setTimeout(() => {
+ try {
+ if (mainWindow && !mainWindow.isDestroyed()) {
+ mainWindow.setAlwaysOnTop(false)
+ mainWindow.focus()
+ }
+ } catch {
+ /* ignore */
+ }
+ }, 1500)
+ })
+ // Safety net
+ setTimeout(() => {
+ showMain()
+ try {
+ mainWindow?.setAlwaysOnTop(false)
+ mainWindow?.center()
+ mainWindow?.focus()
+ } catch {
+ /* ignore */
+ }
+ }, 3000)
+
+ mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
+ console.error('[renderer] did-fail-load', code, desc, url)
+ showMain()
+ })
+ mainWindow.webContents.on('render-process-gone', (_e, details) => {
+ console.error('[renderer] render-process-gone', details)
+ // Recover from blank/black screen after renderer crash
+ try {
+ if (mainWindow && !mainWindow.isDestroyed()) {
+ mainWindow.webContents.reload()
+ }
+ } catch {
+ /* ignore */
+ }
+ })
+ mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
+ if (level >= 2) {
+ console.warn(`[renderer console] ${message} (${sourceId}:${line})`)
+ }
  })
 
  // Terminal font uses Ctrl+/- (see app:shortcut). Never use Chromium page zoom —
@@ -292,10 +396,12 @@ function createWindow(): void {
  mainWindow.webContents.on('did-finish-load', resetPageZoom)
  mainWindow.webContents.on('dom-ready', resetPageZoom)
 
- // Reliable app shortcuts while xterm/agent TUIs own focus.
- // Always match by input.code (more stable on Windows than input.key).
- // Ctrl+Arrow must preventDefault on *every* keydown including auto-repeat - 
- // otherwise held/fast arrows leak into the agent PTY.
+ // App shortcuts while xterm/agent TUIs own focus.
+ // Single owner: only claim chords the renderer actually handles.
+ // Do NOT claim Ctrl+C/V (terminal copy/paste) or Ctrl+Shift+letter
+ // (leave those for the agent / shell). Match by input.code on Windows.
+ // Ctrl+Arrow: preventDefault on every keydown including auto-repeat so
+ // held arrows never leak into the agent PTY.
  mainWindow.webContents.on('before-input-event', (event, input) => {
  if (input.type !== 'keyDown') return
  const ctrl = Boolean(input.control || input.meta)
@@ -303,6 +409,24 @@ function createWindow(): void {
 
  const code = String(input.code || '')
  const keyRaw = String(input.key || '')
+ const shift = Boolean(input.shift)
+ const alt = Boolean(input.alt)
+ const repeat = Boolean(input.isAutoRepeat)
+
+ const send = (key: string): void => {
+ event.preventDefault()
+ const win = mainWindow
+ if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+ win.webContents.send('app:shortcut', {
+ key,
+ shift,
+ alt,
+ ctrl: true,
+ repeat
+ })
+ }
+ }
+
  const arrowCode =
  code === 'ArrowLeft' ||
  code === 'ArrowRight' ||
@@ -323,19 +447,21 @@ function createWindow(): void {
  ? `Arrow${keyRaw}`
  : ''
  const arrow = arrowCode || arrowKey
- const isTab = code === 'Tab' || keyRaw === 'Tab'
- const letter =
- (keyRaw.length === 1 ? keyRaw.toLowerCase() : '') ||
- (code.startsWith('Key') ? code.slice(3).toLowerCase() : '')
- const isAppLetter =
- !input.isAutoRepeat && ['w', 't', 'o', 's', 'n', 'd', 'x'].includes(letter)
+ if (arrow) {
+ send(arrow)
+ return
+ }
+
+ if (code === 'Tab' || keyRaw === 'Tab') {
+ send('Tab')
+ return
+ }
 
  // Font zoom: Ctrl+= / Ctrl++ in, Ctrl+- out, Ctrl+0 reset.
- // Must claim before agent TUIs / Chromium page-zoom swallow the chord.
- // (US keyboards: + is Shift+=; browsers also accept Ctrl+= for zoom-in.)
+ // Claim before agent TUIs / Chromium page-zoom swallow the chord.
  const zoomKey =
  code === 'Equal' || code === 'NumpadAdd' || keyRaw === '+' || keyRaw === '='
- ? keyRaw === '+' || input.shift || code === 'NumpadAdd'
+ ? keyRaw === '+' || shift || code === 'NumpadAdd'
  ? '+'
  : '='
  : code === 'Minus' ||
@@ -346,61 +472,44 @@ function createWindow(): void {
  : code === 'Digit0' || code === 'Numpad0' || keyRaw === '0'
  ? '0'
  : ''
- const isZoom = Boolean(zoomKey) && !input.alt
-
- // Pane focus: always hard-hijack Ctrl+Arrow so agent TUIs cannot swallow it.
- // Auto-repeat included. Renderer decides navigation; we only guarantee delivery.
- if (arrow) {
- event.preventDefault()
- const win = mainWindow
- if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
- win.webContents.send('app:shortcut', {
- key: arrow,
- shift: Boolean(input.shift),
- alt: Boolean(input.alt),
- ctrl: true,
- repeat: Boolean(input.isAutoRepeat)
- })
- }
+ if (zoomKey && !alt) {
+ send(zoomKey)
  return
  }
 
- if (isTab) {
- event.preventDefault()
- mainWindow?.webContents.send('app:shortcut', {
- key: 'Tab',
- shift: Boolean(input.shift),
- alt: Boolean(input.alt),
- ctrl: true,
- repeat: Boolean(input.isAutoRepeat)
- })
+ const letter =
+ (keyRaw.length === 1 ? keyRaw.toLowerCase() : '') ||
+ (code.startsWith('Key') ? code.slice(3).toLowerCase() : '')
+
+ // Plain Ctrl+letter (no Shift/Alt): app actions. Skip auto-repeat.
+ // w close · t agent · o project · s settings · n pop-out · d v-split · x h-split · z undo move
+ if (
+ !shift &&
+ !alt &&
+ !repeat &&
+ ['w', 't', 'o', 's', 'n', 'd', 'x', 'z'].includes(letter)
+ ) {
+ send(letter)
  return
  }
 
- if (isZoom) {
- event.preventDefault()
- mainWindow?.webContents.send('app:shortcut', {
- key: zoomKey,
- shift: Boolean(input.shift),
- alt: Boolean(input.alt),
- ctrl: true,
- repeat: Boolean(input.isAutoRepeat)
- })
+ // Ctrl+Alt+D / Ctrl+Alt+X: unsplit / merge all panes
+ if (!shift && alt && !repeat && (letter === 'd' || letter === 'x')) {
+ send(letter)
  return
  }
 
- if (!isAppLetter) return
- // Letters: notify renderer; preventDefault for app chords so agents don't eat them
- if (['w', 't', 'o', 's', 'n', 'd', 'x'].includes(letter) && !input.alt) {
- event.preventDefault()
+ // Ctrl+1..9: jump tab (no Shift/Alt). Not Digit0 (zoom).
+ const digit =
+ (code.startsWith('Digit') && code.length === 6 ? code.slice(5) : '') ||
+ (code.startsWith('Numpad') && code.length === 7 ? code.slice(6) : '') ||
+ (/^[1-9]$/.test(keyRaw) ? keyRaw : '')
+ if (digit && digit >= '1' && digit <= '9' && !shift && !alt && !repeat) {
+ send(digit)
+ return
  }
- mainWindow?.webContents.send('app:shortcut', {
- key: letter,
- shift: Boolean(input.shift),
- alt: Boolean(input.alt),
- ctrl: true,
- repeat: Boolean(input.isAutoRepeat)
- })
+
+ // Everything else (Ctrl+C/V, Ctrl+Shift+*, bare agent chords) → page / PTY.
  })
 
  // Multi-pane layout lives in the renderer. Async fire-and-forget flush on
@@ -408,6 +517,7 @@ function createWindow(): void {
  // tabs restored but paneTree collapsed to a single leaf / default ratios.
  // Block close until a sync flush (sendSync from renderer) finishes.
  mainWindow.on('close', (e) => {
+ console.log('[window] close event, layoutFlushDone=', layoutFlushDone)
  if (layoutFlushDone) return
  if (!mainWindow || mainWindow.isDestroyed()) return
  if (mainWindow.webContents.isDestroyed()) {
@@ -416,13 +526,23 @@ function createWindow(): void {
  }
  e.preventDefault()
  const win = mainWindow
+ const flushTimer = setTimeout(() => {
+ // Never hang forever on flush — force close after 1.5s
+ console.warn('[window] layout flush timeout — closing')
+ layoutFlushDone = true
+ if (win && !win.isDestroyed()) win.close()
+ }, 1500)
  void win.webContents
  .executeJavaScript(
  `try{if(typeof window.__truedeckFlushSessions==='function'){window.__truedeckFlushSessions();'ok'}else{'skip'}}catch(err){String(err&&err.message||err)}`,
  true
  )
- .catch(() => 'err')
+ .catch((err) => {
+ console.warn('[window] flush failed', err)
+ return 'err'
+ })
  .finally(() => {
+ clearTimeout(flushTimer)
  layoutFlushDone = true
  if (win && !win.isDestroyed()) win.close()
  })
@@ -441,6 +561,7 @@ function createWindow(): void {
 
  setSessionsWindow(mainWindow)
  rustBackend?.setWindow(mainWindow)
+ setDocumentViewerParent(mainWindow)
 
  mainWindow.on('closed', () => {
  try {
@@ -453,17 +574,52 @@ function createWindow(): void {
  } catch {
  /* ignore */
  }
+ try {
+ setDocumentViewerParent(null)
+ } catch {
+ /* ignore */
+ }
  if (mainWindow) mainWindow = null
  })
 
- if (isDev && process.env['ELECTRON_RENDERER_URL']) {
- mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
+ // Prefer built renderer when present so `electron .` always works even if
+ // ELECTRON_RENDERER_URL points at a dead Vite dev server.
+ const builtHtml = join(__dirname, '../renderer/index.html')
+ const devUrl = process.env['ELECTRON_RENDERER_URL']
+ if (isDev && devUrl && !existsSync(builtHtml)) {
+ console.log('[boot] loadURL', devUrl)
+ void mainWindow.loadURL(devUrl)
+ } else if (existsSync(builtHtml)) {
+ console.log('[boot] loadFile', builtHtml)
+ void mainWindow.loadFile(builtHtml)
+ } else if (devUrl) {
+ console.log('[boot] loadURL fallback', devUrl)
+ void mainWindow.loadURL(devUrl)
  } else {
- mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+ console.error('[boot] no renderer found at', builtHtml)
  }
 }
 
 function registerIpc(): void {
+ setDetachedMainGetter(() => mainWindow)
+ ensureDetachedIpc()
+
+ ipcMain.handle('clipboard:readText', () => {
+ try {
+ return clipboard.readText()
+ } catch {
+ return ''
+ }
+ })
+ ipcMain.handle('clipboard:writeText', (_e, text: string) => {
+ try {
+ clipboard.writeText(String(text ?? ''))
+ return true
+ } catch {
+ return false
+ }
+ })
+
  ipcMain.handle('app:getSettings', () => loadSettings())
  ipcMain.handle('app:setSettings', (_e, s: AppSettings) => {
  const next = { ...defaultSettings(), ...s }
@@ -486,23 +642,30 @@ function registerIpc(): void {
  )
  ipcMain.handle('app:resetOnboarding', () => resetOnboarding())
 
- // Custom window chrome (frameless)
- ipcMain.handle('window:minimize', () => {
- mainWindow?.minimize()
+ // Custom window chrome (frameless) — works for main + detached pane windows
+ ipcMain.handle('window:minimize', (e) => {
+ const w = BrowserWindow.fromWebContents(e.sender) || mainWindow
+ w?.minimize()
  })
- ipcMain.handle('window:maximize', () => {
- if (!mainWindow) return false
- if (mainWindow.isMaximized()) mainWindow.unmaximize()
- else mainWindow.maximize()
- return mainWindow.isMaximized()
+ ipcMain.handle('window:maximize', (e) => {
+ const w = BrowserWindow.fromWebContents(e.sender) || mainWindow
+ if (!w) return false
+ if (w.isMaximized()) w.unmaximize()
+ else w.maximize()
+ return w.isMaximized()
  })
- ipcMain.handle('window:close', () => {
- mainWindow?.close()
+ ipcMain.handle('window:close', (e) => {
+ const w = BrowserWindow.fromWebContents(e.sender) || mainWindow
+ w?.close()
  })
- ipcMain.handle('window:isMaximized', () => mainWindow?.isMaximized() ?? false)
- ipcMain.handle('window:setTitle', (_e, title: string) => {
+ ipcMain.handle('window:isMaximized', (e) => {
+ const w = BrowserWindow.fromWebContents(e.sender) || mainWindow
+ return w?.isMaximized() ?? false
+ })
+ ipcMain.handle('window:setTitle', (e, title: string) => {
  const t = String(title || 'TrueDeck').slice(0, 200)
- mainWindow?.setTitle(t)
+ const w = BrowserWindow.fromWebContents(e.sender) || mainWindow
+ w?.setTitle(t)
  return t
  })
 
@@ -592,10 +755,51 @@ function registerIpc(): void {
  saveAgents(agents)
  return agents
  })
+ ipcMain.handle(
+ 'agents:addCustom',
+ (
+ _e,
+ opts: {
+ name: string
+ command: string
+ args?: string[]
+ color?: string
+ installCommand?: string
+ description?: string
+ }
+ ) => {
+ const cmd = String(opts?.command || '').trim()
+ if (!cmd) throw new Error('Command is required')
+ const preset = createCustomAgentPreset({
+ name: String(opts?.name || '').trim() || cmd,
+ command: cmd,
+ args: Array.isArray(opts?.args) ? opts.args.map(String) : [],
+ color: opts?.color,
+ installCommand: opts?.installCommand,
+ description: opts?.description
+ })
+ const next = [...loadAgents().filter((a) => a.id !== preset.id), preset]
+ saveAgents(next)
+ clearResolveCache()
+ return { agents: loadAgents(), preset }
+ }
+ )
+ ipcMain.handle('agents:removeCustom', (_e, agentId: string) => {
+ const id = String(agentId || '')
+ if (!id.startsWith('custom-') && !loadAgents().find((a) => a.id === id)?.custom) {
+ throw new Error('Only custom CLIs can be removed here')
+ }
+ const next = loadAgents().filter((a) => a.id !== id)
+ saveAgents(next)
+ clearResolveCache()
+ return loadAgents()
+ })
  ipcMain.handle('agents:reset', () => {
  const d = getDefaultAgents()
- saveAgents(d)
- return d
+ // Keep user custom CLIs when resetting built-ins
+ const customs = loadAgents().filter((a) => a.custom || a.id.startsWith('custom-'))
+ saveAgents([...d, ...customs])
+ return loadAgents()
  })
  /** Open a shell tab and print the install one-liner for a missing CLI. */
  ipcMain.handle(
@@ -623,6 +827,179 @@ function registerIpc(): void {
  })
  mainWindow?.webContents.send('pty:spawned', info)
  return { alreadyInstalled: false, session: info, installCommand: install }
+ }
+ )
+
+ // ── Project file reader (plans, markdown, source) ─────────────────────────
+ ipcMain.handle(
+ 'files:readText',
+ async (_e, filePath: string): Promise<{ path: string; content: string; mtimeMs: number }> => {
+ const p = normalize(String(filePath || ''))
+ if (!p || !existsSync(p) || !statSync(p).isFile()) {
+ throw new Error('File not found')
+ }
+ // Cap huge files so the UI stays snappy (still enough for plans / modules)
+ const st = statSync(p)
+ if (st.size > 2_000_000) {
+ throw new Error('File is larger than 2MB - open it in an external editor')
+ }
+ const content = readFileSync(p, 'utf8')
+ return { path: p, content, mtimeMs: st.mtimeMs }
+ }
+ )
+ ipcMain.handle('files:pathExists', (_e, filePath: string): boolean => {
+ try {
+ const p = normalize(String(filePath || ''))
+ return Boolean(p && existsSync(p) && statSync(p).isFile())
+ } catch {
+ return false
+ }
+ })
+ ipcMain.handle(
+ 'files:listDir',
+ (
+ _e,
+ dirPath: string
+ ): Array<{
+ name: string
+ path: string
+ isDirectory: boolean
+ isFile: boolean
+ }> => {
+ try {
+ const dir = normalize(String(dirPath || ''))
+ if (!dir || !existsSync(dir) || !statSync(dir).isDirectory()) {
+ return []
+ }
+ const skip = new Set([
+ 'node_modules',
+ '.git',
+ '.hg',
+ '.svn',
+ 'target',
+ 'dist',
+ 'out',
+ 'build',
+ '.next',
+ '.turbo',
+ 'coverage',
+ '__pycache__',
+ '.cache',
+ '.venv',
+ 'venv',
+ 'release',
+ 'win-unpacked'
+ ])
+ const names = readdirSync(dir)
+ const rows: Array<{
+ name: string
+ path: string
+ isDirectory: boolean
+ isFile: boolean
+ }> = []
+ for (const name of names) {
+ if (!name || name === '.' || name === '..') continue
+ // Hide most dotfolders except useful project ones
+ if (name.startsWith('.') && !['.memory', '.truedeck', '.agents', '.github', '.vscode', '.kiro'].includes(name)) {
+ continue
+ }
+ if (skip.has(name)) continue
+ const full = join(dir, name)
+ let st
+ try {
+ st = statSync(full)
+ } catch {
+ continue
+ }
+ rows.push({
+ name,
+ path: full,
+ isDirectory: st.isDirectory(),
+ isFile: st.isFile()
+ })
+ }
+ rows.sort((a, b) => {
+ if (a.isDirectory !== b.isDirectory) return a.isDirectory ? -1 : 1
+ return a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })
+ })
+ return rows
+ } catch {
+ return []
+ }
+ }
+ )
+ ipcMain.handle(
+ 'files:writeText',
+ async (_e, filePath: string, content: string): Promise<{ path: string; mtimeMs: number }> => {
+ const p = normalize(String(filePath || ''))
+ if (!p) throw new Error('No path')
+ mkdirSync(dirname(p), { recursive: true })
+ writeFileSync(p, String(content ?? ''), 'utf8')
+ const st = statSync(p)
+ return { path: p, mtimeMs: st.mtimeMs }
+ }
+ )
+ ipcMain.handle(
+ 'files:pickOpen',
+ async (
+ _e,
+ opts?: { projectRoot?: string; title?: string }
+ ): Promise<string | null> => {
+ const root = opts?.projectRoot && existsSync(opts.projectRoot) ? opts.projectRoot : undefined
+ const result = await dialog.showOpenDialog(mainWindow!, {
+ properties: ['openFile'],
+ title: opts?.title || 'Open file to read',
+ defaultPath: root,
+ filters: [
+ {
+ name: 'Text & code',
+ extensions: [
+ 'md',
+ 'txt',
+ 'json',
+ 'ts',
+ 'tsx',
+ 'js',
+ 'jsx',
+ 'mjs',
+ 'cjs',
+ 'py',
+ 'rs',
+ 'go',
+ 'java',
+ 'kt',
+ 'cs',
+ 'cpp',
+ 'c',
+ 'h',
+ 'hpp',
+ 'css',
+ 'scss',
+ 'html',
+ 'xml',
+ 'yaml',
+ 'yml',
+ 'toml',
+ 'ini',
+ 'cfg',
+ 'sh',
+ 'ps1',
+ 'sql',
+ 'graphql',
+ 'env',
+ 'log',
+ 'lua',
+ 'luau',
+ 'rb',
+ 'php'
+ ]
+ },
+ { name: 'Markdown', extensions: ['md', 'mdx', 'markdown'] },
+ { name: 'All files', extensions: ['*'] }
+ ]
+ })
+ if (result.canceled || !result.filePaths[0]) return null
+ return result.filePaths[0]
  }
  )
 
@@ -767,14 +1144,28 @@ function registerIpc(): void {
  }
 
  // Always raw CLI - in-PTY frame wrap disabled (blank terminals on Windows ConPTY)
- let spawnCommand = resolved.command
- let spawnArgs = [...(resolved.args || [])]
+ const spawnCommand = resolved.command
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ opts.projectRoot,
+ resolved.command
+ )
+ const spawnArgs = prepared.args
+ const notBefore = Date.now() - 500
  const { env: memEnv } = onAgentSpawnFast(opts.projectRoot)
  const extraEnv: Record<string, string> = {
  ...memEnv,
  TRUEDECK_PROJECT: opts.projectRoot
  }
+ if (prepared.resumeToken) {
+ extraEnv.TRUEDECK_CLI_SESSION = prepared.resumeToken
+ }
  void maybeWrapAgentFrame
+
+ console.log(
+ `[spawn] ${agent.id} bind session=${prepared.resumeToken || '(discover)'} args=${spawnArgs.join(' ')}`
+ )
 
  const viaRust = await rustSpawnAgent({
  projectRoot: opts.projectRoot,
@@ -787,6 +1178,26 @@ function registerIpc(): void {
  color: agent.color,
  env: extraEnv
  })
+
+ // Codex session id discovery is background-only — never block palette spawn
+ // for up to 5s while scanning ~/.codex.
+ const resumeToken = prepared.resumeToken || viaRust.resumeToken
+ if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ void discoverCodexSessionId(opts.projectRoot, notBefore, 5000)
+ .then((token) => {
+ const found = token || tryDiscoverCodexSessionId(opts.projectRoot, notBefore)
+ if (!found) return
+ console.log(`[spawn] codex discovered session ${found}`)
+ mainWindow?.webContents.send('pty:spawned', {
+ ...viaRust,
+ resumeToken: found
+ })
+ })
+ .catch(() => {
+ /* ignore */
+ })
+ }
+
  const taskId =
  typeof extraEnv.TRUEDECK_TASK === 'string' ? extraEnv.TRUEDECK_TASK : undefined
  const withFocus = {
@@ -803,7 +1214,8 @@ function registerIpc(): void {
  worktreeLabel:
  typeof extraEnv.TRUEDECK_WORKTREE_LABEL === 'string'
  ? extraEnv.TRUEDECK_WORKTREE_LABEL
- : undefined
+ : undefined,
+ resumeToken: resumeToken || undefined
  }
  mainWindow?.webContents.send('pty:spawned', withFocus)
  return withFocus
@@ -959,43 +1371,114 @@ function registerIpc(): void {
 
  /** Respawn tabs from the last saved layout (app restart). Hard-capped. */
  ipcMain.handle('sessions:restore', async () => {
- // TS clamp + Rust-only PTY spawn
+ const t0 = Date.now()
+ try {
  await requireRustBackend()
  const layout = loadSessionLayout()
  if (!layout.tabs.length) {
  return { layout, sessions: [] as SessionInfo[], restored: 0 }
  }
 
+ // STABILITY (Windows): auto-respawning many ConPTY agent tabs on launch was
+ // freezing/killing the app ("closed by itself"). Skip PTY restore by default;
+ // keep project root so the UI opens to the right workspace. User launches agents.
+ const skipPtyRestore =
+ process.env.TRUEDECK_RESTORE_PTYS !== '1' && process.env.TRUEDECK_RESTORE_PTYS !== 'true'
+ if (skipPtyRestore) {
  console.log(
- `[layout] restore: ${layout.tabs.length} tab(s) (max ${MAX_SAVED_TABS})`
+ `[layout] restore: skipping ${layout.tabs.length} PTY tab(s) on launch (set TRUEDECK_RESTORE_PTYS=1 to enable)`
+ )
+ if (layout.activeProjectRoot && existsSync(layout.activeProjectRoot)) {
+ try {
+ onProjectOpenFast(layout.activeProjectRoot)
+ upsertProject(layout.activeProjectRoot)
+ warmProjectInBackground(layout.activeProjectRoot)
+ } catch {
+ /* ignore */
+ }
+ }
+ console.log(`[layout] restore done (no PTYs) in ${Date.now() - t0}ms`)
+ return {
+ layout: {
+ ...layout,
+ tabs: [],
+ paneTree: null,
+ activeIndex: 0,
+ splitIndex: null,
+ focusedGroupTabIndex: null
+ },
+ sessions: [] as SessionInfo[],
+ restored: 0
+ }
+ }
+
+ // Prefer tabs for the last active project only — restoring 9 ConPTYs across
+ // 5 folders has been freezing/killing Electron on Windows.
+ const activeRoot = layout.activeProjectRoot
+ const indexed = layout.tabs
+ .map((tab, ti) => ({ tab, ti }))
+ .filter(({ tab }) => tab.projectRoot && existsSync(tab.projectRoot))
+ const inActive = activeRoot
+ ? indexed.filter(({ tab }) => sameRootPath(tab.projectRoot, activeRoot))
+ : []
+ let pick = inActive.length ? inActive : indexed
+ // Keep focused tab first when present
+ const focusTi =
+ typeof layout.focusedGroupTabIndex === 'number'
+ ? layout.focusedGroupTabIndex
+ : layout.activeIndex
+ pick = [
+ ...pick.filter((p) => p.ti === focusTi),
+ ...pick.filter((p) => p.ti !== focusTi)
+ ].slice(0, MAX_RESTORE_TABS)
+
+ console.log(
+ `[layout] restore: ${pick.length}/${layout.tabs.length} tab(s) ` +
+ `(active=${activeRoot || 'any'}, max ${MAX_RESTORE_TABS})`
  )
 
  const agents = loadAgents()
  const sessions: SessionInfo[] = []
- /** Original saved tab index → index in `sessions` (skips failed spawns). */
  const oldToNew = new Map<number, number>()
  const rootsWarmed = new Set<string>()
- let backendLive = await listLiveSessions()
+ const backendLive = await listLiveSessions()
 
- for (let ti = 0; ti < layout.tabs.length; ti++) {
- const tab = layout.tabs[ti]
- if (!tab.projectRoot || !existsSync(tab.projectRoot)) continue
- // Safety: stop if something bypassed the clamp
- if (sessions.length >= MAX_SAVED_TABS) break
-
- if (!rootsWarmed.has(tab.projectRoot)) {
+ for (const { tab } of pick) {
+ if (!tab.projectRoot || rootsWarmed.has(tab.projectRoot)) continue
  try {
- await onProjectOpen(tab.projectRoot)
+ onProjectOpenFast(tab.projectRoot)
+ upsertProject(tab.projectRoot)
  } catch {
- // memory is best-effort
+ /* ignore */
  }
  rootsWarmed.add(tab.projectRoot)
- upsertProject(tab.projectRoot)
  }
 
+ // Sequential spawn — parallel ConPTY on Windows is a common crash source
+ for (const { tab, ti } of pick) {
+ if (sessions.length >= MAX_RESTORE_TABS) break
  try {
- // Prefer already-running PTYs (restore after soft reload / race with openProject).
- // Include Rust-backend sessions so we don't stack duplicates.
+ if (tab.kind === 'document' || tab.documentPath) {
+ const docPath = (tab.documentPath || '').trim()
+ if (!docPath || !existsSync(docPath)) continue
+ const name = docPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || 'File'
+ const info: SessionInfo = {
+ id: `doc-${Date.now().toString(36)}-${ti}`,
+ agentId: 'document',
+ agentName: 'Doc',
+ color: tab.color || '#a78bfa',
+ projectRoot: tab.projectRoot,
+ status: 'running',
+ createdAt: Date.now(),
+ title: tab.title || name,
+ kind: 'document',
+ documentPath: docPath
+ }
+ oldToNew.set(ti, sessions.length)
+ sessions.push(info)
+ continue
+ }
+
  const liveAll = [...sessions, ...backendLive]
 
  if (tab.kind === 'command' || tab.commandLine) {
@@ -1008,9 +1491,10 @@ function registerIpc(): void {
  })
  )
  if (existing) {
+ const kept = { ...existing, title: tab.title || existing.title }
  if (!sessions.some((s) => s.id === existing.id)) {
  oldToNew.set(ti, sessions.length)
- sessions.push(existing)
+ sessions.push(kept)
  } else {
  oldToNew.set(ti, sessions.findIndex((s) => s.id === existing.id))
  }
@@ -1030,38 +1514,96 @@ function registerIpc(): void {
 
  const agent = agents.find((a) => a.id === tab.agentId)
  if (!agent) continue
- // Reuse first matching live agent so we don't stack Shell x N
  const reuseAgent = liveAll.find((s) =>
  isAgentSessionRunning([s], tab.projectRoot, tab.agentId)
  )
  if (reuseAgent) {
+ const kept: SessionInfo = {
+ ...reuseAgent,
+ title: tab.title || reuseAgent.title,
+ resumeToken: tab.resumeToken || reuseAgent.resumeToken
+ }
  if (!sessions.some((s) => s.id === reuseAgent.id)) {
  oldToNew.set(ti, sessions.length)
- sessions.push(reuseAgent)
+ sessions.push(kept)
  } else {
  oldToNew.set(ti, sessions.findIndex((s) => s.id === reuseAgent.id))
  }
  continue
  }
+
  const { env } = onAgentSpawnFast(tab.projectRoot)
  const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
- if (!resolved.available) throw new Error(`${agent.name} not available`)
+ if (!resolved.available) continue
+
+ const savedToken = (tab.resumeToken || '').trim()
+ let spawnArgs = resolved.args || []
+ let resumeToken: string | null = savedToken || null
+ let needsDiscover = false
+ const notBefore = Date.now() - 500
+
+ if (savedToken) {
+ const resumed = prepareResumeSpawn(agent.id, resolved.args || [], savedToken)
+ if (resumed) {
+ spawnArgs = resumed
+ console.log(
+ `[layout] resume ${agent.id} id=${savedToken} → ${resolved.command} ${spawnArgs.join(' ')}`
+ )
+ }
+ } else {
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ tab.projectRoot,
+ resolved.command
+ )
+ spawnArgs = prepared.args
+ resumeToken = prepared.resumeToken
+ needsDiscover = prepared.needsDiscover
+ console.log(
+ `[layout] restore ${agent.id}: new session=${resumeToken || '(discover)'}`
+ )
+ }
+
  const info = await rustSpawnAgent({
  projectRoot: tab.projectRoot,
  agentId: agent.id,
  command: resolved.command,
- args: resolved.args,
+ args: spawnArgs,
  agentName: agent.name,
  color: agent.color,
- env
+ env: {
+ ...env,
+ ...(resumeToken ? { TRUEDECK_CLI_SESSION: resumeToken } : {})
+ }
  })
- mainWindow?.webContents.send('pty:spawned', info)
+
+ if (!resumeToken && needsDiscover && agent.id === 'codex') {
+ resumeToken =
+ (await discoverCodexSessionId(tab.projectRoot, notBefore, 800)) ||
+ tryDiscoverCodexSessionId(tab.projectRoot, notBefore)
+ }
+
+ const withTitle: SessionInfo = {
+ ...info,
+ title: tab.title || info.title,
+ resumeToken: resumeToken || info.resumeToken
+ }
+ mainWindow?.webContents.send('pty:spawned', withTitle)
  oldToNew.set(ti, sessions.length)
- sessions.push(info)
- } catch {
- // skip broken tab - indices remapped below so multi-pane survives
+ sessions.push(withTitle)
+ } catch (e) {
+ console.warn('[layout] skip tab', ti, tab.agentId, e)
  }
+ // Yield between ConPTY creates
+ await new Promise((r) => setTimeout(r, 80))
  }
+
+ for (const root of rootsWarmed) {
+ warmProjectInBackground(root)
+ }
+
+ console.log(`[layout] restore spawns done in ${Date.now() - t0}ms`)
 
  const remappedTree = remapPaneTree(sanitizePaneTree(layout.paneTree), oldToNew)
  const mapIdx = (i: number | null | undefined): number | null => {
@@ -1094,6 +1636,11 @@ function registerIpc(): void {
  )
 
  return { layout: nextLayout, sessions, restored: sessions.length }
+ } catch (e) {
+ console.error('[layout] restore failed hard — opening empty', e)
+ const layout = loadSessionLayout()
+ return { layout, sessions: [] as SessionInfo[], restored: 0 }
+ }
  })
 
  ipcMain.handle('sessions:openProject', async (_e, projectId: string) => {
@@ -1101,8 +1648,9 @@ function registerIpc(): void {
  if (!project) throw new Error('Project not found')
  upsertProject(project.root) // touch lastOpened
 
- // Fully automatic memory: files + MemPalace mine + auto-context
- const mem = await onProjectOpen(project.root)
+ // Cheap paths immediately; full memory/MCP warm in background
+ const mem = onProjectOpenFast(project.root)
+ warmProjectInBackground(project.root)
 
  // Only spawn on-open / default agents when nothing matching is already live.
  // Re-opening (or restore + open) used to stack Rojo/Shell until MAX_SAVED_TABS.
@@ -1154,24 +1702,72 @@ function registerIpc(): void {
  }
  const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
  if (!resolved.available) continue
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ project.root,
+ resolved.command
+ )
+ const notBefore = Date.now() - 500
  const info = await rustSpawnAgent({
  projectRoot: project.root,
  agentId: agent.id,
  command: resolved.command,
- args: resolved.args,
+ args: prepared.args,
  agentName: agent.name,
  color: agent.color,
- env
+ env: {
+ ...env,
+ ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
+ }
  })
- mainWindow?.webContents.send('pty:spawned', info)
- launched.push(info.id)
- liveHere.push(info)
+ let resumeToken = prepared.resumeToken
+ if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ resumeToken =
+ (await discoverCodexSessionId(project.root, notBefore, 4000)) ||
+ tryDiscoverCodexSessionId(project.root, notBefore)
+ }
+ const withToken: SessionInfo = {
+ ...info,
+ resumeToken: resumeToken || info.resumeToken
+ }
+ mainWindow?.webContents.send('pty:spawned', withToken)
+ launched.push(withToken.id)
+ liveHere.push(withToken)
  }
  // sessionIds = newly launched only; reused are already in the UI store
  return { project, sessionIds: launched, reusedSessionIds: reused, memory: mem }
  })
 
  ipcMain.handle('memory:status', (_e, projectRoot?: string) => getRuntimeStatus(projectRoot))
+ ipcMain.handle(
+ 'project:setupStatus',
+ (_e, projectRoot: string, openAgentIds?: string[]) => {
+ const root = String(projectRoot || '')
+ const open = openAgentIds || []
+ const st = getProjectSetupStatus(root, open)
+ // Never await mempalace status here — that CLI freezes tab open for seconds.
+ // Reconcile stamp in the background; next poll clears "Memory warming…".
+ if (root && st.ready && st.warming) {
+ reconcileMineStampInBackground(root)
+ }
+ return st
+ }
+ )
+ ipcMain.handle(
+ 'project:setup',
+ async (
+ _e,
+ opts: { projectRoot: string; openAgentIds?: string[] }
+ ): Promise<import('../shared/types').ProjectSetupResult> => {
+ const s = loadSettings()
+ return setupProject({
+ projectRoot: String(opts.projectRoot || ''),
+ openAgentIds: opts.openAgentIds,
+ settings: s
+ })
+ }
+ )
 
  // ── Graphify knowledge graph ──
  ipcMain.handle('graphify:status', (_e, projectRoot?: string) =>
@@ -1348,20 +1944,51 @@ function registerIpc(): void {
 }
 
 app.whenReady().then(() => {
+ const bootT0 = Date.now()
  // Windows taskbar grouping + correct custom icon
  if (process.platform === 'win32') {
  app.setAppUserModelId('dev.truedeck.app')
  }
+ // Critical path only: data dir, lock, IPC, window. Everything else is deferred.
+ try {
  mkdirSync(getGlobalDataDir(), { recursive: true })
- ensureGlobalMemory()
+ } catch {
+ /* ignore */
+ }
+ writeAppLock()
  registerIpc()
- // Rust truedeck-backend is required (no node-pty fallback).
+
+ // Always register quit cleanup immediately (never nest inside deferred setTimeout)
+ let stopDeckWorker: (() => void) | null = null
+ const cleanupOnQuit = (): void => {
+ try {
+ stopDeckWorker?.()
+ } catch {
+ /* ignore */
+ }
+ try {
+ clearAppLock()
+ } catch {
+ /* ignore */
+ }
+ }
+ app.on('will-quit', cleanupOnQuit)
+ app.on('before-quit', cleanupOnQuit)
+
+ // 1) Window first — user sees TrueDeck ASAP (do not await backend/memory)
+ createWindow()
+ console.log(`[boot] window created ${Date.now() - bootT0}ms`)
+
+ // 2) Backend in parallel with renderer load (needed for restore, not for paint)
  void (async () => {
  try {
  rustBackend = await getBackend()
  if (rustBackend) {
+ if (mainWindow && !mainWindow.isDestroyed()) {
  setSessionsWindow(mainWindow)
- console.log('[backend] ready')
+ rustBackend.setWindow(mainWindow)
+ }
+ console.log('[backend] ready', `${Date.now() - bootT0}ms`)
  } else {
  console.error(
  '[backend] truedeck-backend failed to start - sessions will not work until it is available'
@@ -1371,44 +1998,43 @@ app.whenReady().then(() => {
  console.error('[backend] startup error', e)
  }
  })()
- createWindow()
 
- // Replace leftover docker-run mempalace MCP entries so opening agents
- // does not launch Docker Desktop. Native mempalace-mcp only.
- void (async () => {
+ // 3) Non-critical: memory tree, MCP purge, MemPalace, deck worker — after paint
+ const deferMs = isDev ? 200 : 100
+ setTimeout(() => {
  try {
- const r = purgeDockerMemoryMcpOnStartup()
- if (r.serverCount >= 0) {
- console.log('[mcp-hub]', r.message)
- }
- } catch (e) {
- console.warn('[mcp-hub] startup purge failed', e)
- }
- })()
-
- // Warm enabled memory providers (MemPalace native only - never Docker)
- void ensureEnabledProviders().catch(() => {
- // optional
- })
-
- // MCP / agents enqueue launch+dispatch here - no Deck Tools UI required
- const stopDeckWorker = startDeckCommandWorker({
- onSession: (session) => {
- // Re-emit after dispatch stamps taskId / focusTitle / status for chrome
- mainWindow?.webContents.send('pty:spawned', session)
- }
- })
- app.on('will-quit', () => {
- try {
- stopDeckWorker()
+ ensureGlobalMemory()
  } catch {
  /* ignore */
  }
+ void (async () => {
+ try {
+ const r = purgeDockerMemoryMcpOnStartup()
+ if (r.serverCount >= 0) console.log('[mcp-hub]', r.message)
+ } catch (e) {
+ console.warn('[mcp-hub] startup purge failed', e)
+ }
+ try {
+ await ensureEnabledProviders()
+ } catch {
+ /* optional */
+ }
+ })()
+ try {
+ stopDeckWorker = startDeckCommandWorker({
+ onSession: (session) => {
+ mainWindow?.webContents.send('pty:spawned', session)
+ }
  })
+ } catch (e) {
+ console.warn('[deck-commands] worker start failed', e)
+ }
+ }, deferMs)
 
  app.on('activate', () => {
  if (BrowserWindow.getAllWindows().length === 0) createWindow()
  })
+ console.log(`[boot] whenReady critical path ${Date.now() - bootT0}ms`)
 })
 
 let shuttingDown = false
@@ -1446,6 +2072,11 @@ app.on('before-quit', () => {
  }
  try {
  shutdownBackend()
+ } catch {
+ /* ignore */
+ }
+ try {
+ clearAppLock()
  } catch {
  /* ignore */
  }

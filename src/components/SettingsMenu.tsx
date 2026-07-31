@@ -304,7 +304,7 @@ export function SettingsMenu({
  <p className="hint">
  Configure MCP servers once. TrueDeck injects the same set into{' '}
  <strong>Cursor</strong>, <strong>Claude Code</strong>, <strong>Grok</strong>,{' '}
- <strong>Codex</strong>, <strong>Gemini</strong>, and project{' '}
+ <strong>Codex</strong>, <strong>Gemini</strong>, <strong>Kiro</strong>, and project{' '}
  <code>.mcp.json</code> files.
  <br />
  Agents use built-in <code>truedeck-hub</code> tools: <code>truedeck_launch</code>{' '}
@@ -312,6 +312,23 @@ export function SettingsMenu({
  plus <code>truedeck_list_mcp</code> / <code>truedeck_add_mcp</code> to edit this
  hub.
  </p>
+
+ <label className="settings-row settings-toggle-row" title="Click paths in agent terminals">
+ <span>
+ Open CLI paths in Document view
+ <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 4 }}>
+ When an agent prints a local file path (or <code>https://</code> URL), click it:
+ files open as a Document tab; URLs open in the browser. Off = plain text only.
+ </span>
+ </span>
+ <input
+ type="checkbox"
+ checked={settings.openCliPathsInDocument !== false}
+ onChange={(e) => {
+ void patch({ openCliPathsInDocument: e.target.checked })
+ }}
+ />
+ </label>
 
  <div className="mcp-list">
  {mcpList.length === 0 && (
@@ -339,7 +356,60 @@ export function SettingsMenu({
  <span className="mcp-source">{s.source}</span>
  </div>
  <code className="mcp-cmd">
- {s.command} {(s.args || []).join(' ')}
+ {(() => {
+ const parts = [s.command, ...(s.args || [])]
+ return parts.map((part, i) => {
+ const looksPath =
+ /^[A-Za-z]:[\\/]/.test(part) ||
+ part.startsWith('\\\\') ||
+ (part.startsWith('/') && part.length > 2) ||
+ /\.(mjs|js|cjs|exe|cmd|json)$/i.test(part)
+ if (!looksPath) {
+ return (
+ <span key={i}>
+ {i > 0 ? ' ' : ''}
+ {part}
+ </span>
+ )
+ }
+ return (
+ <button
+ key={i}
+ type="button"
+ className="mcp-path-link"
+ title={`Open ${part} in Document view`}
+ onClick={() => {
+ void (async () => {
+ try {
+ // Prefer Document tab for readable files; fall back to OS
+ const exists =
+ typeof window.truedeck.pathExists === 'function'
+ ? await window.truedeck.pathExists(part)
+ : false
+ if (exists) {
+ // Close settings so the doc tab is visible
+ onClose()
+ // Reuse same path as CLI click path via custom event
+ window.dispatchEvent(
+ new CustomEvent('truedeck:open-path', { detail: { path: part } })
+ )
+ onStatus(`Opening ${part}`)
+ } else {
+ await window.truedeck.openPathInOs(part)
+ onStatus(`Opened ${part}`)
+ }
+ } catch (e) {
+ onStatus(e instanceof Error ? e.message : String(e))
+ }
+ })()
+ }}
+ >
+ {i > 0 ? ' ' : ''}
+ {part}
+ </button>
+ )
+ })
+ })()}
  </code>
  </div>
  {s.source === 'user' && (
@@ -494,6 +564,43 @@ export function SettingsMenu({
  />
  <span className="meta">{settings.fontSize || 13}px</span>
  </div>
+ </label>
+ <label
+ className="settings-row settings-toggle-row"
+ title="Vim keybindings in Document editor (Monaco)"
+ >
+ <span>
+ Document editor Vim mode
+ <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 4 }}>
+ Use hjkl / modes in Document tabs (monaco-vim). Also toggle with the{' '}
+ <strong>Vim</strong> button on the document toolbar.
+ </span>
+ </span>
+ <input
+ type="checkbox"
+ checked={Boolean(settings.editorVimMode)}
+ onChange={(e) => {
+ void patch({ editorVimMode: e.target.checked })
+ }}
+ />
+ </label>
+ <label
+ className="settings-row settings-toggle-row"
+ title="VS Code-style project file tree"
+ >
+ <span>
+ Project explorer sidebar
+ <span className="hint" style={{ display: 'block', fontWeight: 400, marginTop: 4 }}>
+ File tree on the left. Toggle with <kbd>Ctrl+B</kbd>.
+ </span>
+ </span>
+ <input
+ type="checkbox"
+ checked={settings.showProjectExplorer !== false}
+ onChange={(e) => {
+ void patch({ showProjectExplorer: e.target.checked })
+ }}
+ />
  </label>
  <label className="settings-row">
  <span>Default layout</span>

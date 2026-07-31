@@ -7,6 +7,11 @@ import { join } from 'path'
 import { loadAgents } from './agents'
 import { resolveAgentCommand } from './resolve-command'
 import { spawnAgent as rustSpawnAgent, writeSession } from './sessions-rust'
+import {
+ prepareNewSessionSpawn,
+ discoverCodexSessionId,
+ tryDiscoverCodexSessionId
+} from './agent-resume'
 import { onAgentSpawnFast } from './memory-service'
 import { getTask, attachRun, updateTask } from './tasks'
 import { startRun } from './runs'
@@ -191,15 +196,31 @@ export async function dispatchTask(
  if (!resolved.available) {
  throw new Error(`${agent.name} CLI not available`)
  }
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ cwd,
+ resolved.command
+ )
+ const notBefore = Date.now() - 500
  const session = await rustSpawnAgent({
  projectRoot: cwd,
  agentId: agent.id,
  command: resolved.command,
- args: resolved.args,
+ args: prepared.args,
  agentName: agent.name,
  color: agent.color,
- env: extraEnv
+ env: {
+ ...extraEnv,
+ ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
+ }
  })
+ let resumeToken = prepared.resumeToken
+ if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ resumeToken =
+ (await discoverCodexSessionId(cwd, notBefore, 4000)) ||
+ tryDiscoverCodexSessionId(cwd, notBefore)
+ }
  // Keep session metadata pointing at main project for board filters
  session.projectRoot = task.projectRoot
  // Always stamp task chrome fields (not only when isolated worktree)
@@ -208,6 +229,7 @@ export async function dispatchTask(
  session.title = title.slice(0, 80)
  session.taskId = task.id
  session.taskStatus = 'running'
+ if (resumeToken) session.resumeToken = resumeToken
  if (role?.label) session.roleLabel = role.label
  if (worktreePath) session.worktreeLabel = worktreeLabel(worktreePath)
 

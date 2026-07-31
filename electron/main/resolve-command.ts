@@ -33,7 +33,9 @@ export const CLI_INSTALL: Record<string, string> = {
  grok: 'npm install -g @xai/grok',
  gemini: 'npm install -g @google/gemini-cli',
  opencode: 'npm install -g opencode-ai',
- aider: process.platform === 'win32' ? 'pip install aider-chat' : 'pip3 install aider-chat'
+ aider: process.platform === 'win32' ? 'pip install aider-chat' : 'pip3 install aider-chat',
+ // https://kiro.dev/docs/cli
+ kiro: 'curl -fsSL https://cli.kiro.dev/install | bash'
 }
 
 function which(cmd: string): string | null {
@@ -267,7 +269,12 @@ function resolveAgentCommandUncached(
  join('C:\\nvm4w\\nodejs', `${command}.cmd`),
  join(homedir(), '.grok', 'bin', `${command}.exe`),
  join(homedir(), '.local', 'bin', `${command}.exe`),
- join(homedir(), '.local', 'bin', command)
+ join(homedir(), '.local', 'bin', command),
+ // Kiro CLI install locations
+ join(homedir(), '.kiro', 'bin', `${command}.exe`),
+ join(homedir(), '.kiro', 'bin', command),
+ join(process.env.LOCALAPPDATA || '', 'kiro', 'bin', `${command}.exe`),
+ join(process.env.LOCALAPPDATA || '', 'kiro-cli', `${command}.exe`)
  ]
  const hit = firstExisting(candidates)
  if (hit && !isIdeBinary(hit)) {

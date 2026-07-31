@@ -38,6 +38,44 @@ function dataDir() {
   return join(process.env.XDG_CONFIG_HOME || join(homedir(), '.config'), 'TrueDeck', 'data')
 }
 
+function appLockPath() {
+  return join(dataDir(), 'app.lock')
+}
+
+/** True when TrueDeck Electron is running (owns a live app.lock pid). */
+function isTrueDeckOpen() {
+  if (process.env.TRUEDECK_MCP_ALLOW_OFFLINE === '1') return true
+  const p = appLockPath()
+  if (!existsSync(p)) return false
+  try {
+    const raw = JSON.parse(readFileSync(p, 'utf8'))
+    const pid = Number(raw?.pid)
+    if (!Number.isFinite(pid) || pid <= 0) return false
+    // Signal 0: check process exists (works on Windows Node too)
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+/**
+ * TrueDeck-closed gate for *tools*, not process startup.
+ * Exiting at module load made Grok report "timed out after 30s" instead of a
+ * clear offline error — initialize must complete quickly so the client connects.
+ */
+function appClosedError() {
+  return (
+    'TrueDeck is not open. truedeck-hub tools only work while the TrueDeck app is running. ' +
+    'Start TrueDeck, then retry (or reconnect MCP).'
+  )
+}
+
+function requireTrueDeckOpenOrThrow() {
+  if (isTrueDeckOpen()) return
+  throw new Error(appClosedError())
+}
+
 function storePath() {
   return join(dataDir(), 'mcp-servers.json')
 }
@@ -921,6 +959,51 @@ function toolList() {
           },
           additionalProperties: false
         }
+      },
+      {
+        name: 'truedeck_show',
+        description:
+          'Open text, code, or a markdown/source file in a separate TrueDeck app window (Electron pop-out — scroll, select, copy). Use when the user should read long content; agent TUIs cannot scroll and copy freely. Provide path OR content. Requires TrueDeck app running. Server: truedeck-hub (not the mempalace server named "truedeck").',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            path: {
+              type: 'string',
+              description: 'Absolute path to an existing file (md, ts, plans, …). Prefer this for project files.'
+            },
+            content: {
+              type: 'string',
+              description:
+                'Inline text/code/markdown when there is no file path yet. Written under project .truedeck/viewer/.'
+            },
+            title: {
+              type: 'string',
+              description: 'Window title (e.g. "Auth plan" or "fix for src/App.tsx")'
+            },
+            language: {
+              type: 'string',
+              description:
+                'Language or extension hint for inline content: md, ts, tsx, js, py, rs, json, … (default md)'
+            },
+            projectRoot: {
+              type: 'string',
+              description: 'Project path (defaults to TRUEDECK_PROJECT env). Used for scratch files.'
+            },
+            popout: {
+              type: 'boolean',
+              description: 'Open TrueDeck native pop-out window (default true)'
+            },
+            asTab: {
+              type: 'boolean',
+              description: 'Also open as a dockable document tab (default false)'
+            },
+            wait: {
+              type: 'boolean',
+              description: 'Wait up to ~12s for TrueDeck to open the window (default true)'
+            }
+          },
+          additionalProperties: false
+        }
       }
     ]
   }
@@ -1278,6 +1361,54 @@ function callTool(name, args = {}) {
         ]
       }
     }
+    case 'truedeck_show': {
+      const pathArg = args.path != null ? String(args.path).trim() : ''
+      const contentArg = args.content != null ? String(args.content) : ''
+      if (!pathArg && !contentArg) {
+        throw new Error('Provide path (existing file) or content (inline text/code/md)')
+      }
+      const projectRoot =
+        args.projectRoot || process.env.TRUEDECK_PROJECT || undefined
+      // Queue for TrueDeck Electron — opens a native app window (not system browser)
+      const cmd = enqueueDeckCommand({
+        type: 'show',
+        projectRoot: projectRoot ? String(projectRoot) : undefined,
+        title: args.title != null ? String(args.title) : undefined,
+        path: pathArg || undefined,
+        content: pathArg ? undefined : contentArg,
+        language: args.language != null ? String(args.language) : undefined,
+        popout: args.popout === false ? false : true,
+        asTab: args.asTab === true
+      })
+      const shouldWait = args.wait !== false
+      const finished = shouldWait ? waitForCommand(cmd.id, 12000) : cmd
+      const status = finished?.status || cmd.status
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok: status === 'done',
+                commandId: cmd.id,
+                status,
+                result: finished?.result,
+                error: finished?.error,
+                hint:
+                  status === 'done'
+                    ? 'Opened a separate TrueDeck window. User can scroll, select, and copy freely.'
+                    : status === 'error'
+                      ? `Show failed: ${finished?.error || 'unknown'}`
+                      : 'Queued. TrueDeck app must be running (with this build) — it opens a native pop-out window. Server: truedeck-hub.',
+                server: 'truedeck-hub'
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
     default:
       throw new Error(`Unknown tool: ${name}`)
   }
@@ -1304,13 +1435,21 @@ function handleMessage(msg) {
   const id = msg.id
   try {
     if (msg.method === 'initialize') {
+      // Always answer initialize quickly (even if app closed) so clients
+      // don't hit startup_timeout. Tools enforce app-open separately.
       send({
         jsonrpc: '2.0',
         id,
         result: {
           protocolVersion: '2024-11-05',
           capabilities: { tools: {} },
-          serverInfo: { name: SERVER_NAME, version: SERVER_VERSION }
+          serverInfo: {
+            name: SERVER_NAME,
+            version: SERVER_VERSION,
+            ...(isTrueDeckOpen()
+              ? {}
+              : { instructions: appClosedError() })
+          }
         }
       })
       return
@@ -1320,10 +1459,12 @@ function handleMessage(msg) {
       return
     }
     if (msg.method === 'tools/list') {
+      // List tools even when offline so agents know the surface; calls gate.
       send({ jsonrpc: '2.0', id, result: toolList() })
       return
     }
     if (msg.method === 'tools/call') {
+      requireTrueDeckOpenOrThrow()
       const name = msg.params?.name
       const args = msg.params?.arguments || {}
       const result = callTool(name, args)
@@ -1404,3 +1545,8 @@ process.stdin.on('end', () => process.exit(0))
 
 // Keep alive
 process.stdin.resume()
+
+// If TrueDeck quits while this MCP process is still attached, exit so clients disconnect
+setInterval(() => {
+  if (!isTrueDeckOpen()) requireTrueDeckOpenOrExit()
+}, 2000).unref()

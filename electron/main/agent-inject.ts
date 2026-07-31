@@ -1,6 +1,9 @@
 /**
  * Wire TrueDeck memory into the CLI the user actually runs
- * (Cursor MCP, Claude Code MCP, AGENTS.md / CLAUDE.md, env pointers).
+ * (Cursor/Claude/Grok MCP, unified `.agents/` folder, env pointers).
+ *
+ * Project source of truth: `.agents/AGENTS.md` + `.agents/mcp.json`
+ * (root AGENTS.md / CLAUDE.md / .mcp.json are thin bridges/mirrors).
  * Users should not hand-edit these during normal use.
  */
 import {
@@ -19,6 +22,10 @@ import { getMemPalaceStatus } from './mempalace'
 import { loadMemoryProviders, saveMemoryProviders } from './memory-providers'
 import { ensureGlobalMemory, ensureRepoMemory } from './memory'
 import { buildUnifiedMcpMap, injectMcpToAllClients } from './mcp-hub'
+import {
+ ensureUnifiedAgentsFolder,
+ writeGlobalAgentsMemoryNote
+} from './agents-folder'
 import type {
  AgentMemoryInjectResult,
  AppSettings,
@@ -118,39 +125,6 @@ function mergeMcpServers(
  return filePath
 }
 
-const POINTER_MARK = 'truedeck-memory'
-
-function ensureMarkdownPointer(projectRoot: string, fileName: string, forceCreate: boolean): string | null {
- const p = join(projectRoot, fileName)
- const block = [
- '',
- `<!-- ${POINTER_MARK} -->`,
- '## TrueDeck memory (automatic)',
- 'At session start, read `.truedeck/auto-context.md` for project memory.',
- 'Durable facts: write short notes under `.memory/context/` or `.memory/decisions/`.',
- 'If MemPalace MCP tools are available, use them for search/recall - do not ask the user to manage memory.',
- 'TrueDeck MCP hub (`truedeck-hub`): `truedeck_launch` opens a briefed agent in TrueDeck; `truedeck_start_pipeline` for multi-agent; `truedeck_list_agents` / `truedeck_list_roles` / `truedeck_list_tasks`; MCP config via `truedeck_list_mcp` / `truedeck_add_mcp` / `truedeck_apply_mcp`.',
- `<!-- /${POINTER_MARK} -->`,
- ''
- ].join('\n')
-
- try {
- if (existsSync(p)) {
- const cur = readFileSync(p, 'utf8')
- if (cur.includes(POINTER_MARK)) return p
- writeFileSync(p, cur.trimEnd() + '\n' + block, 'utf8')
- return p
- }
- if (forceCreate) {
- writeFileSync(p, `# Agent instructions\n${block}`, 'utf8')
- return p
- }
- } catch {
- // ignore
- }
- return null
-}
-
 /** Skip redundant injects within a few minutes for the same agent set+project+palace. */
 const injectCooldown = new Map<string, number>()
 const INJECT_TTL_MS = 10 * 60 * 1000
@@ -163,7 +137,8 @@ export const DEFAULT_SYNCED_AGENT_IDS = [
  'grok',
  'gemini',
  'opencode',
- 'aider'
+ 'aider',
+ 'kiro'
 ] as const
 
 export function resolveSyncedAgentIds(
@@ -182,64 +157,9 @@ export function resolveSyncedAgentIds(
  return [...DEFAULT_SYNCED_AGENT_IDS]
 }
 
-function writeCliMemoryNote(
- agentId: string,
- palace: string,
- projectRoot?: string
-): string | null {
- const body = [
- '# TrueDeck memory (automatic)',
- '',
- 'When running under TrueDeck:',
- '- Read project `.truedeck/auto-context.md` at session start.',
- `- MemPalace palace: \`${palace}\``,
- '- Durable notes: `.memory/` in the repo (TrueMemory).',
- '- MCP servers are injected by TrueDeck into this CLI (shared hub).',
- projectRoot ? `- Project: \`${projectRoot}\`` : '',
- '- Do not ask the user to manage memory, Graphify, or MCP wiring.',
- ''
- ]
- .filter(Boolean)
- .join('\n')
-
- try {
- if (agentId === 'codex') {
- const codexDir = join(homedir(), '.codex')
- mkdirSync(codexDir, { recursive: true })
- const note = join(codexDir, 'truedeck-memory.md')
- writeFileSync(note, body, 'utf8')
- return note
- }
- if (agentId === 'gemini') {
- const dir = join(homedir(), '.gemini')
- mkdirSync(dir, { recursive: true })
- const note = join(dir, 'truedeck-memory.md')
- writeFileSync(note, body, 'utf8')
- return note
- }
- if (agentId === 'grok') {
- const dir = join(homedir(), '.grok')
- mkdirSync(dir, { recursive: true })
- const note = join(dir, 'truedeck-memory.md')
- writeFileSync(note, body, 'utf8')
- return note
- }
- if (agentId === 'opencode' || agentId === 'aider') {
- const dir = join(homedir(), `.${agentId}`)
- mkdirSync(dir, { recursive: true })
- const note = join(dir, 'truedeck-memory.md')
- writeFileSync(note, body, 'utf8')
- return note
- }
- } catch {
- return null
- }
- return null
-}
-
 /**
  * Inject memory + unified MCP into every supported client config, and write
- * per-CLI notes for each id in `agentIds` (or default synced set).
+ * shared notes under `.agents/` (project + ~/.agents).
  */
 export async function injectMemoryForAgent(opts: {
  agentId: string
@@ -287,25 +207,16 @@ export async function injectMemoryForAgent(opts: {
 
  const written: string[] = []
 
- // Always ensure file memory trees + markdown pointers
+ // Always ensure file memory trees + unified .agents/ folder (canonical inject target)
  ensureGlobalMemory()
  if (opts.projectRoot && existsSync(opts.projectRoot)) {
  ensureRepoMemory(opts.projectRoot)
- const agentsMd = ensureMarkdownPointer(opts.projectRoot, 'AGENTS.md', true)
- if (agentsMd) written.push(agentsMd)
- // CLAUDE.md for Claude / Cursor / bulk sync
- if (
- targets.includes('claude') ||
- targets.includes('cursor') ||
- targets.includes('codex') ||
- targets.length > 1
- ) {
- const claude = ensureMarkdownPointer(opts.projectRoot, 'CLAUDE.md', true)
- if (claude) written.push(claude)
- }
+ written.push(
+ ...ensureUnifiedAgentsFolder(opts.projectRoot, { force: Boolean(opts.force) })
+ )
  }
 
- // Unified MCP → every client (Cursor, Claude, Grok, Codex, Gemini, project files)
+ // Unified MCP → every client (user-home product configs + project .agents/mcp.json)
  try {
  const hub = injectMcpToAllClients({ projectRoot: opts.projectRoot })
  written.push(...hub.filesWritten)
@@ -313,8 +224,10 @@ export async function injectMemoryForAgent(opts: {
  try {
  const servers = buildUnifiedMcpMap()
  if (opts.projectRoot) {
+ written.push(
+ mergeMcpServers(join(opts.projectRoot, '.agents', 'mcp.json'), servers)
+ )
  written.push(mergeMcpServers(join(opts.projectRoot, '.mcp.json'), servers))
- written.push(mergeMcpServers(join(opts.projectRoot, '.cursor', 'mcp.json'), servers))
  }
  written.push(mergeMcpServers(join(homedir(), '.cursor', 'mcp.json'), servers))
  } catch {
@@ -322,11 +235,9 @@ export async function injectMemoryForAgent(opts: {
  }
  }
 
- // Per-CLI memory notes for each synced agent
- for (const id of targets) {
- const note = writeCliMemoryNote(id, palace, opts.projectRoot)
+ // One shared note under ~/.agents/ (not per-CLI ~/.codex, ~/.grok, …)
+ const note = writeGlobalAgentsMemoryNote(palace, opts.projectRoot)
  if (note) written.push(note)
- }
 
  // TrueDeck-local record of last inject
  try {
@@ -336,6 +247,7 @@ export async function injectMemoryForAgent(opts: {
  agentIds: targets,
  palacePath: palace,
  projectRoot: opts.projectRoot || null,
+ agentsDir: opts.projectRoot ? join(opts.projectRoot, '.agents') : null,
  servers: Object.keys(buildUnifiedMcpMap()),
  written,
  at: Date.now()
@@ -349,13 +261,14 @@ export async function injectMemoryForAgent(opts: {
 
  const unique = [...new Set(written)]
  const serverCount = Object.keys(buildUnifiedMcpMap()).length
+ const agentsBit = opts.projectRoot ? ' + `.agents/`' : ''
  return {
  agentId: label,
  ok: unique.length > 0,
  filesWritten: unique,
  message:
  unique.length > 0
- ? `Memory + ${serverCount} MCP server(s) synced to ${targets.length} CLI(s): ${targets.join(', ')} (${unique.length} paths)`
+ ? `Memory${agentsBit} + ${serverCount} MCP server(s) synced to ${targets.length} CLI(s): ${targets.join(', ')} (${unique.length} paths)`
  : `No config files written for ${label}`
  }
 }

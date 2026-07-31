@@ -427,9 +427,14 @@ fn spawn_agent(sessions: &SessionManager, p: SpawnParams) -> Result<Value, Strin
     env.insert("TRUEDECK_AGENT".into(), agent.id.clone());
     env.insert("TRUEDECK_PTY".into(), "rust".into());
     env.insert("TRUEDECK_BACKEND".into(), "rust".into());
+    // Color identity (also enforced in sessions::spawn so parent NO_COLOR cannot win)
     env.insert("TERM".into(), "xterm-256color".into());
     env.insert("COLORTERM".into(), "truecolor".into());
     env.insert("TERM_PROGRAM".into(), "TrueDeck".into());
+    env.insert("FORCE_COLOR".into(), "3".into());
+    env.insert("CLICOLOR".into(), "1".into());
+    env.insert("CLICOLOR_FORCE".into(), "1".into());
+    env.remove("NO_COLOR");
 
     let id = new_session_id();
     let info = SessionInfo {
@@ -485,6 +490,13 @@ fn spawn_command(sessions: &SessionManager, p: SpawnCommandParams) -> Result<Val
     let mut env = memory::memory_env(&p.project_root);
     env.insert("TRUEDECK".into(), "1".into());
     env.insert("TRUEDECK_PTY".into(), "rust".into());
+    env.insert("TERM".into(), "xterm-256color".into());
+    env.insert("COLORTERM".into(), "truecolor".into());
+    env.insert("TERM_PROGRAM".into(), "TrueDeck".into());
+    env.insert("FORCE_COLOR".into(), "3".into());
+    env.insert("CLICOLOR".into(), "1".into());
+    env.insert("CLICOLOR_FORCE".into(), "1".into());
+    env.remove("NO_COLOR");
 
     let id = new_session_id();
     let info = SessionInfo {

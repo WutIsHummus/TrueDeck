@@ -16,3 +16,7 @@ Durable notes for AI agents. Commit repo memory with your project.
 | patterns/ | How-tos and conventions |
 | decisions/ | Architecture decisions |
 | sessions/ | Day logs |
+
+- memory-smoke-test.md (auto test)
+- truedeck-show-viewer.md (MCP truedeck_show pop-out for text/code/md)
+- project-setup-chip.md (title-bar setup + inject open CLIs)

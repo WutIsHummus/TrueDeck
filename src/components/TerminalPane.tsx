@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { Terminal } from 'xterm'
+import type { ILink, ILinkProvider } from 'xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { useDeck } from '../store'
 import { sanitizeSessionTitle } from '../lib/session-label'
+import {
+ findPathAtColumn,
+ findPathMatchesInLine,
+ isHttpUrl,
+ matchToCellRange,
+ readTerminalLineCells,
+ resolvePathCandidate
+} from '../lib/path-links'
+import { PixelBlast } from './PixelBlast'
 import 'xterm/css/xterm.css'
 
 interface Props {
@@ -17,6 +27,24 @@ interface Props {
  */
  focused?: boolean
  fontSize?: number
+ /**
+ * Click a path in CLI output → open Document view (local file) or OS handler.
+ * Controlled by Settings → MCP → openCliPathsInDocument.
+ */
+ onOpenPath?: (path: string) => void
+ /** When false, path underlines are disabled (default true). */
+ openPathsEnabled?: boolean
+ /** Skip open-intro PixelBlast (e.g. during pane split). */
+ suppressIntroBlast?: boolean
+ /** Palette/settings open — never steal focus or keystrokes. */
+ inputLocked?: boolean
+ /**
+ * Pane is sliding (split enter). Paint canvas every frame without WINCH.
+ * Do NOT use for close — continuous refresh makes Grok flicker.
+ */
+ layoutAnimating?: boolean
+ /** Tab/pane is exiting — freeze fit/focus/WINCH so Grok doesn't redraw mid-fade. */
+ closing?: boolean
 }
 
 /**
@@ -35,7 +63,13 @@ export function TerminalPane({
  sessionId,
  visible,
  focused,
- fontSize = 13
+ fontSize = 13,
+ onOpenPath,
+ openPathsEnabled = true,
+ suppressIntroBlast = false,
+ inputLocked = false,
+ layoutAnimating = false,
+ closing = false
 }: Props): JSX.Element {
  /** Outer chrome (overlay, clicks) - never pass this to term.open(). */
  const shellRef = useRef<HTMLDivElement>(null)
@@ -47,6 +81,17 @@ export function TerminalPane({
  const hostRef = useRef<HTMLDivElement>(null)
  const termRef = useRef<Terminal | null>(null)
  const fitRef = useRef<FitAddon | null>(null)
+ /** Keep latest open handler — terminal effect mounts once per session. */
+ const onOpenPathRef = useRef(onOpenPath)
+ onOpenPathRef.current = onOpenPath
+ const openPathsEnabledRef = useRef(openPathsEnabled)
+ openPathsEnabledRef.current = openPathsEnabled
+ const inputLockedRef = useRef(inputLocked)
+ inputLockedRef.current = inputLocked
+ const layoutAnimatingRef = useRef(layoutAnimating)
+ layoutAnimatingRef.current = layoutAnimating
+ const closingRef = useRef(closing)
+ closingRef.current = closing
  /** Grok / agent TUI mouse reporting — hide native scrollbar so wheel reaches custom scroll. */
  const [agentTuiMouse, setAgentTuiMouse] = useState(false)
  const agentTuiMouseRef = useRef(false)
@@ -58,8 +103,50 @@ export function TerminalPane({
  const isFocused = focused ?? visible
  /** Show "Connecting…" until the first PTY bytes (or a short timeout). */
  const [awaitingOutput, setAwaitingOutput] = useState(true)
+ /** Full-terminal flicker intro once per session (not on split remounts). */
+ const [introBlast, setIntroBlast] = useState(false)
+ const sessionColor =
+ useDeck((st) => st.sessions.find((s) => s.id === sessionId)?.color) || '#22d3ee'
+
+ useEffect(() => {
+ if (suppressIntroBlast) {
+ setIntroBlast(false)
+ return
+ }
+ // Only the first time this session id is shown in this renderer
+ const key = `td-intro:${sessionId}`
+ try {
+ if (sessionStorage.getItem(key)) {
+ setIntroBlast(false)
+ return
+ }
+ sessionStorage.setItem(key, '1')
+ } catch {
+ /* ignore */
+ }
+ setIntroBlast(true)
+ const t = window.setTimeout(() => setIntroBlast(false), 1800)
+ return () => window.clearTimeout(t)
+ }, [sessionId, suppressIntroBlast])
+
+ /** True while pane is sliding or user is dragging a split gutter. */
+ const isLayoutFrozen = (): boolean => {
+  if (closingRef.current || layoutAnimatingRef.current) return true
+  try {
+   return (
+    document.body.classList.contains('is-pane-animating') ||
+    document.body.classList.contains('is-resizing-split')
+   )
+  } catch {
+   return false
+  }
+ }
 
  const pushSize = (term: Terminal, force = false): void => {
+ // Never WINCH mid-animation / gutter-drag — agent TUIs clear+redraw every size
+ // event and look jagged. One resize after motion ends is enough.
+ if (!force && isLayoutFrozen()) return
+ if (closingRef.current && !force) return
  const cols = Math.max(20, term.cols || 80)
  const rows = Math.max(8, term.rows || 24)
  const prev = lastSizeRef.current
@@ -68,15 +155,65 @@ export function TerminalPane({
  void window.truedeck.resizeSession(sessionId, cols, rows, force)
  }
 
+ /**
+ * Fit cols/rows to the host box.
+ *
+ * Stock FitAddon always subtracts scrollBarWidth when scrollback > 0, even if
+ * CSS hides the bar → permanent black strip. We measure the host ourselves.
+ *
+ * When host scrollback is active (`.xterm-viewport-scrollable`), reserve the
+ * real 8px bar width so text ends at the bar and the bar sits flush on the
+ * pane edge (no gap between thumb and side).
+ */
  const fitAndResize = (force = false): void => {
  const term = termRef.current
  const fit = fitRef.current
  const host = hostRef.current
- if (!term || !fit || !host) return
+ if (!term || !host) return
  // Skip fit when host has no box yet (still mounting)
  if (host.clientWidth < 8 || host.clientHeight < 8) return
+ // Freeze character grid while pane geometry is animating (smooth CSS motion)
+ if (!force && isLayoutFrozen()) return
  try {
+ const core = (
+ term as unknown as {
+ _core?: {
+ viewport?: { scrollBarWidth?: number; element?: HTMLElement }
+ _renderService?: {
+ dimensions?: {
+ css?: { cell?: { width?: number; height?: number } }
+ }
+ }
+ }
+ }
+ )._core
+ const vpEl =
+ (core?.viewport?.element as HTMLElement | undefined) ||
+ (host.querySelector('.xterm-viewport') as HTMLElement | null)
+ // Match CSS: 8px only when host scrollback bar is shown
+ const showHostBar = Boolean(
+ vpEl?.classList.contains('xterm-viewport-scrollable') &&
+ !host.closest('.terminal-pane')?.classList.contains('agent-tui-mouse')
+ )
+ const barW = showHostBar ? 8 : 0
+ if (core?.viewport && typeof core.viewport.scrollBarWidth === 'number') {
+ core.viewport.scrollBarWidth = barW
+ }
+ const cellW = core?._renderService?.dimensions?.css?.cell?.width || 0
+ const cellH = core?._renderService?.dimensions?.css?.cell?.height || 0
+ if (cellW > 0 && cellH > 0) {
+ const availW = Math.max(8, host.clientWidth - barW)
+ const cols = Math.max(20, Math.floor(availW / cellW))
+ const rows = Math.max(8, Math.floor(host.clientHeight / cellH))
+ if (term.cols !== cols || term.rows !== rows) {
+ term.resize(cols, rows)
+ }
+ } else if (fit) {
  fit.fit()
+ if (core?.viewport && typeof core.viewport.scrollBarWidth === 'number') {
+ core.viewport.scrollBarWidth = barW
+ }
+ }
  pushSize(term, force)
  } catch {
  // ignore measure races
@@ -91,30 +228,43 @@ export function TerminalPane({
  * clear and repaint (visible flicker). Reserve for mount / first bytes / blank.
  */
  const lastKickAtRef = useRef(0)
+ const isCursorAgent = (): boolean => {
+ try {
+ return (
+ useDeck.getState().sessions.find((s) => s.id === sessionId)?.agentId || ''
+ ).toLowerCase() === 'cursor'
+ } catch {
+ return false
+ }
+ }
  const kickAgentTui = (reason: 'mount' | 'first-byte' | 'blank' | 'manual' = 'manual'): void => {
  const term = termRef.current
  const host = hostRef.current
  if (!term) return
+ if (closingRef.current) return
  // Host still collapsing (connecting overlay / split) - wait for a real box
  if (host && (host.clientWidth < 8 || host.clientHeight < 8)) return
  const now = Date.now()
+ const cursor = isCursorAgent()
  // Tab switches used to re-kick every time → Grok flicker. Cooldown unless blank.
- if (reason !== 'blank' && reason !== 'first-byte' && now - lastKickAtRef.current < 2500) {
+ // Cursor: shorter cooldown — it often needs repeated WINCH to first paint.
+ const cooldown = cursor ? 400 : 2500
+ if (
+ reason !== 'blank' &&
+ reason !== 'first-byte' &&
+ now - lastKickAtRef.current < cooldown
+ ) {
+ fitAndResize(false)
+ forceRefresh()
  try {
- fitRef.current?.fit()
+ term.focus()
  } catch {
  /* ignore */
  }
- pushSize(term, false)
- forceRefresh()
  return
  }
  lastKickAtRef.current = now
- try {
- fitRef.current?.fit()
- } catch {
- /* ignore */
- }
+ fitAndResize(true)
  const cols = Math.max(20, term.cols || 80)
  const rows = Math.max(8, term.rows || 24)
  // Slightly different size forces a change event on ConPTY
@@ -125,9 +275,39 @@ export function TerminalPane({
  void window.truedeck.resizeSession(sessionId, cols, rows, true)
  lastSizeRef.current = { cols, rows }
  forceRefresh()
- // Cursor TUI often needs a second paint
- requestAnimationFrame(() => forceRefresh())
- }, 50)
+ // Cursor TUI often needs a second paint + focus before anything appears
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ requestAnimationFrame(() => {
+ forceRefresh()
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ })
+ }, cursor ? 30 : 50)
+ // Cursor: third WINCH pass — blank until keystroke without this on some ConPTY builds
+ if (cursor) {
+ window.setTimeout(() => {
+ if (!termRef.current) return
+ lastSizeRef.current = { cols: 0, rows: 0 }
+ const t = termRef.current
+ const c = Math.max(20, t.cols || 80)
+ const r = Math.max(8, t.rows || 24)
+ void window.truedeck.resizeSession(sessionId, c, r, true)
+ lastSizeRef.current = { cols: c, rows: r }
+ forceRefresh()
+ try {
+ t.focus()
+ } catch {
+ /* ignore */
+ }
+ }, 120)
+ }
  }
 
  /** Full viewport repaint - fixes partial canvas frames that stick until next write. */
@@ -153,10 +333,14 @@ export function TerminalPane({
  fontSize,
  fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace',
  theme: {
+ // Full 16-color palette so agent TUIs (Claude/Codex/Grok/Cursor) match
+ // their native CLI colors instead of falling back to washed defaults.
  background: '#05070a',
  foreground: '#e2e8f0',
  cursor: '#22d3ee',
- selectionBackground: '#22d3ee44',
+ cursorAccent: '#05070a',
+ selectionBackground: '#f0a05066',
+ selectionForeground: '#f8fafc',
  black: '#0f172a',
  red: '#f87171',
  green: '#34d399',
@@ -164,38 +348,240 @@ export function TerminalPane({
  blue: '#60a5fa',
  magenta: '#c084fc',
  cyan: '#22d3ee',
- white: '#e2e8f0'
+ white: '#e2e8f0',
+ brightBlack: '#64748b',
+ brightRed: '#fca5a5',
+ brightGreen: '#6ee7b7',
+ brightYellow: '#fde68a',
+ brightBlue: '#93c5fd',
+ brightMagenta: '#d8b4fe',
+ brightCyan: '#67e8f9',
+ brightWhite: '#f8fafc'
  },
  allowProposedApi: true,
  scrollback: 5000,
- // Agent TUIs speak full VT; windowsMode (legacy console) causes cut/glitch on redraw
+ // Draw all rows each paint - less partial-frame sticky garbage on ConPTY redraws
  convertEol: false,
  windowsMode: false,
- // Draw all rows each paint - less partial-frame sticky garbage on ConPTY redraws
+ rightClickSelectsWord: true,
  drawBoldTextInBrightColors: true
  })
  const fit = new FitAddon()
  term.loadAddon(fit)
- term.loadAddon(new WebLinksAddon())
+ // HTTP(S) links (non-local) — open externally
+ term.loadAddon(
+ new WebLinksAddon((_event, uri) => {
+ void window.truedeck.openPathInOs(uri).catch(() => {
+ try {
+ window.open(uri, '_blank', 'noopener,noreferrer')
+ } catch {
+ /* ignore */
+ }
+ })
+ })
+ )
+
+ /** Resolve session project root for relative CLI paths. */
+ const sessionProjectRoot = (): string | null => {
+ const s = useDeck.getState().sessions.find((x) => x.id === sessionId)
+ return s?.projectRoot || useDeck.getState().projects.find((p) => p.id === useDeck.getState().activeProjectId)?.root || null
+ }
+
+ /** Open a matched path string (relative or absolute) in Document view. */
+ const openMatchedPath = (raw: string): void => {
+ if (!raw || !openPathsEnabledRef.current) return
+ if (isHttpUrl(raw)) {
+ void window.truedeck.openPathInOs(raw).catch(() => {
+ /* ignore */
+ })
+ return
+ }
+ const resolved = resolvePathCandidate(raw, sessionProjectRoot())
+ const open = onOpenPathRef.current
+ if (open) {
+ useDeck.getState().setStatus(`Opening ${raw}…`)
+ open(resolved || raw)
+ } else {
+ useDeck.getState().setStatus('Path open unavailable')
+ }
+ }
+
+ /** Path under a mouse event (viewport cell → buffer line). */
+ const pathUnderMouseEvent = (ev: MouseEvent): string | null => {
+ try {
+ const core = (
+ term as unknown as {
+ _core?: {
+ _mouseService?: {
+ getMouseReportCoords?: (
+ e: MouseEvent,
+ el: HTMLElement
+ ) => { col: number; row: number } | undefined
+ }
+ _renderService?: {
+ dimensions?: {
+ css?: { cell?: { width?: number; height?: number } }
+ }
+ }
+ screenElement?: HTMLElement
+ }
+ }
+ )._core
+ let col = -1
+ let row = -1
+ const coords = core?._mouseService?.getMouseReportCoords?.(
+ ev,
+ core.screenElement || term.element!
+ )
+ if (coords && Number.isFinite(coords.col) && Number.isFinite(coords.row)) {
+ col = coords.col
+ row = coords.row
+ } else {
+ // Fallback: map client coords via cell CSS size
+ const el = core?.screenElement || term.element
+ if (!el) return null
+ const rect = el.getBoundingClientRect()
+ const cellW = core?._renderService?.dimensions?.css?.cell?.width || 0
+ const cellH = core?._renderService?.dimensions?.css?.cell?.height || 0
+ if (cellW < 1 || cellH < 1) return null
+ col = Math.floor((ev.clientX - rect.left) / cellW)
+ row = Math.floor((ev.clientY - rect.top) / cellH)
+ }
+ if (col < 0 || row < 0) return null
+ col = Math.max(0, Math.min((term.cols || 1) - 1, col))
+ row = Math.max(0, Math.min((term.rows || 1) - 1, row))
+ const buf = term.buffer.active
+ const lineIdx = buf.viewportY + row
+ const lineObj = buf.getLine(lineIdx)
+ if (!lineObj) return null
+ const { text, strToCell } = readTerminalLineCells(
+ (c) => lineObj.getCell(c)?.getChars() || '',
+ lineObj.length
+ )
+ return findPathAtColumn(text, col, strToCell)
+ } catch {
+ return null
+ }
+ }
+
+ // File paths (local / project-relative) → Document view when enabled
+ // Underlines via link provider; clicks also handled below (agent mouse mode
+ // otherwise swallows plain clicks so activate never fires).
+ let pathLinkDispose: { dispose: () => void } | null = null
+ if (openPathsEnabled) {
+ const provider: ILinkProvider = {
+ provideLinks: (y, callback) => {
+ try {
+ if (!openPathsEnabledRef.current) {
+ callback(undefined)
+ return
+ }
+ const lineObj = term.buffer.active.getLine(y - 1)
+ if (!lineObj) {
+ callback(undefined)
+ return
+ }
+ const { text, strToCell } = readTerminalLineCells(
+ (c) => lineObj.getCell(c)?.getChars() || '',
+ lineObj.length
+ )
+ const matches = findPathMatchesInLine(text)
+ if (!matches.length) {
+ callback(undefined)
+ return
+ }
+ const links: ILink[] = []
+ for (const m of matches) {
+ const range = matchToCellRange(m, strToCell)
+ if (!range) continue
+ links.push({
+ text: m.text,
+ range: {
+ start: { x: range.startCol + 1, y },
+ end: { x: range.endCol + 1, y }
+ },
+ activate: (_event, _text) => {
+ openMatchedPath(m.text)
+ },
+ hover: (event) => {
+ const el = event.target as HTMLElement | undefined
+ if (el?.style) {
+ el.style.cursor = 'pointer'
+ el.title = agentTuiMouseRef.current
+ ? `Open ${m.text} (click · or Ctrl+click)`
+ : `Open ${m.text}`
+ }
+ }
+ })
+ }
+ callback(links.length ? links : undefined)
+ } catch {
+ callback(undefined)
+ }
+ }
+ }
+ pathLinkDispose = term.registerLinkProvider(provider)
+ }
  // Only ever open into the dedicated empty host - never the shell with React kids
  term.open(host)
+ // FitAddon still reads this even when CSS hides the bar; zero it so cols
+ // span the full pane (otherwise a black strip sits past the last column).
+ try {
+ const vp = (
+ term as unknown as { _core?: { viewport?: { scrollBarWidth?: number } } }
+ )._core?.viewport
+ if (vp && typeof vp.scrollBarWidth === 'number') vp.scrollBarWidth = 0
+ } catch {
+ /* ignore */
+ }
  termRef.current = term
  fitRef.current = fit
  // Immediate fit + staged WINCH kicks only on mount (Cursor Agent is slow on ConPTY).
  // Later tab switches use soft fit/refresh only — see visible/focused effects.
+ const cursorLaunch = isCursorAgent()
  requestAnimationFrame(() => {
  fitAndResize(true)
  forceRefresh()
+ try {
+ term.focus()
+ } catch {
+ /* ignore */
+ }
  kickAgentTui('mount')
  })
- const kickTimers = [80, 200, 400, 800, 1400, 2200, 3500].map((ms) =>
+ // Detached pop-out / Cursor: denser late kicks — blank until WINCH redraw
+ let isDetachedRenderer = false
+ try {
+  isDetachedRenderer = Boolean(
+   window.truedeck?.getDetachedBoot?.()?.detached ||
+    new URLSearchParams(window.location.search).get('detached') === '1'
+  )
+ } catch {
+  /* ignore */
+ }
+ const kickSchedule =
+  cursorLaunch || isDetachedRenderer
+   ? [60, 150, 300, 500, 800, 1200, 1800, 2600, 4000, 5500]
+   : [80, 200, 400, 800, 1400, 2200, 3500]
+ // Detached: clear "Connecting…" if PTY is idle (no new bytes) so window isn't stuck empty
+ if (isDetachedRenderer) {
+  window.setTimeout(() => setAwaitingOutput(false), 600)
+ }
+ const kickTimers = kickSchedule.map((ms) =>
  window.setTimeout(() => {
  if (!termRef.current) return
- // Soft fit after first kick; only re-kick early in mount window
- if (ms <= 400) kickAgentTui('mount')
+ // Soft fit after first kick; Cursor re-kicks longer (blank-until-type)
+ if (ms <= (cursorLaunch ? 1200 : 400)) kickAgentTui('mount')
  else {
- fitAndResize(false)
+ fitAndResize(cursorLaunch)
  forceRefresh()
+ if (cursorLaunch) {
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ }
  }
  }, ms)
  )
@@ -211,9 +597,94 @@ export function TerminalPane({
  }
  }
 
+ /** Session agent id (e.g. grok, codex) — used for TUI scroll ownership. */
+ const sessionAgentId = (): string => {
+ try {
+ return (
+ useDeck.getState().sessions.find((s) => s.id === sessionId)?.agentId || ''
+ ).toLowerCase()
+ } catch {
+ return ''
+ }
+ }
+
+ /**
+ * Agents that run a full-screen TUI with *custom* in-app scroll (not xterm
+ * host scrollback). Grok is the main case — Cursor/Codex usually stay on the
+ * normal buffer so host wheel works without mouse reports.
+ *
+ * https://docs.x.ai/build/cli/terminal-support
+ */
+ const isCustomScrollTuiAgent = (): boolean => {
+ const id = sessionAgentId()
+ // Full-screen agent TUIs that need wheel → PTY mouse reports
+ return id === 'grok' || id === 'gemini' || id === 'kiro'
+ }
+
+ /** True when the app (Grok) has requested mouse tracking. */
+ const isMouseTrackingOn = (): boolean => {
+ try {
+ if (term.element?.classList.contains('enable-mouse-events')) return true
+ } catch {
+ /* ignore */
+ }
+ try {
+ const mode = String(
+ (term.modes as { mouseTrackingMode?: string } | undefined)?.mouseTrackingMode ||
+ 'none'
+ )
+ if (mode !== 'none' && mode !== '0') return true
+ } catch {
+ /* ignore */
+ }
+ try {
+ const core = (
+ term as unknown as {
+ _core?: {
+ coreService?: { decPrivateModes?: { mouseTrackingMode?: unknown } }
+ coreMouseService?: {
+ areMouseEventsActive?: boolean | (() => boolean)
+ activeProtocol?: string
+ }
+ }
+ }
+ )._core
+ const active = core?.coreMouseService?.areMouseEventsActive
+ if (typeof active === 'function' ? active.call(core.coreMouseService) : active) {
+ return true
+ }
+ const proto = core?.coreMouseService?.activeProtocol
+ if (proto && String(proto) !== 'NONE' && String(proto) !== 'none' && String(proto) !== '0') {
+ return true
+ }
+ const m = core?.coreService?.decPrivateModes?.mouseTrackingMode
+ if (m != null && String(m) !== '0' && String(m) !== 'none' && String(m) !== 'NONE') {
+ return true
+ }
+ } catch {
+ /* ignore */
+ }
+ return false
+ }
+
+ const isAltScreen = (): boolean => {
+ try {
+ return term.buffer.active.type === 'alternate'
+ } catch {
+ return false
+ }
+ }
+
+ /**
+ * Does this pane need wheel → PTY mouse reports (not host scrollback)?
+ * Grok always: even if mouse/alt detection lags after redraw.
+ */
+ const tuiOwnsWheel = (): boolean =>
+ isCustomScrollTuiAgent() || isMouseTrackingOn() || isAltScreen()
+
  // Never let xterm eat TrueDeck app shortcuts.
  // Ctrl+A left for the terminal (select-all / agent TUI).
- // Ctrl+D = vertical split · Ctrl+X = horizontal split · Ctrl+Arrow = move between panes.
+ // Ctrl+D = v-split · Ctrl+X = h-split · Ctrl+Z = undo move · Ctrl+Arrow = panes.
  // PageUp/Down + arrows scroll history (arrows only while scrolled up, or with Shift).
  const blockEvent = (ev: KeyboardEvent): false => {
  try {
@@ -246,36 +717,141 @@ export function TerminalPane({
  )
  }
 
+ /** Debounce so keydown paste + DOM paste event never double-insert. */
+ let lastPasteAt = 0
+ const PASTE_DEBOUNCE_MS = 100
+
+ const isWindowsHost = (): boolean => {
+ try {
+ return (
+ (typeof process !== 'undefined' && process.platform === 'win32') ||
+ navigator.userAgent.includes('Windows')
+ )
+ } catch {
+ return navigator.userAgent.includes('Windows')
+ }
+ }
+
+ const copySelection = (): boolean => {
+ try {
+ if (!term.hasSelection()) return false
+ const text = term.getSelection()
+ if (!text) return false
+ void window.truedeck.writeClipboard(text)
+ // Clear so the next bare Ctrl+C is SIGINT, not another copy.
+ try {
+ term.clearSelection()
+ } catch {
+ /* ignore */
+ }
+ return true
+ } catch {
+ return false
+ }
+ }
+
+ /**
+ * Paste into the PTY via xterm.paste (bracketed paste) → onData → writeSession.
+ * Only stamps the debounce after a non-empty paste so empty clipboard
+ * events cannot block a real Ctrl+V.
+ */
+ const pasteIntoTerm = (raw: string): boolean => {
+ if (!raw) return false
+ const now = Date.now()
+ if (now - lastPasteAt < PASTE_DEBOUNCE_MS) return false
+ lastPasteAt = now
+ const payload = isWindowsHost() ? raw.replace(/\r?\n/g, '\r') : raw
+ try {
+ // Prefer xterm.paste so agents get bracketed-paste sequences when enabled.
+ if (typeof term.paste === 'function') {
+ term.paste(payload)
+ } else {
+ void window.truedeck.writeSession(sessionId, payload)
+ }
+ return true
+ } catch {
+ try {
+ void window.truedeck.writeSession(sessionId, payload)
+ return true
+ } catch {
+ return false
+ }
+ }
+ }
+
+ const pasteClipboard = (text?: string): void => {
+ if (typeof text === 'string' && text.length > 0) {
+ pasteIntoTerm(text)
+ return
+ }
+ const tryNav = (): void => {
+ if (!navigator.clipboard?.readText) return
+ void navigator.clipboard
+ .readText()
+ .then((t) => {
+ if (t) pasteIntoTerm(t)
+ })
+ .catch(() => {
+ /* permission / focus */
+ })
+ }
+ if (typeof window.truedeck?.readClipboard === 'function') {
+ void window.truedeck
+ .readClipboard()
+ .then((t) => {
+ if (t) pasteIntoTerm(t)
+ else tryNav()
+ })
+ .catch(() => tryNav())
+ return
+ }
+ tryNav()
+ }
+
  term.attachCustomKeyEventHandler((ev) => {
+ // Palette / settings own the keyboard — never feed PTY
+ if (inputLockedRef.current) {
+ return blockEvent(ev)
+ }
  if (ev.type !== 'keydown') return true
  const ctrl = ev.ctrlKey || ev.metaKey
 
- // Ctrl+Arrow → never send to PTY (main before-input + App shortcuts own this)
+ // Ctrl+Arrow / Ctrl+Tab → App owns (main before-input + App shortcuts)
  if (ctrl && isArrowKey(ev)) {
  return blockEvent(ev)
  }
- // Also block when only meta (mac) - same as ctrl above already covers metaKey
  if (ctrl && (ev.key === 'Tab' || ev.code === 'Tab')) {
  return blockEvent(ev)
  }
 
  // ── Scrollback keys (no Ctrl - Ctrl+Arrow is pane focus) ────────────
  if (!ctrl && !ev.altKey) {
+ // Grok / full-screen TUIs: PageUp/Down must go to the app (alt buffer has
+ // no host scrollback). Shell normal buffer still uses xterm history.
+ const tuiScrollKeys = tuiOwnsWheel()
  if (ev.key === 'PageUp' || ev.code === 'PageUp') {
+ if (tuiScrollKeys && !ev.shiftKey) {
+ void window.truedeck.writeSession(sessionId, '\x1b[5~')
+ return blockEvent(ev)
+ }
  term.scrollPages(-1)
  forceRefresh()
  return blockEvent(ev)
  }
  if (ev.key === 'PageDown' || ev.code === 'PageDown') {
+ if (tuiScrollKeys && !ev.shiftKey) {
+ void window.truedeck.writeSession(sessionId, '\x1b[6~')
+ return blockEvent(ev)
+ }
  term.scrollPages(1)
  forceRefresh()
  return blockEvent(ev)
  }
- // Shift+↑/↓ always scroll; bare ↑/↓ scroll only while in history so
- // agents/shells still get arrows when you're at the live prompt.
+ // Shift+↑/↓ always host-scroll; bare ↑/↓ only while in host history.
+ // On Grok alt-screen, bare arrows must reach the TUI (return true).
  if (
  (ev.key === 'ArrowUp' || ev.code === 'ArrowUp') &&
- (ev.shiftKey || isScrolledUp())
+ (ev.shiftKey || (isScrolledUp() && !tuiScrollKeys))
  ) {
  term.scrollLines(ev.shiftKey ? -5 : -1)
  forceRefresh()
@@ -283,7 +859,7 @@ export function TerminalPane({
  }
  if (
  (ev.key === 'ArrowDown' || ev.code === 'ArrowDown') &&
- (ev.shiftKey || isScrolledUp())
+ (ev.shiftKey || (isScrolledUp() && !tuiScrollKeys))
  ) {
  term.scrollLines(ev.shiftKey ? 5 : 1)
  forceRefresh()
@@ -308,14 +884,56 @@ export function TerminalPane({
  : ''
  const k =
  (ev.key.length === 1 ? ev.key.toLowerCase() : '') || fromCode
- // Font zoom: Ctrl+= / Ctrl++ / Ctrl+- / Ctrl+0 — never send to PTY
+ const code = ev.code || ''
+
+ // ── Terminal owns C/V (main does not claim these) ───────────────────
+ // Ctrl+Shift+C → copy. Ctrl+C with selection → copy then clear.
+ // Bare Ctrl+C with no selection → SIGINT to PTY.
+ if ((k === 'c' || code === 'KeyC') && !ev.altKey) {
+ if (ev.shiftKey) {
+ copySelection()
+ return blockEvent(ev)
+ }
+ if (term.hasSelection() && copySelection()) {
+ return blockEvent(ev)
+ }
+ return true
+ }
+ // Ctrl+V / Ctrl+Shift+V → paste.
+ // Do NOT preventDefault here: that cancels the browser paste event and
+ // leaves us dependent on async IPC only (often empty/racey on Windows).
+ // Return false so xterm does not emit Ctrl+V (\x16) to the PTY; the
+ // native paste event (or a short IPC backup) does the insert.
+ if ((k === 'v' || code === 'KeyV') && !ev.altKey) {
+ try {
+ ev.stopPropagation()
+ } catch {
+ /* ignore */
+ }
+ window.setTimeout(() => pasteClipboard(), 15)
+ return false
+ }
+ // Ctrl+A → agent/shell. Ctrl+Shift+A → select all buffer for copy.
+ if ((k === 'a' || code === 'KeyA') && !ev.altKey && !ev.shiftKey) {
+ return true
+ }
+ if ((k === 'a' || code === 'KeyA') && ev.shiftKey && !ev.altKey) {
+ try {
+ term.selectAll()
+ } catch {
+ /* ignore */
+ }
+ return blockEvent(ev)
+ }
+
+ // Font zoom: never send to PTY (App owns via main IPC)
  const zoomCode =
- ev.code === 'Equal' ||
- ev.code === 'Minus' ||
- ev.code === 'NumpadAdd' ||
- ev.code === 'NumpadSubtract' ||
- ev.code === 'Digit0' ||
- ev.code === 'Numpad0'
+ code === 'Equal' ||
+ code === 'Minus' ||
+ code === 'NumpadAdd' ||
+ code === 'NumpadSubtract' ||
+ code === 'Digit0' ||
+ code === 'Numpad0'
  if (
  zoomCode ||
  k === '=' ||
@@ -326,17 +944,105 @@ export function TerminalPane({
  ) {
  return blockEvent(ev)
  }
- // Split: Ctrl+D vertical · Ctrl+X horizontal · Ctrl+Alt+D/X merge
- if (k === 'd' || k === 'x') return blockEvent(ev)
- if (ev.altKey || ev.shiftKey) {
- // Ctrl+Shift+= still zoom-in on some layouts; already blocked above via code
- return true
+
+ // App chords only with the exact modifiers App handles.
+ // Ctrl+D / Ctrl+X split · Ctrl+Z undo move · Ctrl+Alt+D/X unsplit
+ if ((k === 'd' || k === 'x') && !ev.shiftKey) {
+ return blockEvent(ev)
  }
- if (['o', 'w', 's', 't', 'n', 'b'].includes(k)) return blockEvent(ev)
+ // Leave other Ctrl+Alt / Ctrl+Shift chords for the agent
+ if (ev.altKey || ev.shiftKey) return true
+
+ // Plain Ctrl+letter / digit app shortcuts
+ if (['o', 'w', 's', 't', 'n'].includes(k)) return blockEvent(ev)
  if (k >= '1' && k <= '9') return blockEvent(ev)
  return true
  })
 
+ // Browser copy/paste (Edit menu, Ctrl+V when key handler did not run)
+ const hostElForClip = host
+ const onDomCopy = (e: ClipboardEvent): void => {
+ if (!term.hasSelection()) return
+ const text = term.getSelection()
+ if (!text) return
+ e.preventDefault()
+ e.clipboardData?.setData('text/plain', text)
+ void window.truedeck.writeClipboard(text)
+ try {
+ term.clearSelection()
+ } catch {
+ /* ignore */
+ }
+ }
+ const onDomPaste = (e: ClipboardEvent): void => {
+ // Always claim the event so the helper textarea does not double-insert.
+ e.preventDefault()
+ e.stopPropagation()
+ const fromEvent = e.clipboardData?.getData('text/plain') || ''
+ if (fromEvent) {
+ pasteIntoTerm(fromEvent)
+ return
+ }
+ // Some Electron builds leave clipboardData empty - fall back to IPC.
+ pasteClipboard()
+ }
+ // Middle-click paste (Linux-style; handy on Windows too)
+ const onMouseUp = (e: MouseEvent): void => {
+ if (e.button === 1) {
+ e.preventDefault()
+ pasteClipboard()
+ return
+ }
+ // Left release: if host has a selection (Shift-drag under mouse tracking),
+ // copy to OS clipboard so Grok copy matches shell/codex behavior.
+ if (e.button === 0) {
+ window.requestAnimationFrame(() => {
+ try {
+ if (!term.hasSelection()) return
+ const text = term.getSelection()
+ if (!text) return
+ void window.truedeck.writeClipboard(text)
+ } catch {
+ /* ignore */
+ }
+ })
+ }
+ }
+
+ /**
+ * Click a file path in CLI output → Document tab.
+ * Agent TUIs enable mouse tracking, which makes xterm skip link activate
+ * unless a modifier is held — so we open paths ourselves on left-click.
+ */
+ const onPathClickCapture = (e: MouseEvent): void => {
+ if (e.button !== 0) return
+ if (!openPathsEnabledRef.current || !onOpenPathRef.current) return
+ // Don't steal multi-select / shift-drag selection
+ if (e.shiftKey) return
+ // Ignore if user is dragging a selection (has non-collapsed selection after drag)
+ try {
+ if (term.hasSelection() && (term.getSelection() || '').length > 1) return
+ } catch {
+ /* ignore */
+ }
+ const raw = pathUnderMouseEvent(e)
+ if (!raw) return
+ e.preventDefault()
+ e.stopPropagation()
+ openMatchedPath(raw)
+ }
+ // Capture on host + textarea so paste is not missed under agent TUIs.
+ hostElForClip.addEventListener('copy', onDomCopy)
+ hostElForClip.addEventListener('paste', onDomPaste, true)
+ hostElForClip.addEventListener('mouseup', onMouseUp)
+ // Capture-phase click beats xterm mouse reporting for path opens
+ hostElForClip.addEventListener('click', onPathClickCapture, true)
+ const helperTa = hostElForClip.querySelector(
+ 'textarea.xterm-helper-textarea'
+ ) as HTMLTextAreaElement | null
+ if (helperTa) {
+ helperTa.addEventListener('paste', onDomPaste, true)
+ }
  // Capture first user prompt line as session title when CLI never sets OSC title.
  // Never promote paths or secret-looking strings (e.g. Cursor API keys) into the header.
  let lineBuf = ''
@@ -431,33 +1137,75 @@ export function TerminalPane({
  scheduleIdleRefresh()
  if (!firstByteKicked) {
  firstByteKicked = true
+ const cursor = isCursorAgent()
  // Post-first-byte WINCH - Cursor TUI frequently stays blank until this
  window.setTimeout(() => {
  fitAndResize(true)
  kickAgentTui('first-byte')
  forceRefresh()
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
  }, 40)
  window.setTimeout(() => {
- fitAndResize(false)
+ fitAndResize(cursor)
  forceRefresh()
- }, 200)
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ }, cursor ? 120 : 200)
  window.setTimeout(() => {
  forceRefresh()
- }, 600)
+ if (cursor) kickAgentTui('first-byte')
+ }, cursor ? 350 : 600)
+ if (cursor) {
+ window.setTimeout(() => {
+ fitAndResize(true)
+ forceRefresh()
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ }, 900)
+ }
  }
  }
  writeBuf += data
  if (rafId == null) rafId = requestAnimationFrame(flushWrites)
  scheduleIdleRefresh()
  })
- // Don't leave the spinner forever if the CLI is quiet (shell prompt, etc.)
+ // Quiet CLI (shell / Cursor before first paint): drop awaiting flag soon and
+ // kick once — no full-pane loading UI.
  const connectTimeout = window.setTimeout(() => {
  setAwaitingOutput(false)
  fitAndResize(true)
- // Quiet shell / stuck spinner - one gentle kick if still empty-looking
  kickAgentTui('blank')
  forceRefresh()
- }, 2200)
+ try {
+ term.focus()
+ } catch {
+ /* ignore */
+ }
+ if (isCursorAgent()) {
+ ;[200, 600, 1400].forEach((ms) => {
+ window.setTimeout(() => {
+ if (!termRef.current) return
+ kickAgentTui('blank')
+ forceRefresh()
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ }, ms)
+ })
+ }
+ }, isCursorAgent() ? 900 : 1200)
 
  /**
  * Wheel / scroll for agent TUIs (Grok Build model):
@@ -486,68 +1234,12 @@ export function TerminalPane({
  return lines
  }
 
- const isAgentCliSession = (): boolean => {
- try {
- const s = useDeck.getState().sessions.find((x) => x.id === sessionId)
- if (!s) return false
- if (s.kind === 'agent') return true
- const id = (s.agentId || '').toLowerCase()
- return ['grok', 'claude', 'codex', 'cursor', 'gemini', 'aider'].includes(id)
- } catch {
- return false
- }
- }
-
- /** True when the app (Grok) has requested mouse tracking. */
- const isMouseTrackingOn = (): boolean => {
- try {
- if (term.element?.classList.contains('enable-mouse-events')) return true
- } catch {
- /* ignore */
- }
- try {
- const mode = String(
- (term.modes as { mouseTrackingMode?: string } | undefined)?.mouseTrackingMode ||
- 'none'
- )
- if (mode !== 'none' && mode !== '0') return true
- } catch {
- /* ignore */
- }
- try {
- const core = (
- term as unknown as {
- _core?: {
- coreService?: { decPrivateModes?: { mouseTrackingMode?: unknown } }
- coreMouseService?: { areMouseEventsActive?: boolean }
- }
- }
- )._core
- const active = core?.coreMouseService?.areMouseEventsActive
- if (typeof active === 'function' ? active.call(core.coreMouseService) : active) {
- return true
- }
- const m = core?.coreService?.decPrivateModes?.mouseTrackingMode
- if (m != null && String(m) !== '0' && String(m) !== 'none' && String(m) !== 'NONE') {
- return true
- }
- } catch {
- /* ignore */
- }
- return false
- }
-
- const isAltScreen = (): boolean => {
- try {
- return term.buffer.active.type === 'alternate'
- } catch {
- return false
- }
- }
-
  /**
- * Deliver wheel to the TUI using xterm's negotiated mouse encoding when
- * possible (correct for Grok), else raw SGR 64/65 to the PTY.
+ * Deliver wheel to the TUI.
+ * Grok: always write SGR wheel sequences to the PTY (custom scroll). Relying
+ * only on xterm triggerMouseEvent was flaky — it can return true without the
+ * app receiving usable reports after redraws.
+ * Other mouse-mode apps: try core mouse first, SGR fallback if none sent.
  */
  const sendAppWheel = (e: WheelEvent, lines: number): void => {
  const notches = Math.min(8, Math.max(1, Math.abs(lines)))
@@ -596,9 +1288,11 @@ export function TerminalPane({
  /* ignore */
  }
 
+ const directSgr = isCustomScrollTuiAgent()
  let reported = 0
  const cms = core?.coreMouseService
- if (cms && typeof cms.triggerMouseEvent === 'function') {
+ // Grok: skip core mouse path (can swallow without useful PTY bytes)
+ if (!directSgr && cms && typeof cms.triggerMouseEvent === 'function') {
  for (let i = 0; i < notches; i++) {
  try {
  if (
@@ -622,9 +1316,8 @@ export function TerminalPane({
  }
  }
 
- // Always also push SGR when core mouse did not accept (protocol none /
- // detection lag). Grok's custom scroll listens for these.
- if (reported === 0) {
+ // SGR 1006 wheel: button 64 = up, 65 = down (Grok listens for these)
+ if (reported === 0 || directSgr) {
  const button = lines < 0 ? 64 : 65
  const seq = `\x1b[<${button};${col + 1};${row + 1}M`
  void window.truedeck.writeSession(sessionId, seq.repeat(notches))
@@ -635,6 +1328,12 @@ export function TerminalPane({
  if (agentTuiMouseRef.current === owns) return
  agentTuiMouseRef.current = owns
  setAgentTuiMouse(owns)
+ // Hiding the classic scrollbar changes clientWidth; re-fit so cols use
+ // the full pane (avoids a permanent black strip on the right).
+ requestAnimationFrame(() => {
+ fitAndResize(true)
+ forceRefresh()
+ })
  }
 
  const onWheel = (e: WheelEvent): void => {
@@ -642,11 +1341,7 @@ export function TerminalPane({
  const el = hostRef.current || shellRef.current
  if (!el) return
 
- const mouseOn = isMouseTrackingOn()
- const isAlt = isAltScreen()
- const isAgent = isAgentCliSession()
- // Grok / agent TUIs: app owns the wheel (built-in TUI scroll)
- const tuiOwns = mouseOn || isAlt || isAgent
+ const tuiOwns = tuiOwnsWheel()
  markTuiWheelOwner(tuiOwns)
 
  const lines = wheelLines(e, el)
@@ -673,7 +1368,7 @@ export function TerminalPane({
  return
  }
 
- // Normal shell buffer: xterm scrollback
+ // Normal shell buffer: xterm scrollback (Cursor / Codex / shell)
  e.preventDefault()
  e.stopPropagation()
  try {
@@ -699,17 +1394,22 @@ export function TerminalPane({
  if (!vp) return
  try {
  const b = term.buffer.active
- const mouseOn = isMouseTrackingOn()
- const isAlt = b.type === 'alternate'
- const isAgent = isAgentCliSession()
- const tuiOwns = mouseOn || isAlt || isAgent
- // Never show native scroll thumb for agent TUI (Grok) - it steals the wheel
+ const tuiOwns = tuiOwnsWheel()
+ // Never show native scroll thumb when TUI owns mouse (steals the wheel)
  const canScroll =
  !tuiOwns &&
  b.type === 'normal' &&
  (b.baseY > 0 || b.length > term.rows)
+ const was = vp.classList.contains('xterm-viewport-scrollable')
  vp.classList.toggle('xterm-viewport-scrollable', canScroll)
  markTuiWheelOwner(tuiOwns)
+ // Bar shown/hidden changes available width - re-fit so no gap
+ if (was !== canScroll) {
+ requestAnimationFrame(() => {
+ fitAndResize(true)
+ forceRefresh()
+ })
+ }
  } catch {
  vp.classList.remove('xterm-viewport-scrollable')
  }
@@ -724,8 +1424,7 @@ export function TerminalPane({
  viewportEl?.addEventListener('scroll', onViewportScroll, { passive: true })
  const offScrollable = term.onRender(() => syncScrollableClass())
  const offScrollPos = term.onScroll(() => syncScrollableClass())
- // Agent CLIs start as TUI owners immediately (don't wait for first CSI)
- if (isAgentCliSession()) markTuiWheelOwner(true)
+ // Only claim TUI wheel when mouse/alt actually active (syncScrollableClass updates this)
  syncScrollableClass()
  // Fit after layout settles (important when spawning into a new dock pane)
  const fitSoon = (): void => {
@@ -740,16 +1439,18 @@ export function TerminalPane({
  const t1 = window.setTimeout(fitSoon, 50)
  const t2 = window.setTimeout(fitSoon, 200)
 
- // Debounce fit - thrashing resizeSession makes agent TUIs clear/redraw and "cut" text
+ // Debounce fit — never thrash WINCH (Grok/Claude full redraw = jagged).
+ // During pane anim / gutter drag: fully freeze (no fit, no refresh storm).
  let resizeTimer: number | null = null
  const ro = new ResizeObserver(() => {
+ if (closingRef.current || isLayoutFrozen()) return
  if (resizeTimer != null) window.clearTimeout(resizeTimer)
  resizeTimer = window.setTimeout(() => {
  resizeTimer = null
+ if (closingRef.current || isLayoutFrozen()) return
  fitAndResize()
- // After size settle, repaint so the agent frame isn't half-cleared
  forceRefresh()
- }, 140)
+ }, 160)
  })
  ro.observe(hostRef.current)
 
@@ -787,6 +1488,13 @@ export function TerminalPane({
  writeBuf = ''
  }
  hostEl.removeEventListener('wheel', onWheel, wheelOpts)
+ hostElForClip.removeEventListener('copy', onDomCopy)
+ hostElForClip.removeEventListener('paste', onDomPaste, true)
+ hostElForClip.removeEventListener('mouseup', onMouseUp)
+ hostElForClip.removeEventListener('click', onPathClickCapture, true)
+ if (helperTa) {
+ helperTa.removeEventListener('paste', onDomPaste, true)
+ }
  viewportEl?.removeEventListener('scroll', onViewportScroll)
  offScrollable.dispose()
  offScrollPos.dispose()
@@ -797,6 +1505,11 @@ export function TerminalPane({
  offPty()
  onData.dispose()
  onTitle.dispose()
+ try {
+ pathLinkDispose?.dispose()
+ } catch {
+ /* ignore */
+ }
  ro.disconnect()
  term.dispose()
  termRef.current = null
@@ -804,47 +1517,151 @@ export function TerminalPane({
  lastSizeRef.current = { cols: 0, rows: 0 }
  }
  // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [sessionId])
+ }, [sessionId, openPathsEnabled])
 
- // Soft restore when this tab becomes visible again.
- // Never kickAgentTui here — WINCH thrash made Grok flicker on every switch.
+ // When a tab was hidden/minimized, Chromium freezes the canvas layer and the
+ // host size often changed (split collapsed). Soft fit(false) skips WINCH if
+ // cols/rows look unchanged → stale/blank agent TUIs. Force remeasure + repaint.
+ const wasVisibleRef = useRef(visible)
  useEffect(() => {
+ const becameVisible = visible && !wasVisibleRef.current
+ wasVisibleRef.current = visible
  if (!visible) return
- const soft = (): void => {
- fitAndResize(false)
- forceRefresh()
+
+ const hard = becameVisible
+ const restore = (): void => {
+ if (hard) {
+ // Ensure pushSize always sends WINCH after minimize/restore / pane collapse
+ lastSizeRef.current = { cols: 0, rows: 0 }
  }
- requestAnimationFrame(soft)
- // One delayed canvas repaint (Chromium sometimes freezes hidden layers)
- const t1 = window.setTimeout(soft, 48)
+ fitAndResize(hard)
+ forceRefresh()
+ try {
+ // Nudge xterm renderer after visibility:hidden
+ const term = termRef.current
+ const core = (
+ term as unknown as {
+ _core?: { _renderService?: { refreshRows?: (a: number, b: number) => void } }
+ }
+ )._core
+ core?._renderService?.refreshRows?.(0, Math.max(0, (term?.rows || 1) - 1))
+ } catch {
+ /* ignore */
+ }
+ }
+
+ requestAnimationFrame(() => {
+ requestAnimationFrame(restore)
+ })
+ // Delayed passes: layout may still be settling after split collapse
+ const t1 = window.setTimeout(restore, 50)
+ const t2 = window.setTimeout(restore, 180)
+ const t3 = window.setTimeout(() => {
+ fitAndResize(true)
+ forceRefresh()
+ }, 400)
  return () => {
  window.clearTimeout(t1)
+ window.clearTimeout(t2)
+ window.clearTimeout(t3)
  }
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [visible, sessionId])
 
  // Move DOM focus when this terminal becomes the app's focused pane.
- // Without this, Ctrl+Arrow / click-to-switch-pane updates layout state but
- // keystrokes keep going to the previous xterm textarea.
  useEffect(() => {
  const term = termRef.current
  if (!term) return
- if (isFocused) {
+ if (closing || inputLocked || !isFocused) {
+ if (!closing) term.blur()
+ return
+ }
  const run = (): void => {
+ if (closingRef.current || inputLockedRef.current) {
+ if (!closingRef.current) termRef.current?.blur()
+ return
+ }
  termRef.current?.focus()
- // Size usually unchanged when switching panes — avoid force WINCH
- fitAndResize(false)
+ fitAndResize(true)
  forceRefresh()
  }
  requestAnimationFrame(run)
- const t = window.setTimeout(run, 40)
+ const t = window.setTimeout(run, 60)
+ const t2 = window.setTimeout(() => {
+ if (closingRef.current) return
+ fitAndResize(true)
+ forceRefresh()
+ }, 200)
  return () => {
  window.clearTimeout(t)
+ window.clearTimeout(t2)
  }
- }
- term.blur()
  // eslint-disable-next-line react-hooks/exhaustive-deps
- }, [isFocused, sessionId])
+ }, [isFocused, sessionId, inputLocked, closing])
+
+ /**
+ * After split/close/gutter motion: one hard fit + WINCH so the TUI lands clean
+ * at the final size (instead of reflowing every animation frame).
+ */
+ useEffect(() => {
+ if (!visible) return
+ const settle = (): void => {
+  if (closingRef.current || !termRef.current) return
+  // Allow fit even if body class lags one frame
+  lastSizeRef.current = { cols: 0, rows: 0 }
+  fitAndResize(true)
+  forceRefresh()
+  try {
+   kickAgentTui('manual')
+  } catch {
+   /* ignore */
+  }
+ }
+ const onAnimEnd = (): void => {
+  window.requestAnimationFrame(() => {
+   window.requestAnimationFrame(settle)
+  })
+ }
+ window.addEventListener('truedeck:pane-anim-end', onAnimEnd)
+ return () => window.removeEventListener('truedeck:pane-anim-end', onAnimEnd)
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ }, [visible, sessionId])
+
+ // When palette/settings open, fully release keyboard from xterm (keep it released)
+ useEffect(() => {
+ if (!inputLocked) return
+ const release = (): void => {
+ try {
+ termRef.current?.blur()
+ const ta = hostRef.current?.querySelector(
+ 'textarea.xterm-helper-textarea'
+ ) as HTMLTextAreaElement | null
+ if (!ta) return
+ ta.blur()
+ ta.setAttribute('tabindex', '-1')
+ // Disabled so browser focus / key delivery cannot land on the helper
+ ta.disabled = true
+ } catch {
+ /* ignore */
+ }
+ }
+ release()
+ const timers = [0, 16, 50, 100, 200, 400].map((ms) => window.setTimeout(release, ms))
+ return () => {
+ for (const t of timers) window.clearTimeout(t)
+ try {
+ const ta = hostRef.current?.querySelector(
+ 'textarea.xterm-helper-textarea'
+ ) as HTMLTextAreaElement | null
+ if (ta) {
+ ta.disabled = false
+ ta.setAttribute('tabindex', '0')
+ }
+ } catch {
+ /* ignore */
+ }
+ }
+ }, [inputLocked])
 
  // Live font size updates from Settings without remounting the PTY
  useEffect(() => {
@@ -861,21 +1678,30 @@ export function TerminalPane({
  className={`terminal-pane ${visible ? 'visible' : 'hidden'}${isFocused ? ' focused' : ''}${awaitingOutput ? ' connecting' : ''}${agentTuiMouse ? ' agent-tui-mouse' : ''}`}
  ref={shellRef}
  onMouseDown={() => {
+ if (inputLockedRef.current) return
  // Focus immediately on press so keys go here even before React re-renders
  // after the parent marks this group focused.
  termRef.current?.focus()
  }}
- onClick={() => termRef.current?.focus()}
+ onClick={() => {
+ if (inputLockedRef.current) return
+ termRef.current?.focus()
+ }}
  >
  {/* Dedicated host: React never mutates children here (keeps xterm canvas alive). */}
  <div className="terminal-xterm-host" ref={hostRef} />
- {awaitingOutput && visible ? (
- <div className="terminal-connecting" role="status" aria-live="polite">
- <div className="terminal-connecting-card">
- <span className="stage-loading-spinner" aria-hidden />
- <span>Connecting terminal…</span>
- <div className="stage-loading-rule" aria-hidden />
- </div>
+ {/* No full-pane “Connecting…” veil — slow CLIs (Cursor) sat under a screen-sized
+     overlay while Grok painted immediately. Status is only the empty xterm. */}
+ {/* Full-pane open blast (not chrome) — covers the terminal on first open */}
+ {introBlast && visible ? (
+ <div className="terminal-intro-blast" aria-hidden>
+ <PixelBlast
+ color={sessionColor}
+ opacity={0.65}
+ active
+ burstKey={sessionId}
+ explosions={false}
+ />
  </div>
  ) : null}
  </div>

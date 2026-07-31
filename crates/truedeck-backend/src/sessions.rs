@@ -14,6 +14,20 @@ use std::thread;
 use std::time::Duration;
 use uuid::Uuid;
 
+/// Parent shells (and agent hosts that launch TrueDeck) often set these to
+/// silence ANSI. Agent CLIs honor them and paint monochrome - strip on spawn.
+fn should_strip_parent_env(key: &str) -> bool {
+    matches!(
+        key,
+        "NO_COLOR" | "FORCE_COLOR" | "CLICOLOR" | "CLICOLOR_FORCE"
+    )
+}
+
+fn is_dumb_term(value: &str) -> bool {
+    let t = value.trim();
+    t.is_empty() || t.eq_ignore_ascii_case("dumb") || t.eq_ignore_ascii_case("unknown")
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionInfo {
@@ -91,25 +105,37 @@ impl SessionManager {
             cmd.arg(a);
         }
         cmd.cwd(cwd);
+        // Inherit parent env, but never color-silencing flags.
+        // Cursor / Claude Code / Grok Build often set NO_COLOR=1, FORCE_COLOR=0,
+        // TERM=dumb on their own process - if we pass those through, every agent
+        // TUI in TrueDeck renders monochrome (black & white) instead of brand colors.
         for (k, v) in std::env::vars() {
+            if should_strip_parent_env(&k) {
+                continue;
+            }
+            // Never inherit a dumb/broken TERM from the host process
+            if k == "TERM" && is_dumb_term(&v) {
+                continue;
+            }
             if !env.contains_key(&k) {
                 cmd.env(&k, v);
             }
         }
         for (k, v) in env {
+            if should_strip_parent_env(k) {
+                continue;
+            }
             cmd.env(k, v);
         }
         // Force modern terminal identity so agent TUIs (Claude/Codex/Grok/etc.)
         // enable full-screen alt buffer, colors, and mouse properly.
-        if !env.contains_key("TERM") {
-            cmd.env("TERM", "xterm-256color");
-        }
-        if !env.contains_key("COLORTERM") {
-            cmd.env("COLORTERM", "truecolor");
-        }
-        if !env.contains_key("TERM_PROGRAM") {
-            cmd.env("TERM_PROGRAM", "TrueDeck");
-        }
+        cmd.env("TERM", "xterm-256color");
+        cmd.env("COLORTERM", "truecolor");
+        cmd.env("TERM_PROGRAM", "TrueDeck");
+        // chalk / supports-color / rich / many CLIs: 3 = truecolor
+        cmd.env("FORCE_COLOR", "3");
+        cmd.env("CLICOLOR", "1");
+        cmd.env("CLICOLOR_FORCE", "1");
 
         let child = pair
             .slave

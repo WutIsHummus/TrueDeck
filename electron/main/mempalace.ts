@@ -4,6 +4,7 @@ import { homedir } from 'os'
 import { execFile, spawn } from 'child_process'
 import { promisify } from 'util'
 import { getGlobalDataDir } from './paths'
+import { wingName as projectWingName } from './memory-wing'
 
 const execFileAsync = promisify(execFile)
 
@@ -138,28 +139,36 @@ export async function getMemPalaceStatus(): Promise<MemPalaceStatus> {
 export async function ensureMemPalace(opts?: {
  projectRoot?: string
  wing?: string
+ /** Skip status ping (startup / restore critical path) */
+ light?: boolean
 }): Promise<MemPalaceStatus> {
  const status = await getMemPalaceStatus()
  if (!status.installed || !status.cliPath) return status
 
- // Light status ping
+ // Global flags before subcommand: mempalace --palace <path> status
+ if (!opts?.light) {
  try {
- await execFileAsync(status.cliPath, ['status', '--palace', status.palacePath], {
+ await execFileAsync(
+ status.cliPath,
+ ['--palace', status.palacePath, 'status'],
+ {
  windowsHide: true,
- timeout: 15000
- })
+ timeout: 4000
+ }
+ )
  } catch {
  // empty palace is fine
+ }
  }
 
  // Optional: mine project into a wing (async background, non-blocking for UI)
  if (opts?.projectRoot && existsSync(opts.projectRoot) && status.cliPath) {
- const wing = opts.wing || opts.projectRoot.split(/[/\\]/).filter(Boolean).pop() || 'project'
- // fire-and-forget mine - can take a while on large repos
+ // Per-path wing (not basename alone) so two "SPTS" checkouts do not share memory
+ const wing = opts.wing || projectWingName(opts.projectRoot)
  try {
  const child = spawn(
  status.cliPath,
- ['mine', opts.projectRoot, '--wing', wing, '--palace', status.palacePath],
+ ['--palace', status.palacePath, 'mine', opts.projectRoot, '--wing', wing, '--mode', 'projects'],
  {
  windowsHide: true,
  detached: true,
@@ -172,7 +181,7 @@ export async function ensureMemPalace(opts?: {
  }
  }
 
- return getMemPalaceStatus()
+ return status
 }
 
 /** Suggested MCP config snippet for clients (Cursor/Grok/Claude). */

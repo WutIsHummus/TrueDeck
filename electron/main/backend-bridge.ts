@@ -72,19 +72,44 @@ export class BackendBridge {
     this.win = win
   }
 
+  /** Fan out to every TrueDeck window (main + detached panes). */
+  private sendAll(channel: string, payload: unknown): void {
+    const targets = new Set<BrowserWindow>()
+    if (this.win && !this.win.isDestroyed()) targets.add(this.win)
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w && !w.isDestroyed()) targets.add(w)
+    }
+    for (const w of targets) {
+      try {
+        w.webContents.send(channel, payload)
+      } catch {
+        /* ignore closed */
+      }
+    }
+  }
+
   start(): boolean {
     if (this.proc) return this.ready
     const bin = findBackendBinary()
     if (!bin) return false
 
     try {
+      // Strip color-silencing flags from the host (Cursor/Grok often set
+      // NO_COLOR=1). sessions.rs also strips on agent spawn; this keeps the
+      // backend process itself from re-exporting monochrome defaults.
+      const env: NodeJS.ProcessEnv = { ...process.env, TRUEDECK_DATA_DIR: getGlobalDataDir() }
+      for (const k of ['NO_COLOR', 'FORCE_COLOR', 'CLICOLOR', 'CLICOLOR_FORCE'] as const) {
+        delete env[k]
+      }
+      env.TERM = 'xterm-256color'
+      env.COLORTERM = 'truecolor'
+      env.FORCE_COLOR = '3'
+      env.CLICOLOR = '1'
+      env.CLICOLOR_FORCE = '1'
       this.proc = spawn(bin, [], {
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
-        env: {
-          ...process.env,
-          TRUEDECK_DATA_DIR: getGlobalDataDir()
-        }
+        env
       })
     } catch {
       this.proc = null
@@ -158,7 +183,7 @@ export class BackendBridge {
       else this.utf8Carry.delete(id)
       if (emitEnd > 0) {
         const data = buf.subarray(0, emitEnd).toString('utf8')
-        this.win?.webContents.send('pty:data', { id, data })
+        this.sendAll('pty:data', { id, data })
       }
       return
     }
@@ -166,7 +191,7 @@ export class BackendBridge {
       const id = String(ev.params.id || '')
       this.utf8Carry.delete(id)
       const exitCode = Number(ev.params.exitCode ?? ev.params.code ?? 0)
-      this.win?.webContents.send('pty:exit', { id, exitCode })
+      this.sendAll('pty:exit', { id, exitCode })
       return
     }
     if (ev.event === 'error') {

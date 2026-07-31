@@ -11,7 +11,8 @@
   --text: #e8e8e8;
   --text-muted: #8a8a8a;
   --accent: #f0a050;
-  --accent-2: #6cb6ff;
+  /* Secondary accent stays warm/neutral — never cool blue chrome */
+  --accent-2: #c4a574;
   --danger: #f07178;
   --ok: #7fd99a;
   --font: "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -618,6 +619,49 @@ textarea:focus {
   color: var(--text-muted);
 }
 
+/* Project needs memory / MCP / CLI inject */
+.project-setup-chip {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  max-width: min(40vw, 280px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  line-height: 1.3;
+}
+.project-setup-chip.needs {
+  color: #fde68a;
+  border-color: #b45309;
+  background: #78350f55;
+  cursor: pointer;
+}
+.project-setup-chip.needs:hover:not(:disabled) {
+  background: #92400e88;
+  border-color: #f59e0b;
+}
+.project-setup-chip.busy {
+  color: #c4b5fd;
+  border-color: #6d28d9;
+  background: #4c1d9555;
+  cursor: wait;
+}
+.project-setup-chip.ready {
+  color: #86efac;
+  border-color: #166534;
+  background: #14532d44;
+  pointer-events: none;
+}
+.project-setup-chip.warming {
+  color: #93c5fd;
+  border-color: #1d4ed8;
+  background: #1e3a8a44;
+  pointer-events: none;
+}
+
 .quick-agents {
   display: inline-flex;
   align-items: center;
@@ -646,14 +690,14 @@ textarea:focus {
 }
 
 .quick-agent.quick-cursor {
-  border-color: #60a5fa55;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   color: #93c5fd;
 }
 
 .quick-agent.quick-cursor:hover:not(:disabled) {
-  border-color: #60a5fa;
+  border-color: var(--accent);
   color: #dbeafe;
-  background: #60a5fa18;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
 }
 
 .settings-gear {
@@ -745,13 +789,15 @@ textarea:focus {
   border: 1px solid transparent;
   border-bottom: 2px solid transparent;
   border-radius: 6px 6px 0 0;
-  background: transparent;
+  /* No solid pill fill — strip stays flat; only bottom accent marks active */
+  background: transparent !important;
   color: var(--text-muted);
   cursor: grab;
   white-space: nowrap;
   user-select: none;
   max-width: 180px;
-  transition: transform 0.12s ease, background 0.12s ease, box-shadow 0.12s ease, opacity 0.12s;
+  transition: transform 0.12s ease, color 0.12s ease, border-color 0.12s ease, opacity 0.12s;
+  box-shadow: none !important;
 }
 
 .tab:active {
@@ -759,15 +805,15 @@ textarea:focus {
 }
 
 .tab:hover {
-  background: #ffffff08;
+  background: transparent !important;
   color: var(--text);
 }
 
 .tab.active {
   color: var(--text);
-  background: var(--bg);
-  border-color: var(--border);
-  border-bottom-color: var(--bg);
+  background: transparent !important;
+  border-color: transparent;
+  border-bottom-color: var(--accent);
 }
 
 .tab.split-peer {
@@ -814,7 +860,285 @@ textarea:focus {
   max-width: 100px;
 }
 
-/* Close control â€” SVG stroke icon (never a font glyph box) */
+/* Eye hide/show - keeps PTY running */
+.tab-eye-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  min-height: 18px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  border: none !important;
+  background: transparent !important;
+  color: #64748b;
+  padding: 0 !important;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  opacity: 0;
+  transition: opacity 0.12s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.tab:hover .tab-eye-btn,
+.tab.active .tab-eye-btn {
+  opacity: 1;
+}
+
+.tab-eye-btn:hover {
+  background: #ffffff12 !important;
+  color: #e2e8f0;
+}
+
+/* Minimized count + restore menu — black minimal (match palette / tab bar) */
+.hidden-tabs-wrap {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.tab-hidden-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font: 600 10px var(--mono);
+  -webkit-app-region: no-drag;
+  transition: color 0.12s ease, border-color 0.12s ease, background 0.12s ease;
+}
+
+.tab-hidden-btn:hover,
+.tab-hidden-btn.open {
+  border-color: var(--border-strong);
+  color: var(--text);
+  background: #ffffff08;
+}
+
+.tab-hidden-count {
+  min-width: 0.9em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.hidden-tabs-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 200;
+  min-width: 200px;
+  max-width: 300px;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #161616;
+  box-shadow: 0 16px 48px #000000aa;
+  pointer-events: auto;
+}
+
+/* Portaled to body so pane overflow cannot clip the restore picker */
+.hidden-tabs-menu-portal {
+  position: fixed !important;
+  right: auto;
+  z-index: 10050;
+  max-height: min(360px, calc(100vh - 24px));
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) transparent;
+}
+
+.hidden-tabs-menu-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px 8px;
+  margin: 0 0 2px;
+  font: 600 10px var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border-bottom: 1px solid #ffffff08;
+}
+
+.hidden-tabs-menu-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.25em;
+  height: 16px;
+  padding: 0 5px;
+  border-radius: 3px;
+  border: 1px solid var(--border);
+  background: #0c0c0c;
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 10px;
+}
+
+.hidden-tabs-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  padding: 7px 8px;
+  cursor: pointer;
+  font: 500 12px var(--mono);
+  text-align: left;
+}
+
+.hidden-tabs-item:hover {
+  background: #ffffff0c;
+}
+
+.hidden-tabs-item-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.hidden-tabs-item .label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+  color: var(--text);
+}
+
+.hidden-tabs-item-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hidden-tabs-show {
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  flex-shrink: 0;
+  letter-spacing: 0.02em;
+}
+
+.hidden-tabs-item:hover .hidden-tabs-show {
+  color: var(--text);
+}
+
+.group-tabbar-empty {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.terminal-all-hidden {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 24px;
+}
+
+/* When every tab is minimized: thin dock only - no empty terminal shell */
+.stage-minimized-only {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 20px 16px;
+  background: var(--bg, #0c0c0c);
+  position: relative;
+  z-index: 5;
+  pointer-events: auto;
+}
+
+.minimized-dock {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  background: #12161f;
+  max-width: 100%;
+  pointer-events: auto;
+  z-index: 6;
+}
+
+.minimized-dock-label {
+  font-size: 11px;
+  margin-right: 4px;
+}
+
+.minimized-dock-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #101010;
+  color: #e2e8f0;
+  font: 600 11px var(--mono, ui-monospace, Consolas, monospace);
+  padding: 5px 10px;
+  cursor: pointer;
+}
+
+.minimized-dock-chip:hover {
+  border-color: #f0a05088;
+  color: #f8fafc;
+}
+
+.minimized-dock-chip.ghost {
+  color: #94a3b8;
+  border-style: dashed;
+}
+
+.minimized-dock-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pane-split-fill {
+  height: 100%;
+  width: 100%;
+  min-height: 0;
+  min-width: 0;
+}
+
+.terminal-all-hidden-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+}
+
+.terminal-hidden-reveal.compact {
+  flex-direction: row;
+  gap: 8px;
+  padding: 8px 12px;
+  font-size: 11px;
+}
+
+/* Close control - SVG stroke icon (never a font glyph box) */
 .tab .x,
 .tab-close-btn {
   display: inline-flex;
@@ -863,7 +1187,7 @@ textarea:focus {
 }
 
 .badge.split-badge {
-  border-color: #60a5fa55;
+  border-color: color-mix(in srgb, var(--accent) 35%, transparent);
   color: #93c5fd;
 }
 
@@ -1272,7 +1596,7 @@ textarea:focus {
 }
 
 .deck-item.st-running {
-  border-color: #22d3ee33;
+  border-color: color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
 .deck-item.st-review {
@@ -1330,8 +1654,8 @@ textarea:focus {
 }
 
 .deck-status.st-running {
-  background: #22d3ee22;
-  color: #22d3ee;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
 }
 
 .deck-status.st-review {
@@ -1639,7 +1963,7 @@ textarea:focus {
 }
 
 .task-badge.working {
-  background: #60a5fa33;
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
   color: #93c5fd;
 }
 
@@ -1789,6 +2113,157 @@ textarea:focus {
   height: 100%;
   width: 100%;
   background: transparent;
+  overflow: hidden;
+}
+
+/* Cells wrap each half — divider motion is JS-driven (smooth open) */
+.pane-split-cell {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.pane-split-cell > .pane-group,
+.pane-split-cell > .pane-split,
+.pane-split-cell > .pane-split-fill {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  height: 100%;
+  width: 100%;
+}
+
+/*
+ * Only the NEW half slides in. The other half only resizes via the divider
+ * (JS ratio) — no transform, so sibling panes / tabs stay put.
+ */
+.pane-split-cell.cell-enter-right.animating {
+  animation: cell-slide-right 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pane-split-cell.cell-enter-left.animating {
+  animation: cell-slide-left 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pane-split-cell.cell-enter-bottom.animating {
+  animation: cell-slide-bottom 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.pane-split-cell.cell-enter-top.animating {
+  animation: cell-slide-top 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Close: reverse of enter — pane slides back out the edge it came from */
+.pane-split-cell.cell-exit-right.animating {
+  animation: cell-slide-right-out 0.38s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.pane-split-cell.cell-exit-left.animating {
+  animation: cell-slide-left-out 0.38s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.pane-split-cell.cell-exit-bottom.animating {
+  animation: cell-slide-bottom-out 0.38s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.pane-split-cell.cell-exit-top.animating {
+  animation: cell-slide-top-out 0.38s cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+
+.pane-split.split-anim .split-gutter.animating {
+  background: #3a3a3a;
+  box-shadow: 0 0 0 1px #555;
+}
+
+@keyframes cell-slide-right {
+  0% {
+    opacity: 0.2;
+    transform: translateX(40%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cell-slide-left {
+  0% {
+    opacity: 0.2;
+    transform: translateX(-40%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes cell-slide-bottom {
+  0% {
+    opacity: 0.2;
+    transform: translateY(40%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cell-slide-top {
+  0% {
+    opacity: 0.2;
+    transform: translateY(-40%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cell-slide-right-out {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0.15;
+    transform: translateX(45%);
+  }
+}
+
+@keyframes cell-slide-left-out {
+  0% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  100% {
+    opacity: 0.15;
+    transform: translateX(-45%);
+  }
+}
+
+@keyframes cell-slide-bottom-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0.15;
+    transform: translateY(45%);
+  }
+}
+
+@keyframes cell-slide-top-out {
+  0% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0.15;
+    transform: translateY(-45%);
+  }
 }
 
 .pane-group {
@@ -1820,27 +2295,53 @@ textarea:focus {
 /* Focused pane gets a clear accent so Ctrl+Arrow moves are obvious */
 .pane-group.focused {
   box-shadow:
-    inset 0 0 0 1px color-mix(in srgb, var(--accent, #22d3ee) 55%, transparent),
-    inset 0 0 24px color-mix(in srgb, var(--accent, #22d3ee) 8%, transparent);
+    inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent),
+    inset 0 0 24px color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
-/* Terminal header above xterm (not inside PTY â€” Grok cannot paint over it) */
+/*
+ * Shared pane header height — CLI chrome, document chrome, and group tabbar
+ * must match so split panes line up (see side-by-side Grok + file header).
+ */
+:root {
+  --pane-chrome-height: 28px;
+  --pane-chrome-btn: 20px;
+}
+
+/* Terminal header above xterm (not inside PTY - Grok cannot paint over it).
+ * Draggable like a tab so single-tab panes can dock/split without a tab strip. */
 .agent-chrome {
   position: relative;
   isolation: isolate;
   flex: 0 0 auto;
   z-index: 4;
   overflow: hidden;
-  background: linear-gradient(180deg, #0c1018 0%, #070a0f 100%);
+  background: linear-gradient(180deg, #101010 0%, #0a0a0a 100%);
   border-bottom: 1px solid #1e293b;
   font-family: var(--mono, ui-monospace, Consolas, monospace);
   font-size: 11px;
-  line-height: 1.35;
+  line-height: 1.2;
   user-select: none;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
+  -webkit-app-region: no-drag;
   box-shadow: 0 1px 0 #ffffff08;
   /* No height animation - 1↔2 line thrash was making icon+name flicker */
   transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+/* Single-row chrome (CLI compact + document): lock to tabbar height */
+.agent-chrome.compact,
+.agent-chrome.is-document {
+  height: var(--pane-chrome-height);
+  min-height: var(--pane-chrome-height);
+  max-height: var(--pane-chrome-height);
+  box-sizing: border-box;
+}
+
+.agent-chrome.dragging {
+  cursor: grabbing;
+  opacity: 0.72;
 }
 
 .agent-chrome-blast,
@@ -1850,6 +2351,7 @@ textarea:focus {
   z-index: 0;
   pointer-events: none;
   mix-blend-mode: screen;
+  transition: opacity 0.25s ease;
 }
 
 .agent-chrome > .agent-chrome-row,
@@ -1862,44 +2364,122 @@ textarea:focus {
 .agent-chrome.focused.hot {
   background: linear-gradient(
     180deg,
-    color-mix(in srgb, var(--agent-accent, #22d3ee) 14%, #0e1420) 0%,
-    color-mix(in srgb, var(--agent-accent, #22d3ee) 6%, #070a0f) 100%
+    color-mix(in srgb, var(--agent-accent, var(--accent)) 14%, #101010) 0%,
+    color-mix(in srgb, var(--agent-accent, var(--accent)) 6%, #0a0a0a) 100%
   );
-  border-bottom-color: color-mix(in srgb, var(--agent-accent, #22d3ee) 45%, #1e293b);
+  border-bottom-color: color-mix(in srgb, var(--agent-accent, var(--accent)) 45%, #1e293b);
   box-shadow:
-    0 1px 0 color-mix(in srgb, var(--agent-accent, #22d3ee) 25%, transparent),
-    inset 0 1px 0 color-mix(in srgb, var(--agent-accent, #22d3ee) 18%, transparent),
-    0 0 24px color-mix(in srgb, var(--agent-accent, #22d3ee) 12%, transparent);
+    0 1px 0 color-mix(in srgb, var(--agent-accent, var(--accent)) 25%, transparent),
+    inset 0 1px 0 color-mix(in srgb, var(--agent-accent, var(--accent)) 18%, transparent),
+    0 0 24px color-mix(in srgb, var(--agent-accent, var(--accent)) 12%, transparent);
 }
 
 .agent-chrome.focused.hot .agent-chrome-agent-name {
   font-weight: 800;
-  text-shadow: 0 0 12px color-mix(in srgb, var(--agent-accent, #22d3ee) 45%, transparent);
+  text-shadow: 0 0 12px color-mix(in srgb, var(--agent-accent, var(--accent)) 45%, transparent);
 }
 
 .agent-chrome.focused.hot .agent-chrome-rule {
   height: 2px;
-  box-shadow: 0 0 10px var(--agent-accent, #22d3ee);
+  box-shadow: 0 0 10px var(--agent-accent, var(--accent));
 }
 
 .agent-chrome-row {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 10px;
-  min-height: 20px;
+  padding: 0 8px;
+  min-height: 0;
+  height: 100%;
   white-space: nowrap;
   overflow: hidden;
+  box-sizing: border-box;
 }
 
-.agent-chrome.compact .agent-chrome-main {
-  padding-top: 4px;
-  padding-bottom: 4px;
+/* All tabs minimized: chrome hosts restore chips (no tab strip) */
+.agent-chrome.minimized-only {
+  background: #101010;
+  border-bottom: 1px solid var(--border);
+}
+
+/* One open tab + minimized: chips sit on the CLI chrome next to identity */
+.agent-chrome.has-min-list .agent-chrome-min-list {
+  flex: 0 1 auto;
+  max-width: 42%;
+}
+
+.agent-chrome-min-label {
+  flex-shrink: 0;
+  font: 600 10px var(--mono);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.agent-chrome-min-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+}
+
+.agent-chrome-min-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  max-width: 140px;
+  padding: 2px 8px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: #0c0c0c;
+  color: var(--text);
+  font: 500 11px var(--mono);
+  cursor: pointer;
+}
+
+.agent-chrome-min-chip:hover {
+  border-color: var(--border-strong);
+  background: #161616;
+  color: #fff;
+}
+
+.agent-chrome-min-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pane-minimized-only .term-panes {
+  min-height: 48px;
+}
+
+.pane-minimized-body {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 80px;
+  padding: 16px;
+  font: 500 12px var(--mono);
+  color: var(--text-muted);
+  background: #0c0c0c;
+  text-align: center;
+}
+
+.agent-chrome.compact .agent-chrome-main,
+.agent-chrome.is-document .agent-chrome-main {
+  padding-top: 0;
+  padding-bottom: 0;
+  height: 100%;
+  min-height: 0;
 }
 
 .agent-chrome-main {
-  padding-top: 4px;
-  padding-bottom: 2px;
+  padding-top: 0;
+  padding-bottom: 0;
 }
 
 .agent-chrome-sep {
@@ -2125,7 +2705,7 @@ textarea:focus {
   opacity: 0.75;
 }
 
-/* Chrome actions must receive clicks (parent is pointer-events: none) */
+/* Chrome actions - not part of the tab drag handle */
 .agent-chrome-actions {
   display: inline-flex;
   align-items: center;
@@ -2133,11 +2713,12 @@ textarea:focus {
   margin-left: 4px;
   pointer-events: auto;
   flex-shrink: 0;
+  cursor: default;
 }
 
 .agent-chrome-btn {
-  width: 20px;
-  height: 18px;
+  width: var(--pane-chrome-btn);
+  height: var(--pane-chrome-btn);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2150,6 +2731,8 @@ textarea:focus {
   font-weight: 600;
   line-height: 1;
   padding: 0;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
 }
 
 .agent-chrome-btn:hover {
@@ -2162,14 +2745,26 @@ textarea:focus {
   color: var(--danger, #f87171);
 }
 
+.agent-chrome-btn.active-eye {
+  color: #f0a050;
+  background: #f0a05018;
+}
+
+/* Accent line sits on the bottom edge — does not grow chrome height */
 .agent-chrome-rule {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
   height: 2px;
   width: 100%;
   opacity: 0.9;
+  z-index: 2;
+  pointer-events: none;
 }
 
 .pane-group.focused .agent-chrome:not(.hot) {
-  background: linear-gradient(180deg, #0e1420 0%, #0a1018 100%);
+  background: linear-gradient(180deg, #101010 0%, #0a1018 100%);
 }
 
 .term-panes {
@@ -2195,6 +2790,7 @@ textarea:focus {
   margin-right: 2px;
 }
 
+
 .pane-close-group:hover {
   background: #f0717822;
   color: var(--danger);
@@ -2207,14 +2803,15 @@ textarea:focus {
   font-size: 12px;
 }
 
-/* Per-pane tabs â€” scrollable tabs | actions */
+/* Per-pane tabs — same height as agent/document chrome */
 .group-tabbar {
   display: flex;
   align-items: center;
   gap: 0;
   padding: 0 0 0 4px;
-  min-height: 28px;
-  height: 28px;
+  min-height: var(--pane-chrome-height);
+  height: var(--pane-chrome-height);
+  box-sizing: border-box;
   background: #101010;
   border-bottom: 1px solid var(--border);
   overflow: hidden;
@@ -2295,15 +2892,94 @@ textarea:focus {
   padding: 0 4px 0 8px;
   min-height: 24px;
   height: 24px;
-  border-radius: 5px 5px 0 0;
+  border-radius: 0;
   border-bottom-width: 2px;
   overflow: hidden;
   z-index: 0;
+  background: transparent !important;
+  box-shadow: none !important;
+  /* Enter anim only when a tab is newly added (see .tab-enter) — not on every split re-render */
+  transition: opacity 0.16s ease, max-width 0.2s ease, min-width 0.2s ease;
+}
+
+/* Open: slide up into place (same easing family as close) */
+.group-tab.tab-enter {
+  animation: tab-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes tab-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+    max-width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+    max-width: 140px;
+    min-width: 48px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+}
+
+/* Close: reverse of enter — slide down + collapse width (not a fade veil) */
+.group-tab.exiting {
+  animation: tab-exit 0.2s cubic-bezier(0.4, 0, 0.2, 1) both;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+@keyframes tab-exit {
+  from {
+    opacity: 1;
+    transform: translateY(0);
+    max-width: 140px;
+    min-width: 48px;
+    padding-left: 4px;
+    padding-right: 4px;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+    max-width: 0;
+    min-width: 0;
+    padding-left: 0;
+    padding-right: 0;
+    margin: 0;
+    border-width: 0;
+  }
+}
+
+/*
+ * Tab-among-siblings close only (not sole split-half — that uses cell-exit-*).
+ * Chip uses tab-exit; keep terminal steady so we don't double-nudge down.
+ */
+.pane-group.pane-closing {
+  pointer-events: none;
+}
+
+.term-panes .term-slot.closing.visible {
+  pointer-events: none !important;
+}
+
+/* Promote xterm canvas only during split slide (not close) */
+.pane-split-cell.animating .terminal-pane .xterm-screen canvas {
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+.pane-split-cell.animating {
+  will-change: transform, opacity;
 }
 
 .group-tab .dot,
 .group-tab .tab-agent-icon,
 .group-tab .label,
+.group-tab .tab-eye-btn,
 .group-tab .tab-close-btn {
   position: relative;
   z-index: 2;
@@ -2335,15 +3011,14 @@ textarea:focus {
   color: #cbd5e1;
 }
 
-/* Selected tab in any group */
+/* Selected tab — underline only, no filled pill */
 .group-tab.active {
   color: #f8fafc;
-  background: color-mix(in srgb, var(--tab-accent, #22d3ee) 12%, #0c1018);
-  border-color: color-mix(in srgb, var(--tab-accent, #22d3ee) 35%, #1e293b);
-  border-bottom-color: color-mix(in srgb, var(--tab-accent, #22d3ee) 80%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--tab-accent, #22d3ee) 25%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--tab-accent, #22d3ee) 18%, transparent);
+  background: transparent !important;
+  border-color: transparent;
+  border-bottom-color: color-mix(in srgb, var(--tab-accent, var(--accent)) 90%, transparent);
+  box-shadow: none !important;
+  animation: none;
 }
 
 .group-tab.active .label {
@@ -2352,51 +3027,30 @@ textarea:focus {
 }
 
 .group-tab.active .tab-agent-icon {
-  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tab-accent, #22d3ee) 70%, transparent));
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--tab-accent, var(--accent)) 55%, transparent));
 }
 
-/* Focused pane + selected tab â€” strong highlight + PixelBlast lives here */
+/* Focused pane + selected tab — stronger underline, still no fill */
 .group-tabbar.focused .group-tab.active,
 .group-tab.hot {
   color: #fff;
-  background: color-mix(in srgb, var(--tab-accent, #22d3ee) 22%, #0a0f16);
-  border-color: color-mix(in srgb, var(--tab-accent, #22d3ee) 55%, #334155);
-  border-bottom-color: var(--tab-accent, #22d3ee);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, var(--tab-accent, #22d3ee) 40%, transparent),
-    0 0 0 1px color-mix(in srgb, var(--tab-accent, #22d3ee) 40%, transparent),
-    0 0 16px color-mix(in srgb, var(--tab-accent, #22d3ee) 35%, transparent),
-    0 0 28px color-mix(in srgb, var(--tab-accent, #22d3ee) 18%, transparent);
-  animation: tab-hot-pulse 2.4s ease-in-out infinite;
+  background: transparent !important;
+  border-color: transparent;
+  border-bottom-color: var(--tab-accent, var(--accent));
+  box-shadow: none !important;
+  animation: none;
 }
 
 .group-tab.hot .label {
   font-weight: 800;
-  text-shadow: 0 0 10px color-mix(in srgb, var(--tab-accent, #22d3ee) 50%, transparent);
+  text-shadow: 0 0 10px color-mix(in srgb, var(--tab-accent, var(--accent)) 40%, transparent);
 }
 
 .group-tab.hot .tab-agent-icon {
-  filter: drop-shadow(0 0 6px var(--tab-accent, #22d3ee));
+  filter: drop-shadow(0 0 6px var(--tab-accent, var(--accent)));
 }
 
-@keyframes tab-hot-pulse {
-  0%,
-  100% {
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--tab-accent, #22d3ee) 40%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--tab-accent, #22d3ee) 40%, transparent),
-      0 0 14px color-mix(in srgb, var(--tab-accent, #22d3ee) 30%, transparent),
-      0 0 24px color-mix(in srgb, var(--tab-accent, #22d3ee) 14%, transparent);
-  }
-  50% {
-    box-shadow:
-      inset 0 1px 0 color-mix(in srgb, var(--tab-accent, #22d3ee) 55%, transparent),
-      0 0 0 1px color-mix(in srgb, var(--tab-accent, #22d3ee) 65%, transparent),
-      0 0 22px color-mix(in srgb, var(--tab-accent, #22d3ee) 50%, transparent),
-      0 0 36px color-mix(in srgb, var(--tab-accent, #22d3ee) 28%, transparent);
-  }
-}
-
+/* Soft ambient only — not a solid tab plate */
 .tab-pixel-blast,
 .pixel-blast {
   position: absolute;
@@ -2407,12 +3061,13 @@ textarea:focus {
   pointer-events: none;
   border-radius: inherit;
   mix-blend-mode: screen;
+  opacity: 0.35;
 }
 
 .group-tabbar.focused {
-  background: linear-gradient(180deg, #161a22 0%, #10141c 100%);
-  border-bottom-color: color-mix(in srgb, var(--accent, #22d3ee) 25%, var(--border));
-  box-shadow: 0 1px 0 color-mix(in srgb, var(--accent, #22d3ee) 15%, transparent);
+  background: #101010;
+  border-bottom-color: color-mix(in srgb, var(--accent) 20%, var(--border));
+  box-shadow: none;
 }
 
 .group-tabbar .tab-add {
@@ -2470,10 +3125,50 @@ body.is-resizing-split .terminal-pane {
   pointer-events: none;
 }
 
+/*
+ * Smooth TUI during pane motion / gutter drag:
+ * Freeze the character grid (no WINCH) and clip the host so the canvas
+ * slides as a sharp bitmap instead of reflowing cols every frame.
+ */
+body.is-pane-animating .terminal-xterm-host,
+body.is-resizing-split .terminal-xterm-host {
+  overflow: hidden !important;
+}
+
+body.is-pane-animating .terminal-pane .xterm-screen canvas,
+body.is-resizing-split .terminal-pane .xterm-screen canvas {
+  /* Keep bitmap crisp while the cell transforms; refit after anim ends */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+}
+
+body.is-pane-animating .pane-split-cell.animating {
+  overflow: hidden;
+  will-change: transform;
+}
+
 .stage.split,
 .stage:has(.pane-workspace) {
-  display: block;
+  /* keep flex so explorer rail + stage-main share the row */
+  display: flex;
   overflow: hidden;
+}
+
+.stage-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.stage-main .pane-workspace,
+.stage-main .stage-empty,
+.stage-main .stage-loading {
+  flex: 1 1 auto;
+  min-height: 0;
 }
 
 .stage.can-drop-split .term-stack {
@@ -2684,7 +3379,7 @@ body.is-resizing-split .terminal-pane {
   max-height: min(92vh, 720px);
   display: flex;
   flex-direction: column;
-  background: linear-gradient(180deg, #0c1018 0%, #070a0f 100%);
+  background: linear-gradient(180deg, #101010 0%, #0a0a0a 100%);
   border: 1px solid var(--border);
   border-radius: 6px;
   box-shadow:
@@ -2960,13 +3655,17 @@ body.is-resizing-split .terminal-pane {
   position: relative;
   min-height: 0;
   background: #0c0c0c;
+  display: flex;
+  flex-direction: row;
+  align-items: stretch;
 }
 
-/* Boot / restore / spawn loading â€” matches agent chrome / empty frame */
+/* Boot / restore / spawn — black minimal status (not a blue/slate card) */
 .stage-loading {
   color: var(--text);
   user-select: none;
-  font-family: var(--mono, ui-monospace, Consolas, monospace);
+  font-family: var(--mono);
+  background: #0c0c0c;
 }
 
 .stage-loading.full {
@@ -2974,30 +3673,32 @@ body.is-resizing-split .terminal-pane {
   display: grid;
   place-items: center;
   padding: 24px;
+  background: #0c0c0c;
 }
 
 .stage-loading.compact {
   height: auto;
+  background: transparent;
 }
 
 .stage-loading-card {
   position: relative;
-  width: min(360px, 100%);
-  padding: 14px 16px 12px;
+  width: min(340px, 100%);
+  padding: 12px 14px;
   border: 1px solid var(--border);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #0c1018 0%, #070a0f 100%);
-  box-shadow:
-    0 1px 0 #ffffff08,
-    0 12px 28px #00000055;
+  border-radius: 4px;
+  background: #101010;
+  box-shadow: none;
   overflow: hidden;
 }
 
 .stage-loading.compact .stage-loading-card {
   width: auto;
-  min-width: 200px;
-  max-width: min(420px, 92vw);
-  padding: 12px 14px 10px;
+  min-width: 180px;
+  max-width: min(400px, 92vw);
+  padding: 10px 12px;
+  background: #101010;
+  border-color: var(--border);
 }
 
 .stage-loading-row {
@@ -3009,20 +3710,20 @@ body.is-resizing-split .terminal-pane {
 
 .stage-loading-spinner {
   flex-shrink: 0;
-  width: 14px;
-  height: 14px;
-  border: 1.5px solid #2a2a2a;
-  border-top-color: var(--accent, #f0a050);
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid var(--border-strong);
+  border-top-color: var(--text-muted);
   border-radius: 50%;
-  animation: stage-spin 0.7s linear infinite;
+  animation: stage-spin 0.75s linear infinite;
 }
 
 .stage-loading-title {
   margin: 0;
   font-size: 12px;
-  font-weight: 600;
-  color: #e2e8f0;
-  letter-spacing: 0.02em;
+  font-weight: 500;
+  color: var(--text);
+  letter-spacing: 0.01em;
   line-height: 1.35;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -3036,37 +3737,18 @@ body.is-resizing-split .terminal-pane {
   line-height: 1.4;
   color: var(--text-muted);
   white-space: normal;
+  font-weight: 400;
 }
 
-/* Chrome-style accent rule (animated shimmer) */
+/* Optional thin top rule — neutral, not accent flash */
 .stage-loading-rule {
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 2px;
-  background: linear-gradient(
-    90deg,
-    transparent 0%,
-    var(--accent, #f0a050) 35%,
-    color-mix(in srgb, var(--accent, #f0a050) 70%, #fff) 50%,
-    var(--accent, #f0a050) 65%,
-    transparent 100%
-  );
-  background-size: 200% 100%;
-  opacity: 0.9;
-  animation: stage-rule-slide 1.4s ease-in-out infinite;
+  display: none;
 }
 
+/* Intentionally unused for mid-session launch — full-stage veil covered every
+   pane when spawning one agent (Cursor felt like a screen-wide loader). */
 .stage-loading-overlay {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  display: grid;
-  place-items: center;
-  background: #0c0c0caa;
-  backdrop-filter: blur(1px);
-  pointer-events: none;
+  display: none;
 }
 
 @keyframes stage-spin {
@@ -3179,53 +3861,118 @@ body.is-resizing-split .terminal-pane {
   padding: 0;
 }
 
-.terminal-connecting {
+/* Connecting overlay removed — do not dim or block the terminal while waiting
+   for first PTY bytes (was a full-pane veil, worst on slow CLIs like Cursor). */
+.terminal-pane.connecting .terminal-xterm-host {
+  opacity: 1;
+}
+
+/* Wrapper so we can veil a terminal without killing layout / FitAddon size */
+.term-panes .term-slot {
   position: absolute;
   inset: 0;
-  z-index: 3;
+  min-width: 0;
+  min-height: 0;
+  z-index: 0;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.term-panes .term-slot.visible {
+  z-index: 1;
+  pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.term-panes .term-slot.hidden {
+  z-index: 0;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.terminal-hidden-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
   display: grid;
   place-items: center;
-  background: #0c0c0cf0;
-  font-family: var(--mono, ui-monospace, Consolas, monospace);
-  pointer-events: none;
+  background: #05070af2;
+  pointer-events: auto;
 }
 
-.terminal-connecting-card {
-  position: relative;
+.terminal-hidden-reveal {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 10px;
-  padding: 10px 14px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: linear-gradient(180deg, #0c1018 0%, #070a0f 100%);
-  box-shadow: 0 1px 0 #ffffff08;
+  gap: 8px;
+  border: 1px solid #334155;
+  border-radius: 10px;
+  background: #101010;
   color: #e2e8f0;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
+  padding: 18px 22px;
+  cursor: pointer;
+  font: 600 12px var(--mono, ui-monospace, Consolas, monospace);
+  box-shadow: 0 8px 28px #00000066;
+}
+
+.terminal-hidden-reveal:hover {
+  border-color: #f0a05088;
+  color: #f8fafc;
+}
+
+.terminal-hidden-reveal .muted {
+  font-weight: 500;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+/* Full-terminal open blast (covers xterm, not chrome bar) */
+.terminal-intro-blast {
+  position: absolute;
+  inset: 0;
+  z-index: 8;
+  pointer-events: none;
   overflow: hidden;
+  animation: terminal-blast-fade 1.8s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 
-.terminal-connecting-card .stage-loading-spinner {
-  width: 12px;
-  height: 12px;
+.terminal-intro-blast .pixel-blast {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  mix-blend-mode: screen;
 }
 
-.terminal-connecting-card .stage-loading-rule {
-  opacity: 0.85;
-}
-
-/* Keep TUI readable under the loading veil â€” do not drop opacity so low it looks dead */
-.terminal-pane.connecting .terminal-xterm-host {
-  opacity: 0.55;
+@keyframes terminal-blast-fade {
+  0% {
+    opacity: 0;
+  }
+  12% {
+    opacity: 1;
+  }
+  55% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }
 
 .term-panes .terminal-pane,
 .term-stack .terminal-pane {
   position: absolute;
   inset: 0;
-  padding: 2px 4px;
+  /* No horizontal padding - leftover cell width + scrollbar looked like a black bar */
+  padding: 0;
   /* Keep inactive panes laid out so FitAddon measures real size for agent TUIs */
   z-index: 0;
   pointer-events: none;
@@ -3260,39 +4007,57 @@ body.is-resizing-split .terminal-pane {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* Match theme so sub-cell leftover width is not a pure black strip */
+  background: #05070a;
 }
 
 /*
- * Terminal scrollbar (xterm):
- * - Never force overflow-y:scroll â€” that paints a full-height dead thumb when
- *   the buffer fits the viewport (Grok alt-screen, short shells). Looks broken
- *   and has nowhere to drag.
- * - overflow-y:auto + scrollbar-gutter:stable = gutter reserved for FitAddon
- *   col stability, thumb only when there is real scrollback.
- * - Screen is pointer-events:none so the gutter/thumb receive clicks; canvas
- *   (text grid only) keeps pointer-events for selection / mouse mode.
+ * Terminal viewport / scrollbar
+ * ---------------------------
+ * Black bar on the right was caused by:
+ * 1) xterm.css `.xterm-viewport { background:#000; overflow-y:scroll }` always
+ *    reserving a classic scrollbar lane (plus global *::-webkit-scrollbar 10px)
+ * 2) FitAddon rounding cols down - leftover px showed as #000 next to the canvas
+ *
+ * Default: no native scrollbar (scroll via keys / Shift+wheel in TerminalPane).
+ * Host scrollback only when `.xterm-viewport-scrollable` (shell history).
+ * Viewport bg matches theme so any leftover cell width is invisible.
  */
 .terminal-pane .xterm-viewport {
-  overflow-y: auto !important;
+  overflow-y: hidden !important;
   overflow-x: hidden !important;
-  scrollbar-gutter: stable;
+  scrollbar-width: none !important;
+  scrollbar-gutter: auto !important;
+  /* Override xterm.css #000 - leftover width must match terminal theme */
+  background-color: #05070a !important;
   pointer-events: auto !important;
   z-index: 0;
-  scrollbar-width: thin;
-  scrollbar-color: #666 #121212;
+  right: 0 !important;
+  left: 0 !important;
+}
+
+/* Beat global `*::-webkit-scrollbar { width: 10px }` */
+.terminal-pane .xterm-viewport::-webkit-scrollbar,
+.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb,
+.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
+  width: 0 !important;
+  height: 0 !important;
+  display: none !important;
+  background: transparent !important;
 }
 
 .terminal-pane .xterm-screen {
   position: relative;
   z-index: 1;
   pointer-events: none !important;
+  background: #05070a;
 }
 
 .terminal-pane .xterm-screen canvas {
   pointer-events: auto !important;
 }
 
-/* xterm sets this height from buffer line count â€” do not override */
+/* xterm sets this height from buffer line count - do not override */
 .terminal-pane .xterm-scroll-area {
   visibility: hidden;
   pointer-events: none;
@@ -3302,44 +4067,61 @@ body.is-resizing-split .terminal-pane {
   overscroll-behavior: contain;
 }
 
-/* WebKit / Electron â€” only visible when content overflows */
-.terminal-pane .xterm-viewport::-webkit-scrollbar {
-  width: 10px;
+/* Shell host scrollback only - flush to the pane edge (no floating gap).
+ * Global *::-webkit-scrollbar-track { margin:2px } + transparent thumb
+ * borders inset the bar; override hard so track sits on the right edge. */
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable {
+  overflow-y: auto !important;
+  scrollbar-width: thin;
+  scrollbar-color: #4a4a4a #0a0a0a;
+}
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable::-webkit-scrollbar {
+  width: 8px !important;
+  height: 0 !important;
+  display: block !important;
+  margin: 0 !important;
+  background: #0a0a0a !important;
+}
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable::-webkit-scrollbar-track {
+  margin: 0 !important;
+  border: none !important;
+  border-radius: 0 !important;
+  background: #0a0a0a !important;
+  display: block !important;
+}
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable::-webkit-scrollbar-thumb {
+  display: block !important;
+  width: 8px !important;
+  margin: 0 !important;
+  /* No transparent border - that floated the thumb off the edge */
+  border: none !important;
+  border-radius: 0 !important;
+  background: #4a4a4a !important;
+  background-clip: border-box !important;
+  min-height: 24px !important;
+}
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable::-webkit-scrollbar-thumb:hover {
+  background: #f0a050aa !important;
+  background-clip: border-box !important;
+}
+.terminal-pane .xterm-viewport.xterm-viewport-scrollable::-webkit-scrollbar-corner {
+  background: #0a0a0a !important;
+  margin: 0 !important;
 }
 
-.terminal-pane .xterm-viewport::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #4a4a4a;
-  border-radius: 5px;
-  border: 2px solid transparent;
-  background-clip: padding-box;
-  /* no min-height â€” a 32px min made short overflow look like a full bar */
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:hover {
-  background: #f0a050aa;
-  background-clip: padding-box;
-}
-
-.terminal-pane .xterm-viewport::-webkit-scrollbar-thumb:active {
-  background: #f0a050;
-  background-clip: padding-box;
-}
-
-/* Grok / agent TUI: native scrollbar must not take the wheel (xAI terminal-support).
- * Mouse reporting + custom TUI scroll only works if the viewport does not scroll.
- * pointer-events:none on viewport so the canvas (mouse mode) receives the wheel. */
+/* Grok / agent TUI: never reserve scrollbar space; canvas owns the wheel */
 .terminal-pane.agent-tui-mouse .xterm-viewport {
   overflow-y: hidden !important;
   scrollbar-width: none !important;
   pointer-events: none !important;
+  background-color: #05070a !important;
 }
-.terminal-pane.agent-tui-mouse .xterm-viewport::-webkit-scrollbar {
+.terminal-pane.agent-tui-mouse .xterm-viewport::-webkit-scrollbar,
+.terminal-pane.agent-tui-mouse .xterm-viewport::-webkit-scrollbar-thumb,
+.terminal-pane.agent-tui-mouse .xterm-viewport::-webkit-scrollbar-track {
   width: 0 !important;
   height: 0 !important;
+  display: none !important;
 }
 .terminal-pane.agent-tui-mouse .xterm-screen {
   pointer-events: none !important;
@@ -3348,13 +4130,605 @@ body.is-resizing-split .terminal-pane {
   pointer-events: auto !important;
 }
 
-/* Hide dead full-height thumb when buffer fits the screen (Grok TUI, empty shell) */
-.terminal-pane .xterm-viewport:not(.xterm-viewport-scrollable)::-webkit-scrollbar {
-  width: 0;
+/* ── Document reader / editor tabs (plans, markdown, source) ─────────────── */
+.document-pane {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: #0a0c10;
+  color: #e2e8f0;
+  z-index: 0;
+  pointer-events: none;
+  visibility: hidden;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.18s cubic-bezier(0.22, 1, 0.36, 1),
+    transform 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.document-pane.visible {
+  z-index: 1;
+  pointer-events: auto;
+  visibility: visible;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.document-pane.hidden {
+  opacity: 0;
+  transform: translateY(3px);
+}
+
+.document-pane.focused {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, #a78bfa 40%, transparent);
+}
+
+/* Document fields live on animated agent-chrome — same metrics as CLI */
+.agent-chrome.is-document .agent-chrome-main {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.document-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 14px;
+  height: 14px;
+  line-height: 0;
+}
+
+.document-icon .language-icon {
+  display: block;
+}
+
+.document-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 28vw;
+  font-weight: 700;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text);
+  flex-shrink: 1;
+  min-width: 0;
+}
+
+.document-dirty {
+  color: #f0a050;
+  font-size: 12px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.document-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.document-meta-sep {
+  color: #555;
+  margin: 0 1px;
+}
+
+.titlebar-explorer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 26px;
+  margin-left: 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #8a8a8a;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.titlebar-explorer-btn:hover {
+  color: #e8e8e8;
+  background: #1a1a1a;
+  border-color: var(--border);
+}
+
+.titlebar-explorer-btn.active {
+  color: #e8e8e8;
+  background: #1a1a1a;
+  border-color: #3f3f3f;
+}
+
+.language-icon {
+  display: inline-block;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+.document-spacer {
+  flex: 1;
+}
+
+.document-mode-toggle {
+  display: inline-flex;
+  align-items: center;
+  height: var(--pane-chrome-btn);
+  border: 1px solid #334155;
+  border-radius: 4px;
+  overflow: hidden;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.document-mode-toggle button {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font: 600 10px var(--mono, ui-monospace, Consolas, monospace);
+  padding: 0 7px;
+  height: 100%;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+}
+
+.document-mode-toggle button.active {
+  background: #a78bfa22;
+  color: #e9d5ff;
+}
+
+.document-mode-toggle button:hover:not(.active) {
+  background: #ffffff0a;
+  color: #e2e8f0;
+}
+
+/* Match agent-chrome-btn height so file + CLI headers align */
+.document-btn {
+  border: 1px solid #334155;
+  border-radius: 4px;
+  background: #141414;
+  color: #cbd5e1;
+  font: 600 10px var(--mono, ui-monospace, Consolas, monospace);
+  padding: 0 8px;
+  height: var(--pane-chrome-btn);
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+
+.document-btn:hover:not(:disabled) {
+  border-color: #475569;
+  color: #f8fafc;
+}
+
+.document-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.document-btn.primary {
+  border-color: color-mix(in srgb, #a78bfa 50%, #334155);
+  color: #e9d5ff;
+  background: #a78bfa18;
+}
+
+.document-btn.primary:hover:not(:disabled) {
+  background: #a78bfa28;
+}
+
+.document-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Document pane has no local toolbar — body fills under agent chrome */
+.document-pane > .document-body,
+.document-pane > .document-monaco {
+  flex: 1 1 auto;
+}
+
+.document-center {
+  display: grid;
+  place-items: center;
+  gap: 10px;
+  padding: 24px;
+  text-align: center;
+}
+
+.document-error {
+  color: #f87171;
+  max-width: 40rem;
+}
+
+.document-editor {
+  width: 100%;
+  height: 100%;
+  border: none;
+  outline: none;
+  resize: none;
+  padding: 14px 16px 24px;
+  background: #080a0e;
+  color: #e2e8f0;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  font-size: 13px;
+  line-height: 1.55;
+  tab-size: 2;
+  white-space: pre;
+  overflow: auto;
+}
+
+/* Monaco Document editor */
+.document-monaco {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  background: #080a0e;
+  display: flex;
+  flex-direction: column;
+}
+
+.document-monaco > section,
+.document-monaco .monaco-editor {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.document-vim-status {
+  flex: 0 0 auto;
+  min-height: 18px;
+  padding: 2px 10px;
+  font: 600 11px var(--mono, ui-monospace, Consolas, monospace);
+  color: #a78bfa;
+  background: #0c0e12;
+  border-top: 1px solid #1e293b;
+}
+
+.document-vim-status:empty,
+.document-vim-status[hidden] {
+  display: none;
+}
+
+.document-btn.active-vim {
+  border-color: #a78bfa88;
+  color: #e9d5ff;
+  background: #a78bfa22;
+}
+
+/* ── Project explorer — black minimal, resizable, animated open/close ─── */
+.stage-side {
+  display: flex;
+  flex: 0 0 auto;
+  min-height: 0;
+  z-index: 4;
+  overflow: hidden;
+  background: #0c0c0c;
+  border-right: 1px solid var(--border);
+  transition: width 0.22s cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 0.18s ease,
+    opacity 0.18s ease;
+  will-change: width;
+}
+
+.stage-side.closed {
+  border-right-color: transparent;
+  opacity: 0.01;
+  pointer-events: none;
+}
+
+.stage-side.open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.stage-side-inner {
+  display: flex;
+  flex-direction: row;
+  flex: 0 0 auto;
+  height: 100%;
+  min-height: 0;
+  position: relative;
+}
+
+.explorer-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 5px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 6;
   background: transparent;
 }
-.terminal-pane .xterm-viewport:not(.xterm-viewport-scrollable) {
-  scrollbar-width: none;
+
+.explorer-resize-handle:hover,
+body.is-resizing-explorer .explorer-resize-handle {
+  background: #3f3f3f88;
+}
+
+body.is-resizing-explorer {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
+body.is-resizing-explorer .stage-side {
+  transition: none;
+}
+
+.project-explorer {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  min-height: 0;
+  height: 100%;
+  background: #0c0c0c;
+  color: var(--text);
+  font-family: var(--mono, ui-monospace, Consolas, monospace);
+  font-size: 12px;
+}
+
+.explorer-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 8px 6px 10px;
+  border-bottom: 1px solid var(--border);
+  background: #101010;
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.explorer-title {
+  flex: 1;
+  min-width: 0;
+  font: 700 10px var(--mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.explorer-header-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+
+.explorer-icon-btn {
+  border: none;
+  background: transparent;
+  color: #6a6a6a;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.explorer-icon-btn:hover {
+  color: #e8e8e8;
+  background: #161616;
+}
+
+.explorer-tree {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 4px 0 12px;
+  background: #0c0c0c;
+}
+
+.explorer-empty {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.explorer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: #c8c8c8;
+  text-align: left;
+  padding: 3px 8px 3px 8px;
+  cursor: pointer;
+  font: 500 12px var(--mono);
+  min-height: 24px;
+  border-radius: 0;
+}
+
+.explorer-row:hover {
+  background: #141414;
+  color: #e8e8e8;
+}
+
+.explorer-row.active {
+  background: #1a1a1a;
+  color: #e8e8e8;
+  box-shadow: inset 2px 0 0 #3f3f3f;
+}
+
+.explorer-row.dir {
+  color: #d0d0d0;
+}
+
+.explorer-chevron {
+  width: 10px;
+  flex-shrink: 0;
+  font-size: 9px;
+  color: #555;
+}
+
+.explorer-folder-icon {
+  color: #8a8a8a;
+  flex-shrink: 0;
+  opacity: 0.95;
+}
+
+.explorer-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+
+
+.document-monaco .monaco-editor,
+.document-monaco .monaco-editor-background,
+.document-monaco .margin {
+  background: #080a0e !important;
+}
+
+.document-monaco .overflow-guard {
+  border-radius: 0;
+}
+
+/* Keep Monaco widgets above pane chrome */
+.document-monaco .monaco-editor .suggest-widget,
+.document-monaco .monaco-editor .find-widget,
+.document-monaco .monaco-editor .parameter-hints-widget,
+.document-monaco .monaco-editor .monaco-hover {
+  z-index: 40;
+}
+
+.document-preview {
+  overflow: auto;
+  padding: 18px 22px 32px;
+  font-family: var(--font, "Segoe UI", system-ui, sans-serif);
+  font-size: 14px;
+  line-height: 1.65;
+  color: #e2e8f0;
+}
+
+/* Simple markdown styles */
+.doc-md {
+  max-width: 52rem;
+  margin: 0 auto;
+}
+
+.doc-md-h {
+  margin: 1.1em 0 0.45em;
+  line-height: 1.25;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.doc-md-h1 {
+  font-size: 1.65rem;
+  border-bottom: 1px solid #1e293b;
+  padding-bottom: 0.3em;
+}
+
+.doc-md-h2 {
+  font-size: 1.35rem;
+}
+
+.doc-md-h3 {
+  font-size: 1.15rem;
+}
+
+.doc-md-h4,
+.doc-md-h5,
+.doc-md-h6 {
+  font-size: 1rem;
+  color: #cbd5e1;
+}
+
+.doc-md-p {
+  margin: 0.65em 0;
+}
+
+.doc-md-ul,
+.doc-md-ol {
+  margin: 0.5em 0 0.75em;
+  padding-left: 1.4em;
+}
+
+.doc-md-ul li,
+.doc-md-ol li {
+  margin: 0.25em 0;
+}
+
+.doc-md-code {
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  font-size: 0.9em;
+  background: #1a2230;
+  color: #e9d5ff;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+}
+
+.doc-md-pre {
+  margin: 0.85em 0;
+  padding: 12px 14px;
+  background: #0c111a;
+  border: 1px solid #1e293b;
+  border-radius: 8px;
+  overflow: auto;
+  font-family: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #e2e8f0;
+}
+
+.doc-md-pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+  font-size: inherit;
+}
+
+.doc-md-quote {
+  margin: 0.75em 0;
+  padding: 0.35em 0 0.35em 12px;
+  border-left: 3px solid #a78bfa88;
+  color: #cbd5e1;
+}
+
+.doc-md-hr {
+  border: none;
+  border-top: 1px solid #1e293b;
+  margin: 1.25em 0;
+}
+
+.doc-md-link {
+  color: #93c5fd;
+  text-decoration: none;
+}
+
+.doc-md-link:hover {
+  text-decoration: underline;
+}
+
+.doc-md-empty {
+  text-align: center;
+  padding: 2rem;
 }
 
 /* Status / command bar â€” CLI feel */
@@ -3435,19 +4809,29 @@ body.is-resizing-split .terminal-pane {
   min-height: 0;
 }
 
-/* Agent palette (Ctrl+K) */
+/* Agent palette (Ctrl+K / Ctrl+T) — body class set while open so terminals
+   cannot click-steal focus while the filter owns the keyboard. */
+body.palette-owns-keyboard .terminal-pane,
+body.palette-owns-keyboard .terminal-xterm-host,
+body.palette-owns-keyboard .xterm {
+  pointer-events: none !important;
+}
+
 .palette-backdrop {
   position: fixed;
   inset: 0;
   background: #00000088;
   display: grid;
   place-items: start center;
-  padding-top: 12vh;
+  padding-top: 8vh;
   z-index: 100;
 }
 
 .palette {
   width: min(480px, 92vw);
+  max-height: min(88vh, 720px);
+  display: flex;
+  flex-direction: column;
   background: #161616;
   border: 1px solid var(--border-strong);
   border-radius: 10px;
@@ -3455,19 +4839,151 @@ body.is-resizing-split .terminal-pane {
   overflow: hidden;
 }
 
-.palette-search {
-  width: 100%;
-  border: none;
+.palette-header {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
   border-bottom: 1px solid var(--border);
+  background: #121212;
+}
+
+.palette-search {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  border: none;
+  border-bottom: none;
   border-radius: 0;
-  padding: 14px 16px;
+  padding: 14px 12px 14px 16px;
   font-size: 14px;
   background: transparent;
 }
 
+.palette-menu-wrap {
+  position: relative;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 0 0;
+}
+
+.palette-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.palette-menu-btn:hover,
+.palette-menu-btn.open {
+  background: #ffffff0c;
+  border-color: var(--border);
+  color: var(--text);
+}
+
+.palette-hamburger {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  width: 14px;
+}
+
+.palette-hamburger span {
+  display: block;
+  height: 1.5px;
+  width: 100%;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.palette-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 20;
+  min-width: 240px;
+  max-width: min(320px, 80vw);
+  max-height: min(50vh, 360px);
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--border-strong);
+  border-radius: 8px;
+  background: #161616;
+  box-shadow: 0 16px 48px #000000aa;
+}
+
+.palette-menu-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  padding: 9px 10px;
+  text-align: left;
+  cursor: pointer;
+  font: 500 12px var(--mono);
+}
+
+.palette-menu-item:hover:not(:disabled) {
+  background: #ffffff0c;
+}
+
+.palette-menu-item:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.palette-menu-item-compact {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+}
+
+.palette-menu-item-title {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.palette-menu-item-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+  line-height: 1.3;
+  white-space: normal;
+}
+
+.palette-menu-section {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid #ffffff08;
+}
+
+.palette-menu-section-label {
+  padding: 4px 10px 2px;
+  font: 600 9px var(--mono);
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Tall enough to show the full built-in agent list without clipping */
 .palette-list {
-  max-height: 320px;
-  overflow: auto;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .palette-item-row {
@@ -3491,7 +5007,7 @@ body.is-resizing-split .terminal-pane {
   flex: 1;
   min-width: 0;
   text-align: left;
-  padding: 10px 16px;
+  padding: 8px 14px;
   border: none;
   border-radius: 0;
   background: transparent;
@@ -3560,7 +5076,143 @@ body.is-resizing-split .terminal-pane {
   font-family: var(--mono);
 }
 
-/* Legacy single-stack split removed â€” use .split-panes */}
+.palette-footer-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.palette-footer-hint {
+  font-size: 10px;
+  color: var(--text-muted);
+  opacity: 0.85;
+}
+
+.palette-add-custom {
+  border: 1px solid #ffffff18;
+  background: #ffffff08;
+  color: #e2e8f0;
+  border-radius: 6px;
+  padding: 5px 10px;
+  font: 600 11px var(--mono, ui-monospace, Consolas, monospace);
+  cursor: pointer;
+}
+
+.palette-add-custom:hover {
+  background: #ffffff12;
+  border-color: #993ff566;
+  color: #c4b5fd;
+}
+
+.palette-custom-badge {
+  margin-left: 6px;
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a78bfa;
+  opacity: 0.9;
+}
+
+.palette-remove-custom {
+  flex-shrink: 0;
+  align-self: center;
+  margin: 0 6px 0 0;
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.palette-remove-custom:hover {
+  background: #f8717122;
+  color: #fca5a5;
+}
+
+.palette-custom-form {
+  flex-shrink: 0;
+  padding: 12px 14px 14px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: #121212;
+}
+
+.palette-custom-title {
+  font: 700 11px var(--mono, ui-monospace, Consolas, monospace);
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.palette-custom-field {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  align-items: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.palette-custom-field input {
+  width: 100%;
+  border: 1px solid #ffffff14;
+  border-radius: 6px;
+  background: #0a0a0a;
+  color: var(--text);
+  padding: 7px 9px;
+  font: 12px var(--mono, ui-monospace, Consolas, monospace);
+}
+
+.palette-custom-field input:focus {
+  outline: none;
+  border-color: #993ff588;
+}
+
+.palette-custom-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.palette-custom-cancel,
+.palette-custom-save {
+  border-radius: 6px;
+  padding: 6px 12px;
+  font: 600 11px var(--mono, ui-monospace, Consolas, monospace);
+  cursor: pointer;
+}
+
+.palette-custom-cancel {
+  border: 1px solid #ffffff14;
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.palette-custom-save {
+  border: 1px solid #993ff588;
+  background: #993ff522;
+  color: #e9d5ff;
+}
+
+.palette-custom-save:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.palette-custom-save:not(:disabled):hover {
+  background: #993ff544;
+}
+
+/* Legacy single-stack split removed — use .split-panes */}
 
 /* Memory panel overrides inside drawer */
 .drawer .memory-panel {
@@ -3916,4 +5568,46 @@ html.theme-light {
   --border-strong: #a1a1aa;
   --text: #18181b;
   --text-muted: #71717a;
+}
+
+/* MCP / CLI path links → Document view */
+.mcp-path-link {
+  display: inline;
+  margin: 0;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-family: var(--mono);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.mcp-path-link:hover {
+  color: #fbbf24;
+  text-decoration-color: #fbbf24;
+}
+.settings-toggle-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 0;
+  border-bottom: 1px solid #ffffff08;
+  margin-bottom: 12px;
+}
+.settings-toggle-row input[type="checkbox"] {
+  margin-top: 4px;
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+/* xterm path / web links underline */
+.xterm .xterm-link {
+  cursor: pointer !important;
+  text-decoration: underline;
+  text-underline-offset: 2px;
 }

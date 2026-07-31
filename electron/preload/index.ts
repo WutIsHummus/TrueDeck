@@ -15,7 +15,36 @@ import type {
  SessionLayout
 } from '../shared/types'
 
+/** Detached pane boot identity (argv is more reliable than file:// query). */
+function parseDetachedBoot(): { detached: boolean; sessionId: string | null } {
+ try {
+  const arg = process.argv.find((a) => a.startsWith('--td-detached='))
+  if (arg) {
+   const sessionId = arg.slice('--td-detached='.length).trim()
+   if (sessionId) return { detached: true, sessionId }
+  }
+ } catch {
+  /* ignore */
+ }
+ try {
+  const q = new URLSearchParams(
+   typeof location !== 'undefined' ? location.search : ''
+  )
+  const session = (q.get('session') || '').trim()
+  if (q.get('detached') === '1' && session) {
+   return { detached: true, sessionId: session }
+  }
+ } catch {
+  /* ignore */
+ }
+ return { detached: false, sessionId: null }
+}
+
+const detachedBoot = parseDetachedBoot()
+
 const api = {
+ /** Pop-out window boot: which session this renderer owns (if any). */
+ getDetachedBoot: (): { detached: boolean; sessionId: string | null } => detachedBoot,
  getSettings: (): Promise<AppSettings> => ipcRenderer.invoke('app:getSettings'),
  setSettings: (s: AppSettings): Promise<AppSettings> => ipcRenderer.invoke('app:setSettings', s),
  firstRun: (
@@ -50,6 +79,34 @@ const api = {
  /** OS / taskbar title (also updates frameless window title metadata). */
  setWindowTitle: (title: string): Promise<string> =>
  ipcRenderer.invoke('window:setTitle', title),
+ /** Pop a session into its own window (drag out / Ctrl+N). */
+ openDetachedPane: (opts: {
+ sessionId: string
+ title?: string
+ x?: number
+ y?: number
+ }): Promise<{ ok: boolean; sessionId: string }> =>
+ ipcRenderer.invoke('window:openDetached', opts),
+ getWindowMode: (): Promise<{ detached: boolean; sessionId: string | null }> =>
+ ipcRenderer.invoke('window:getMode'),
+ listDetachedSessions: (): Promise<string[]> => ipcRenderer.invoke('window:listDetached'),
+ onDetachedClosed: (cb: (info: { sessionId: string }) => void): (() => void) => {
+ const listener = (
+ _: Electron.IpcRendererEvent,
+ info: { sessionId: string }
+ ): void => cb(info)
+ ipcRenderer.on('detached:closed', listener)
+ return () => ipcRenderer.removeListener('detached:closed', listener)
+ },
+ /** Main → detached window: session id after load (fallback if argv/query missed). */
+ onDetachedBoot: (cb: (info: { sessionId: string }) => void): (() => void) => {
+ const listener = (
+ _: Electron.IpcRendererEvent,
+ info: { sessionId: string }
+ ): void => cb(info)
+ ipcRenderer.on('detached:boot', listener)
+ return () => ipcRenderer.removeListener('detached:boot', listener)
+ },
  onWindowMaximized: (cb: (maximized: boolean) => void): (() => void) => {
  const listener = (_: Electron.IpcRendererEvent, maximized: boolean): void => cb(maximized)
  ipcRenderer.on('window:maximized', listener)
@@ -69,6 +126,17 @@ const api = {
  }> => ipcRenderer.invoke('agents:installHelp', opts),
  saveAgents: (agents: AgentPreset[]): Promise<AgentPreset[]> =>
  ipcRenderer.invoke('agents:save', agents),
+ addCustomAgent: (opts: {
+ name: string
+ command: string
+ args?: string[]
+ color?: string
+ installCommand?: string
+ description?: string
+ }): Promise<{ agents: AgentPreset[]; preset: AgentPreset }> =>
+ ipcRenderer.invoke('agents:addCustom', opts),
+ removeCustomAgent: (agentId: string): Promise<AgentPreset[]> =>
+ ipcRenderer.invoke('agents:removeCustom', agentId),
  resetAgents: (): Promise<AgentPreset[]> => ipcRenderer.invoke('agents:reset'),
 
  listProjects: (): Promise<ProjectConfig[]> => ipcRenderer.invoke('projects:list'),
@@ -128,6 +196,31 @@ const api = {
  }> => ipcRenderer.invoke('sessions:backend'),
  writeSession: (id: string, data: string): Promise<void> =>
  ipcRenderer.invoke('sessions:write', id, data),
+ /** OS clipboard (for terminal copy/paste; more reliable than navigator.clipboard). */
+ readClipboard: (): Promise<string> => ipcRenderer.invoke('clipboard:readText'),
+ writeClipboard: (text: string): Promise<boolean> =>
+ ipcRenderer.invoke('clipboard:writeText', text),
+ /** Readable project files (plans, markdown, source) in a document tab. */
+ readProjectFile: (
+ filePath: string
+ ): Promise<{ path: string; content: string; mtimeMs: number }> =>
+ ipcRenderer.invoke('files:readText', filePath),
+ writeProjectFile: (
+ filePath: string,
+ content: string
+ ): Promise<{ path: string; mtimeMs: number }> =>
+ ipcRenderer.invoke('files:writeText', filePath, content),
+ pathExists: (filePath: string): Promise<boolean> =>
+ ipcRenderer.invoke('files:pathExists', filePath),
+ listProjectDir: (
+ dirPath: string
+ ): Promise<
+ Array<{ name: string; path: string; isDirectory: boolean; isFile: boolean }>
+ > => ipcRenderer.invoke('files:listDir', dirPath),
+ pickProjectFile: (opts?: {
+ projectRoot?: string
+ title?: string
+ }): Promise<string | null> => ipcRenderer.invoke('files:pickOpen', opts),
  resizeSession: (id: string, cols: number, rows: number, force?: boolean): Promise<void> =>
  ipcRenderer.invoke('sessions:resize', id, cols, rows, force),
  killSession: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
@@ -180,6 +273,16 @@ const api = {
  projectRoot?: string
  ): Promise<{ ok: boolean; label: string; detail: string }> =>
  ipcRenderer.invoke('memory:status', projectRoot),
+ projectSetupStatus: (
+ projectRoot: string,
+ openAgentIds?: string[]
+ ): Promise<import('../shared/types').ProjectSetupStatus> =>
+ ipcRenderer.invoke('project:setupStatus', projectRoot, openAgentIds || []),
+ setupProject: (opts: {
+ projectRoot: string
+ openAgentIds?: string[]
+ }): Promise<import('../shared/types').ProjectSetupResult> =>
+ ipcRenderer.invoke('project:setup', opts),
 
  graphifyStatus: (projectRoot?: string): Promise<import('../shared/types').GraphifyStatus> =>
  ipcRenderer.invoke('graphify:status', projectRoot),

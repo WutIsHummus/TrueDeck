@@ -10,6 +10,8 @@ export interface AgentPreset {
  description?: string
  /** Shell one-liner to install this CLI when missing */
  installCommand?: string
+ /** User-defined CLI (not a built-in preset). Kept across merges. */
+ custom?: boolean
 }
 
 /** Runtime probe: is this agent’s CLI installed? */
@@ -53,10 +55,12 @@ export interface SessionInfo {
  createdAt: number
  title: string
  exitCode?: number
- /** True for on-open / ad-hoc command panes (not a preset agent). */
- kind?: 'agent' | 'command'
+ /** agent = CLI · command = shell command · document = readable text/code/markdown tab */
+ kind?: 'agent' | 'command' | 'document'
  /** Shell command for kind === 'command' (used to restore the tab). */
  commandLine?: string
+ /** Absolute path for kind === 'document' (plans, markdown, source). */
+ documentPath?: string
  /** Board task title (agent chrome / focus). */
  focusTitle?: string
  /** Main idea line for agent chrome (title + summary). */
@@ -71,6 +75,18 @@ export interface SessionInfo {
  gitBranch?: string
  /** Short worktree label when isolated. */
  worktreeLabel?: string
+ /**
+  * CLI conversation / chat id when known (for restore --resume).
+  * Optional; most restores fall back to each CLI's --continue / --last.
+  */
+ resumeToken?: string
+ /**
+  * UI-only: minimize the tab to a compact chip without killing the PTY.
+  * Click the chip (or eye) to restore. Replaces the old "hidden" veil.
+  */
+ uiMinimized?: boolean
+ /** @deprecated use uiMinimized */
+ uiHidden?: boolean
 }
 
 /** Disk snapshot of open terminal tabs so they survive app restarts. */
@@ -79,8 +95,17 @@ export interface SavedSessionTab {
  agentName: string
  projectRoot: string
  color: string
- kind?: 'agent' | 'command'
+ kind?: 'agent' | 'command' | 'document'
  commandLine?: string
+ /** Absolute path for document tabs. */
+ documentPath?: string
+ /**
+  * Last known OSC / prompt title - used on restore so agents that match by
+  * title (e.g. Grok `--resume <title>`) reattach the right conversation.
+  */
+ title?: string
+ /** CLI session / chat id when known (Claude/Cursor/Codex UUID, etc.). */
+ resumeToken?: string
 }
 
 /**
@@ -321,6 +346,16 @@ export interface AppSettings {
  /** Also wrap plain shell panes when agentFrameTui is on. Default false. */
  frameShellPanes?: boolean
  /**
+ * When true (default), file paths printed by agent CLIs are clickable and
+ * open in Document view (local files). HTTP(S) opens in the OS browser.
+ * Toggle on Settings → MCP.
+ */
+ openCliPathsInDocument?: boolean
+ /** Monaco Document editor: Vim keybindings (monaco-vim). Default false. */
+ editorVimMode?: boolean
+ /** Show project file explorer sidebar. Default true when a project is open. */
+ showProjectExplorer?: boolean
+ /**
  * @deprecated Graphify runs fully automatic under the hood (no user UI).
  * Kept for settings JSON compatibility only.
  */
@@ -374,4 +409,46 @@ export interface AgentMemoryInjectResult {
  ok: boolean
  filesWritten: string[]
  message: string
+}
+
+/**
+ * Backend context pipeline for a project (automatic — not a user dashboard).
+ * Memory, MCP, and project context are handled under the hood.
+ */
+export type ProjectSetupCheckId =
+ | 'auto_context'
+ | 'memory_backend'
+ | 'mcp_wired'
+ | 'cli_inject'
+ | 'palace_index'
+
+export interface ProjectSetupCheck {
+ id: ProjectSetupCheckId
+ label: string
+ ok: boolean
+ detail?: string
+}
+
+export interface ProjectSetupStatus {
+ projectRoot: string
+ /**
+  * True when agents can work: MCP wired, auto-context present, memory backend
+  * paths ready, inject done. Palace mine may still warm in the background.
+  */
+ ready: boolean
+ /** Soft: palace/graph still indexing — user can already code */
+ warming: boolean
+ /** Short status for title bar (empty when quiet) */
+ label: string
+ detail: string
+ missing: string[]
+ checks: ProjectSetupCheck[]
+ lastSetupAt?: number
+ pendingOpenAgents?: string[]
+ needsOpenInject?: boolean
+}
+
+export interface ProjectSetupResult {
+ status: ProjectSetupStatus
+ inject?: AgentMemoryInjectResult
 }

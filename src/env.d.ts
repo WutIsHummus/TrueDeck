@@ -20,4 +20,12 @@ declare module '*.svg' {
   export default src
 }
 
+/** Vite worker imports used by Monaco */
+declare module '*?worker' {
+  const workerConstructor: {
+    new (): Worker
+  }
+  export default workerConstructor
+}
+
 export {}

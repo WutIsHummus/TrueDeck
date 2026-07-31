@@ -1,6 +1,6 @@
 {
  "name": "truedeck",
- "version": "0.3.1",
+ "version": "0.3.2",
  "description": "Terminal-first multi-agent coding deck - Grok, Codex, Cursor, Claude with pane groups, automatic memory, and Ctrl shortcuts that work inside the terminal.",
  "main": "./out/main/index.js",
  "author": "TrueDeck Contributors",
@@ -34,6 +34,8 @@
   "build:backend": "node tools/build-rust-backend.mjs",
   "build": "electron-vite build",
   "preview": "electron-vite preview",
+  "launch": "electron .",
+  "launch:built": "electron-vite build && electron .",
   "docs:dev": "vitepress dev docs",
   "docs:build": "vitepress build docs",
   "docs:preview": "vitepress preview docs",
@@ -45,10 +47,13 @@
   "truedeck": "./bin/truedeck.js"
  },
  "dependencies": {
+  "@monaco-editor/react": "^4.7.0",
   "@types/blessed": "^0.1.27",
   "@xterm/addon-fit": "^0.10.0",
   "@xterm/addon-web-links": "^0.11.0",
   "blessed": "^0.1.81",
+  "monaco-editor": "^0.56.0",
+  "monaco-vim": "^0.4.4",
   "react": "^18.3.1",
   "react-dom": "^18.3.1",
   "uuid": "^11.1.0",

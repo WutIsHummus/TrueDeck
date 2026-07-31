@@ -1,16 +1,22 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { SessionInfo, TaskStatus } from '../../electron/shared/types'
+import type { DocumentChromeState } from '../lib/document-chrome'
 import {
  isAgentNameVariant,
  isNoiseTerminalTitle,
  looksLikeSecret
 } from '../lib/session-label'
+import { setDraggingTabId } from '../lib/tab-drag'
 import { AgentIcon } from './AgentIcon'
+import { LanguageIcon } from './LanguageIcon'
 import { CloseIcon } from './CloseIcon'
 import { PixelBlast } from './PixelBlast'
+import { useDeck } from '../store'
 
 interface Props {
  session: SessionInfo
+ /** Pane group id - required so chrome can start the same tab dock drag as GroupTabBar. */
+ groupId: string
  /** True when this pane owns keyboard focus (stronger chrome + PixelBlast). */
  focused?: boolean
  /**
@@ -22,6 +28,20 @@ interface Props {
  onNew?: () => void
  showCloseGroup?: boolean
  onCloseGroup?: () => void
+ /** Stage dock overlay while dragging this session. */
+ onDragActiveChange?: (dragging: boolean) => void
+ /**
+ * When every tab in this pane is minimized: no tab strip — chrome hosts
+ * the restore list instead of a live agent identity row.
+ */
+ minimizedOnly?: boolean
+ /** Minimized sessions to list on the chrome (restore chips). */
+ minimizedSessions?: SessionInfo[]
+ onRestore?: (sessionId: string) => void
+ /** Document tab controls (PixelBlast chrome hosts file meta + save). */
+ documentChrome?: DocumentChromeState | null
+ /** Hide chrome PixelBlast (e.g. during split slide). */
+ suppressBlast?: boolean
 }
 
 function shortPath(p: string, max = 40): string {
@@ -60,19 +80,40 @@ function sameLabel(a: string, b: string): boolean {
  */
 export function AgentChromeBar({
  session,
+ groupId,
  focused = false,
  showAgentName = true,
  onNew,
  showCloseGroup,
- onCloseGroup
+ onCloseGroup,
+ onDragActiveChange,
+ minimizedOnly = false,
+ minimizedSessions = [],
+ onRestore,
+ documentChrome = null,
+ suppressBlast = false
 }: Props): JSX.Element {
  const [now, setNow] = useState(() => Date.now())
+ const [dragging, setDragging] = useState(false)
+ const dragImageRef = useRef<HTMLDivElement | null>(null)
+ const patchSession = useDeck((s) => s.patchSession)
+ const setStatus = useDeck((s) => s.setStatus)
  const [branch, setBranch] = useState<string | null>(session.gitBranch || null)
  const [linkedTask, setLinkedTask] = useState<{
  id: string
  title: string
  status: string
  } | null>(null)
+
+ const endDrag = useCallback(() => {
+ setDragging(false)
+ onDragActiveChange?.(false)
+ window.setTimeout(() => setDraggingTabId(null), 50)
+ if (dragImageRef.current) {
+ dragImageRef.current.remove()
+ dragImageRef.current = null
+ }
+ }, [onDragActiveChange])
 
  useEffect(() => {
  const t = window.setInterval(() => setNow(Date.now()), 1000)
@@ -198,22 +239,257 @@ export function AgentChromeBar({
  taskTitle && !taskIsNoise && ideaOk && !sameLabel(ideaOk, taskTitle) ? ideaOk : ''
 
  const pathTip = root ? shortPath(root, 64) : ''
+ const isDoc = Boolean(
+ documentChrome || session.kind === 'document' || session.documentPath
+ )
+ const doc = documentChrome
+ const dragLabel = isDoc
+ ? doc?.name || basename(session.documentPath || session.title || 'File')
+ : `${agentName}${proj ? ` · ${proj}` : ''}`
+ const minList = minimizedSessions.filter(Boolean)
+ const showMinList = minList.length > 0 && !isDoc
+ const minChips = showMinList ? (
+ <>
+ <span className="agent-chrome-min-label muted" title="Minimized tabs still running">
+ {minList.length} minimized
+ </span>
+ <div className="agent-chrome-min-list" role="list">
+ {minList.map((s) => (
+ <button
+ key={s.id}
+ type="button"
+ role="listitem"
+ className="agent-chrome-min-chip"
+ title={`Restore ${s.agentName || s.title || 'tab'}`}
+ onClick={(e) => {
+ e.stopPropagation()
+ onRestore?.(s.id)
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ <AgentIcon
+ agentId={s.agentId}
+ size={12}
+ color={s.color || '#e8e8e8'}
+ />
+ <span className="agent-chrome-min-name">
+ {s.agentName || s.title || 'tab'}
+ </span>
+ </button>
+ ))}
+ </div>
+ </>
+ ) : null
 
  return (
  <div
- className={`agent-chrome ${focused ? 'focused hot' : ''}${showIdeaRow ? '' : ' compact'}`}
- style={{ ['--agent-accent' as string]: accent }}
+ className={[
+ 'agent-chrome',
+ focused && !minimizedOnly ? 'focused hot' : focused ? 'focused' : '',
+ showIdeaRow && !minimizedOnly && !isDoc ? '' : ' compact',
+ dragging ? 'dragging' : '',
+ minimizedOnly ? 'minimized-only' : '',
+ showMinList && !minimizedOnly ? 'has-min-list' : '',
+ isDoc ? 'is-document' : ''
+ ]
+ .filter(Boolean)
+ .join(' ')}
+ style={{ ['--agent-accent' as string]: isDoc ? '#a78bfa' : accent }}
+ data-group={groupId}
+ data-session={session.id}
+ draggable={!minimizedOnly}
+ title={
+ minimizedOnly
+ ? `${minList.length} minimized · click a chip to restore`
+ : isDoc
+ ? doc?.path || dragLabel
+ : showMinList
+ ? `${dragLabel} · ${minList.length} minimized — click a chip to restore`
+ : `${dragLabel} · drag onto another pane to dock`
+ }
+ onDragStart={(e) => {
+ if (minimizedOnly) {
+ e.preventDefault()
+ return
+ }
+ // Don't start a pane drag from + / close controls
+ const t = e.target as HTMLElement | null
+ if (t?.closest?.('button, a, input, textarea')) {
+ e.preventDefault()
+ return
+ }
+ setDragging(true)
+ setDraggingTabId(session.id)
+ onDragActiveChange?.(true)
+ e.dataTransfer.effectAllowed = 'copyMove'
+ e.dataTransfer.setData('text/plain', session.id)
+ try {
+ e.dataTransfer.setData('application/x-truedeck-tab', session.id)
+ e.dataTransfer.setData('application/x-truedeck-group', groupId)
+ } catch {
+ /* ignore */
+ }
+ const ghost = document.createElement('div')
+ ghost.textContent = dragLabel
+ ghost.style.cssText =
+ 'position:absolute;top:-1000px;padding:6px 12px;background:#1a1a1a;border:1px solid #3f3f3f;border-radius:8px;color:#e8e8e8;font:12px Cascadia Code,monospace;'
+ document.body.appendChild(ghost)
+ dragImageRef.current = ghost
+ e.dataTransfer.setDragImage(ghost, 40, 16)
+ }}
+ onDragEnd={endDrag}
  >
- {focused && (
+ {focused && !minimizedOnly && !suppressBlast && (
  <PixelBlast
  className="agent-chrome-blast"
- color={accent}
+ color={isDoc ? '#a78bfa' : accent}
  opacity={0.55}
  active={focused}
+ explosions={false}
  />
  )}
 
  <div className="agent-chrome-row agent-chrome-main">
+ {minimizedOnly ? (
+ minChips
+ ) : isDoc ? (
+ <>
+ <span className="document-icon" title={doc?.lang || 'Document'}>
+ <LanguageIcon
+ pathOrLang={doc?.path || session.documentPath || ''}
+ size={14}
+ title={doc?.lang}
+ />
+ </span>
+ <span className="document-name">{doc?.name || dragLabel}</span>
+ {doc?.dirty && (
+ <span className="document-dirty" title="Unsaved">
+ •
+ </span>
+ )}
+ <span className="document-meta muted">
+ <span className="document-meta-sep">·</span>
+ {doc?.lang || 'File'}
+ {doc && doc.lineCount > 0 ? (
+ <>
+ <span className="document-meta-sep">·</span>
+ {doc.lineCount} lines
+ </>
+ ) : null}
+ <span className="document-meta-sep">·</span>
+ {doc?.mode === 'preview' && doc?.isMd ? 'Read' : 'IDE'}
+ </span>
+ <span className="agent-chrome-spacer" />
+ {doc?.isMd && (
+ <div className="document-mode-toggle" role="group" aria-label="View mode">
+ <button
+ type="button"
+ className={doc.mode === 'preview' ? 'active' : ''}
+ onClick={(e) => {
+ e.stopPropagation()
+ doc.onSetMode('preview')
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ Read
+ </button>
+ <button
+ type="button"
+ className={doc.mode === 'edit' ? 'active' : ''}
+ onClick={(e) => {
+ e.stopPropagation()
+ doc.onSetMode('edit')
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ Edit
+ </button>
+ </div>
+ )}
+ {(doc?.mode === 'edit' || !doc?.isMd) && (
+ <button
+ type="button"
+ className={`document-btn${doc?.vimMode ? ' active-vim' : ''}`}
+ title={doc?.vimMode ? 'Vim on' : 'Enable Vim'}
+ onClick={(e) => {
+ e.stopPropagation()
+ doc?.onToggleVim()
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ Vim
+ </button>
+ )}
+ <button
+ type="button"
+ className="document-btn"
+ title="Reload from disk"
+ disabled={doc?.loading}
+ onClick={(e) => {
+ e.stopPropagation()
+ doc?.onReload()
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ Reload
+ </button>
+ <button
+ type="button"
+ className="document-btn primary"
+ title="Save (Ctrl+S)"
+ disabled={!doc?.dirty || doc?.saving}
+ onClick={(e) => {
+ e.stopPropagation()
+ doc?.onSave()
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ {doc?.saving ? 'Saving…' : 'Save'}
+ </button>
+ <span
+ className="agent-chrome-actions"
+ draggable={false}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ <button
+ type="button"
+ className={`agent-chrome-btn${session.uiMinimized || session.uiHidden ? ' active-eye' : ''}`}
+ title="Minimize tab"
+ aria-label="Minimize tab"
+ onClick={(e) => {
+ e.stopPropagation()
+ patchSession(session.id, { uiMinimized: true, uiHidden: false })
+ setStatus(`Minimized ${doc?.name || 'file'}`)
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+ <path
+ d="M5 12h14"
+ stroke="currentColor"
+ strokeWidth="1.9"
+ strokeLinecap="round"
+ />
+ </svg>
+ </button>
+ {onNew && (
+ <button
+ type="button"
+ className="agent-chrome-btn"
+ title="New agent in this pane (Ctrl+T)"
+ onClick={(e) => {
+ e.stopPropagation()
+ onNew()
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ +
+ </button>
+ )}
+ </span>
+ </>
+ ) : (
+ <>
  {showAgentName && (
  <span className="agent-chrome-agent" style={{ color: accent }}>
  <AgentIcon agentId={agentId} size={14} color={accent} title={session.agentName} />
@@ -277,21 +553,59 @@ export function AgentChromeBar({
  </>
  )}
 
+ {showMinList && (
+ <>
+ <span className="agent-chrome-dot">·</span>
+ {minChips}
+ </>
+ )}
+
  <span className="agent-chrome-spacer" />
  <span className="agent-chrome-elapsed muted" title="Session age">
  {elapsed}
  </span>
- {(onNew || (showCloseGroup && onCloseGroup)) && (
- <span className="agent-chrome-actions">
+ <span
+ className="agent-chrome-actions"
+ draggable={false}
+ onMouseDown={(e) => e.stopPropagation()}
+ onDragStart={(e) => {
+ e.preventDefault()
+ e.stopPropagation()
+ }}
+ >
+ <button
+ type="button"
+ className={`agent-chrome-btn${session.uiMinimized || session.uiHidden ? ' active-eye' : ''}`}
+ draggable={false}
+ title="Minimize tab (remove from strip, keeps running)"
+ aria-label="Minimize tab"
+ onClick={(e) => {
+ e.stopPropagation()
+ patchSession(session.id, { uiMinimized: true, uiHidden: false })
+ setStatus(`Minimized ${agentName}`)
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ <svg width="12" height="12" viewBox="0 0 24 24" fill="none" aria-hidden>
+ <path
+ d="M5 12h14"
+ stroke="currentColor"
+ strokeWidth="1.9"
+ strokeLinecap="round"
+ />
+ </svg>
+ </button>
  {onNew && (
  <button
  type="button"
  className="agent-chrome-btn"
+ draggable={false}
  title="New agent in this pane (Ctrl+T)"
  onClick={(e) => {
  e.stopPropagation()
  onNew()
  }}
+ onMouseDown={(e) => e.stopPropagation()}
  >
  +
  </button>
@@ -300,21 +614,24 @@ export function AgentChromeBar({
  <button
  type="button"
  className="agent-chrome-btn danger"
- title="Close this pane only (tabs move to a neighbor)"
- aria-label="Close pane"
+ draggable={false}
+ title="Close tab (Ctrl+W) — ends the agent"
+ aria-label="Close tab"
  onClick={(e) => {
  e.stopPropagation()
  onCloseGroup()
  }}
+ onMouseDown={(e) => e.stopPropagation()}
  >
  <CloseIcon size={10} />
  </button>
  )}
  </span>
+ </>
  )}
  </div>
 
- {showIdeaRow && ideaPrimary && (
+ {showIdeaRow && ideaPrimary && !minimizedOnly && !isDoc && (
  <div className="agent-chrome-row agent-chrome-idea" title={ideaSecondary || ideaPrimary}>
  <span className="agent-chrome-idea-text">
  <span className="agent-chrome-task-title">{ideaPrimary}</span>
@@ -325,7 +642,12 @@ export function AgentChromeBar({
  </div>
  )}
 
- <div className="agent-chrome-rule" style={{ background: accent }} />
+ <div
+ className="agent-chrome-rule"
+ style={{
+ background: minimizedOnly ? 'var(--border)' : isDoc ? '#a78bfa' : accent
+ }}
+ />
  </div>
  )
 }

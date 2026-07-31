@@ -246,16 +246,40 @@ fn spawn_session(
         cmd.arg(a);
     }
     cmd.cwd(&cwd);
-    // Inherit process env then overlay
+    // Inherit process env then overlay — strip color-silencing flags so agent
+    // CLIs keep native ANSI (parent hosts often set NO_COLOR=1 / FORCE_COLOR=0).
+    let strip = |k: &str| {
+        matches!(
+            k,
+            "NO_COLOR" | "FORCE_COLOR" | "CLICOLOR" | "CLICOLOR_FORCE"
+        )
+    };
     for (k, v) in std::env::vars() {
-        // Don't clobber explicit overrides later
+        if strip(&k) {
+            continue;
+        }
+        if k == "TERM" {
+            let t = v.trim();
+            if t.is_empty() || t.eq_ignore_ascii_case("dumb") || t.eq_ignore_ascii_case("unknown") {
+                continue;
+            }
+        }
         if !env.contains_key(&k) {
             cmd.env(k, v);
         }
     }
     for (k, v) in &env {
+        if strip(k) {
+            continue;
+        }
         cmd.env(k, v);
     }
+    cmd.env("TERM", "xterm-256color");
+    cmd.env("COLORTERM", "truecolor");
+    cmd.env("TERM_PROGRAM", "TrueDeck");
+    cmd.env("FORCE_COLOR", "3");
+    cmd.env("CLICOLOR", "1");
+    cmd.env("CLICOLOR_FORCE", "1");
 
     let child = pair
         .slave
