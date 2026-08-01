@@ -48,7 +48,7 @@ import {
  deleteMemoryNote,
  buildAgentBootstrapPrompt
 } from './memory'
-import { getGlobalDataDir, getSettingsPath } from './paths'
+import { getGlobalDataDir, getSettingsPath, getSessionLayoutPath } from './paths'
 import {
  loadSessionLayout,
  MAX_SAVED_TABS,
@@ -176,9 +176,11 @@ process.on('unhandledRejection', (reason) => {
  * inside sessions:restore; the rest are deferred (see scheduleDeferredRestore)
  * so multi-Grok ConPTY storms cannot kill the process on open.
  */
-const MAX_RESTORE_TOTAL = process.platform === 'win32' ? 1 : 8
+const MAX_RESTORE_TOTAL = process.platform === 'win32' ? 6 : 8
 const MAX_RESTORE_IMMEDIATE = process.platform === 'win32' ? 1 : 4
-const RESTORE_SPAWN_GAP_MS = process.platform === 'win32' ? 1200 : 250
+const RESTORE_SPAWN_GAP_MS = process.platform === 'win32' ? 2800 : 250
+/** Wait after first tab before spawning more (Windows ConPTY settle). */
+const RESTORE_DEFER_START_MS = process.platform === 'win32' ? 6000 : 800
 const MAX_RESTORE_TABS = MAX_RESTORE_TOTAL
 
 function sameRootPath(a?: string | null, b?: string | null): boolean {
@@ -1387,12 +1389,6 @@ function scheduleDeferredRestore(
   remaining: { tab: SavedSessionTab; ti: number }[],
   claimed: Set<string>
 ): void {
-  if (process.platform === 'win32') {
-    console.log(
-      `[layout] skip deferred restore of ${remaining.length} tab(s) on Windows`
-    )
-    return
-  }
   if (!remaining.length) return
   const queue = [...remaining]
   const gap = RESTORE_SPAWN_GAP_MS
@@ -1494,7 +1490,7 @@ function scheduleDeferredRestore(
     setTimeout(() => void runNext(), gap)
   }
   // Let the window paint + first ConPTY settle before more
-  setTimeout(() => void runNext(), gap + 800)
+  setTimeout(() => void runNext(), typeof RESTORE_DEFER_START_MS === "number" ? RESTORE_DEFER_START_MS : gap + 800)
 }
 
 /** Respawn tabs from the last saved layout (app restart). Hard-capped. */
@@ -1556,13 +1552,12 @@ function scheduleDeferredRestore(
  typeof layout.focusedGroupTabIndex === 'number'
  ? layout.focusedGroupTabIndex
  : layout.activeIndex
- pick = [
+ const allForRestore = [
  ...pick.filter((p) => p.ti === focusTi),
  ...pick.filter((p) => p.ti !== focusTi)
  ].slice(0, MAX_RESTORE_TOTAL)
-
- const deferredPick = pick.slice(MAX_RESTORE_IMMEDIATE)
- pick = pick.slice(0, MAX_RESTORE_IMMEDIATE)
+ const deferredPick = allForRestore.slice(MAX_RESTORE_IMMEDIATE)
+ pick = allForRestore.slice(0, MAX_RESTORE_IMMEDIATE)
 
  console.log(
  `[layout] restore: immediate=${pick.length} deferred=${deferredPick.length}/${layout.tabs.length} ` +
@@ -1576,7 +1571,7 @@ function scheduleDeferredRestore(
  const backendLive = await listLiveSessions()
     const claimedResumeTokens = new Set<string>()
     // Pre-claim tokens from the layout so multi-tab restore does not double-bind.
-    for (const t of pick.map((p) => p.tab)) {
+    for (const t of layout.tabs) {
       const tok = (t.resumeToken || '').trim()
       if (tok) claimedResumeTokens.add(tok)
     }
@@ -1821,11 +1816,31 @@ function scheduleDeferredRestore(
     }
 
     // Windows: remaining tabs spawn after paint so multi-ConPTY cannot kill us.
-    if (deferredPick.length > 0 || (process.platform === 'win32' && layout.tabs.length > sessions.length)) {
+    if (deferredPick.length > 0) {
       console.log(
-        `[layout] restore immediate done: ${sessions.length}; parked extra tab(s) on disk (Windows single-PTY launch)`
+        `[layout] restore immediate done: ${sessions.length}; deferring ${deferredPick.length} tab(s)`
       )
-      // Keep FULL original layout on disk (tokens / minimize / multi-pane).
+      try {
+        const layoutPath = getSessionLayoutPath()
+        const full = {
+          version: 2,
+          activeProjectRoot: layout.activeProjectRoot,
+          activeIndex: layout.activeIndex,
+          splitIndex: layout.splitIndex,
+          splitRatio: layout.splitRatio,
+          tabs: layout.tabs,
+          paneTree: layout.paneTree,
+          focusedGroupTabIndex: layout.focusedGroupTabIndex,
+          savedAt: Date.now()
+        }
+        writeFileSync(layoutPath, JSON.stringify(full, null, 2), 'utf8')
+        console.log(
+          `[layout] raw-kept full layout on disk: ${layout.tabs.length} tab(s)`
+        )
+      } catch (e) {
+        console.warn('[layout] keep full layout failed', e)
+      }
+      scheduleDeferredRestore(deferredPick, claimedResumeTokens)
       return { layout: uiLayout, sessions, restored: sessions.length }
     }
 

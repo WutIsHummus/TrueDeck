@@ -279,8 +279,8 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  const map = compact.indexMap
 
  // Startup race: empty UI after failed/skipped restore used to wipe a good disk layout.
- // Refuse empty overwrites for the first 45s of process life (long enough for restore + hydrate).
- if (!tabs.length && Date.now() - LAYOUT_BOOT_MS < 45_000) {
+ // Refuse empty overwrites for the first 90s of process life (long enough for restore + hydrate).
+ if (!tabs.length && Date.now() - LAYOUT_BOOT_MS < 90_000) {
  try {
  const diskPath = getSessionLayoutPath()
  if (existsSync(diskPath)) {
@@ -297,11 +297,87 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  }
  }
 
- const mapIndex = (i: number | null | undefined): number | null => {
+ // Partial restore: renderer often only knows about already-spawned tabs.
+ // Merge disk tabs (matched by resumeToken) that are missing so multi-Grok
+ // layouts are not wiped while deferred restore is still running.
+ let tabsForWrite = tabs
+ let treeForWrite = compact.paneTree
+ let mapForWrite = map
+ if (tabs.length > 0 && Date.now() - LAYOUT_BOOT_MS < 120_000) {
+ try {
+ const diskPath = getSessionLayoutPath()
+ if (existsSync(diskPath)) {
+ const raw = JSON.parse(readFileSync(diskPath, 'utf8')) as Partial<SessionLayout>
+ if (Array.isArray(raw.tabs) && raw.tabs.length > tabs.length) {
+ const have = new Set(
+ tabs.map((t) => (t.resumeToken || '').trim()).filter(Boolean)
+ )
+ const extras: SavedSessionTab[] = []
+ for (const t of raw.tabs) {
+ if (!t?.projectRoot || !t.agentId) continue
+ const tok = (t.resumeToken || '').trim()
+ if (!tok || have.has(tok)) continue
+ have.add(tok)
+ extras.push({
+ agentId: String(t.agentId),
+ agentName: String(t.agentName || t.agentId),
+ projectRoot: String(t.projectRoot),
+ color: String(t.color || '#6cb6ff'),
+ kind:
+ t.kind === 'document' || t.documentPath
+ ? 'document'
+ : t.kind === 'command' || t.commandLine
+ ? 'command'
+ : 'agent',
+ commandLine: t.commandLine ? String(t.commandLine) : undefined,
+ documentPath: t.documentPath ? String(t.documentPath) : undefined,
+ ...(t.title ? { title: String(t.title) } : {}),
+ resumeToken: tok,
+ ...(t.uiMinimized ? { uiMinimized: true } : {})
+ })
+ }
+ if (extras.length) {
+ console.warn(
+ `[layout] merge ${extras.length} parked tab(s) into persist (startup)`
+ )
+ const mergedTabs = [...tabs, ...extras]
+ const preferTree = sanitizePaneTree(raw.paneTree)
+ const re = compactTabsToPaneTree(
+ mergedTabs,
+ preferTree && collectTreeIndices(preferTree).length >= mergedTabs.length
+ ? preferTree
+ : null
+ )
+ // If tree cannot hold every parked tab, keep all tabs in a single leaf.
+ if (re.tabs.length < mergedTabs.length) {
+ tabsForWrite = mergedTabs.slice(0, MAX_SAVED_TABS)
+ treeForWrite = {
+ type: 'leaf',
+ tabIndices: tabsForWrite.map((_, idx) => idx),
+ activeTabIndex: 0
+ }
+ mapForWrite = new Map(tabsForWrite.map((_, idx) => [idx, idx] as [number, number]))
+ console.warn(
+ `[layout] parked merge kept ${tabsForWrite.length} tab(s) in flat leaf`
+ )
+ } else {
+ tabsForWrite = re.tabs
+ treeForWrite = re.paneTree
+ mapForWrite = re.indexMap
+ }
+ }
+ }
+ }
+ } catch (e) {
+ console.warn('[layout] merge parked failed', e)
+ }
+ }
+
+const mapIndex = (i: number | null | undefined): number | null => {
  if (i == null || typeof i !== 'number' || i < 0) return null
- if (map.has(i)) return map.get(i)!
- if (i < tabs.length) return i
- return tabs.length ? Math.min(i, tabs.length - 1) : null
+ if (mapForWrite.has(i)) return mapForWrite.get(i)!
+ if (i < tabsForWrite.length) return i
+ return tabsForWrite.length ? Math.min(i, tabsForWrite.length - 1) : null
  }
 
  const activeMapped = mapIndex(layout.activeIndex)
@@ -313,14 +389,14 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  activeProjectRoot: layout.activeProjectRoot ?? null,
  activeIndex: activeMapped ?? 0,
  splitIndex:
- splitMapped != null && tabs.length >= 2 && splitMapped !== activeMapped
+ splitMapped != null && tabsForWrite.length >= 2 && splitMapped !== activeMapped
  ? splitMapped
  : null,
  splitRatio:
  typeof layout.splitRatio === 'number' && layout.splitRatio > 0 && layout.splitRatio < 1
  ? layout.splitRatio
  : 0.5,
- tabs: tabs.map((t) => ({
+ tabs: tabsForWrite.map((t) => ({
  agentId: t.agentId,
  agentName: t.agentName,
  projectRoot: t.projectRoot,
@@ -337,7 +413,7 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  ...(t.resumeToken ? { resumeToken: t.resumeToken } : {}),
  ...(t.uiMinimized ? { uiMinimized: true } : {})
  })),
- paneTree: compact.paneTree,
+ paneTree: treeForWrite,
  focusedGroupTabIndex: focusMapped,
  savedAt: Date.now()
  }
