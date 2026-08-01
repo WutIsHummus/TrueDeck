@@ -542,7 +542,31 @@ const api = {
  return () => ipcRenderer.removeListener('pty:spawned', listener)
  },
  /** Main-process shortcuts (before-input-event) - reliable under agent TUIs. */
- onAppShortcut: (
+ onLayoutRehydrate: (
+    cb: (payload: {
+      sessionIds: string[]
+      paneTree: import('../shared/types').SessionLayout['paneTree']
+      focusedGroupTabIndex?: number | null
+      activeProjectRoot?: string | null
+    }) => void
+  ): (() => void) => {
+    const listener = (
+      _e: Electron.IpcRendererEvent,
+      payload: {
+        sessionIds: string[]
+        paneTree: import('../shared/types').SessionLayout['paneTree']
+        focusedGroupTabIndex?: number | null
+        activeProjectRoot?: string | null
+      }
+    ): void => {
+      cb(payload)
+    }
+    ipcRenderer.on('layout:rehydrate', listener)
+    return () => {
+      ipcRenderer.removeListener('layout:rehydrate', listener)
+    }
+  },
+  onAppShortcut: (
  cb: (payload: {
  key: string
  shift: boolean

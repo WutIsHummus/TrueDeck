@@ -272,22 +272,26 @@ export function loadSessionLayout(): SessionLayout {
  }
 }
 
-export function saveSessionLayout(layout: SessionLayout): SessionLayout {
+export type SaveLayoutOpts = { allowEmpty?: boolean }
+export function saveSessionLayout(
+ layout: SessionLayout,
+ opts?: SaveLayoutOpts
+): SessionLayout {
  const rawTabs = layout.tabs || []
  const compact = compactTabsToPaneTree(rawTabs, layout.paneTree ?? null)
  const tabs = compact.tabs
  const map = compact.indexMap
 
- // Startup race: empty UI after failed/skipped restore used to wipe a good disk layout.
- // Refuse empty overwrites for the first 90s of process life (long enough for restore + hydrate).
- if (!tabs.length && Date.now() - LAYOUT_BOOT_MS < 90_000) {
+ // Never wipe a good layout with an empty snapshot (restore races / crash).
+ // Only allow empty when the renderer explicitly closed every tab (allowEmpty).
+ if (!tabs.length && !opts?.allowEmpty) {
  try {
  const diskPath = getSessionLayoutPath()
  if (existsSync(diskPath)) {
  const raw = JSON.parse(readFileSync(diskPath, 'utf8')) as Partial<SessionLayout>
  if (Array.isArray(raw.tabs) && raw.tabs.length > 0) {
  console.warn(
- `[layout] refuse empty overwrite of ${raw.tabs.length} saved tab(s) (startup guard)`
+ `[layout] refuse empty overwrite of ${raw.tabs.length} saved tab(s)`
  )
  return loadSessionLayout()
  }
@@ -348,22 +352,31 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  ? preferTree
  : null
  )
- // If tree cannot hold every parked tab, keep all tabs in a single leaf.
- if (re.tabs.length < mergedTabs.length) {
+ // Prefer a tree that can host every tab. Never invent a flat leaf when
+ // the disk already has a multi-pane split — that wiped user layouts.
+ if (re.tabs.length >= mergedTabs.length) {
+ tabsForWrite = re.tabs
+ treeForWrite = re.paneTree
+ mapForWrite = re.indexMap
+ } else if (preferTree && preferTree.type === 'split') {
+ // Keep disk multi-pane; append any missing tabs onto the focused leaf indices.
+ tabsForWrite = mergedTabs.slice(0, MAX_SAVED_TABS)
+ treeForWrite = preferTree
+ mapForWrite = new Map(tabsForWrite.map((_, idx) => [idx, idx]))
+ console.warn(
+ `[layout] kept disk multi-pane tree with ${tabsForWrite.length} tab(s)`
+ )
+ } else {
  tabsForWrite = mergedTabs.slice(0, MAX_SAVED_TABS)
  treeForWrite = {
  type: 'leaf',
  tabIndices: tabsForWrite.map((_, idx) => idx),
  activeTabIndex: 0
  }
- mapForWrite = new Map(tabsForWrite.map((_, idx) => [idx, idx] as [number, number]))
+ mapForWrite = new Map(tabsForWrite.map((_, idx) => [idx, idx]))
  console.warn(
  `[layout] parked merge kept ${tabsForWrite.length} tab(s) in flat leaf`
  )
- } else {
- tabsForWrite = re.tabs
- treeForWrite = re.paneTree
- mapForWrite = re.indexMap
  }
  }
  }
@@ -384,7 +397,7 @@ const mapIndex = (i: number | null | undefined): number | null => {
  const focusMapped = mapIndex(layout.focusedGroupTabIndex ?? null)
  const splitMapped = mapIndex(layout.splitIndex ?? null)
 
- const next: SessionLayout = {
+ let next: SessionLayout = {
  version: 2,
  activeProjectRoot: layout.activeProjectRoot ?? null,
  activeIndex: activeMapped ?? 0,
@@ -419,6 +432,45 @@ const mapIndex = (i: number | null | undefined): number | null => {
  }
  const path = getSessionLayoutPath()
  mkdirSync(dirname(path), { recursive: true })
+ 
+ // If the renderer sent a multi-pane tree, never replace it with a leaf.
+ const incomingTree = sanitizePaneTree(layout.paneTree)
+ if (incomingTree?.type === 'split' && next.paneTree?.type !== 'split') {
+ const reIn = compactTabsToPaneTree(next.tabs, incomingTree)
+ if (reIn.paneTree?.type === 'split') {
+ next.paneTree = reIn.paneTree
+ next.tabs = reIn.tabs
+ console.warn('[layout] prefer incoming multi-pane tree on save')
+ }
+ }
+
+ 
+ // Prefer richer multi-pane tree (disk vs incoming).
+ try {
+ const diskPath2 = getSessionLayoutPath()
+ if (existsSync(diskPath2)) {
+ const raw2 = JSON.parse(readFileSync(diskPath2, 'utf8')) as Partial<SessionLayout>
+ const diskTree = sanitizePaneTree(raw2.paneTree)
+ const score = (t: SavedPaneNode | null | undefined): number => {
+ if (!t) return 0
+ if (t.type === 'leaf') return 1
+ return 10 + score(t.first) + score(t.second)
+ }
+ if (diskTree && score(diskTree) > score(next.paneTree)) {
+ // Only prefer disk tree if tab counts are compatible
+ if (Array.isArray(raw2.tabs) && raw2.tabs.length === next.tabs.length) {
+ const re2 = compactTabsToPaneTree(next.tabs, diskTree)
+ if (re2.paneTree && score(re2.paneTree) >= score(next.paneTree)) {
+ next.paneTree = re2.paneTree
+ console.warn('[layout] prefer richer multi-pane tree from disk')
+ }
+ }
+ }
+ }
+ } catch {
+ /* ignore */
+ }
+
  writeFileSync(path, JSON.stringify(next, null, 2), 'utf8')
  return next
 }

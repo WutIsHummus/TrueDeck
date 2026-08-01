@@ -172,15 +172,14 @@ process.on('unhandledRejection', (reason) => {
 })
 
 /**
- * Max tabs to touch on launch. On Windows, only the focused tab is spawned
- * inside sessions:restore; the rest are deferred (see scheduleDeferredRestore)
- * so multi-Grok ConPTY storms cannot kill the process on open.
+ * Restore every saved tab for the active project ASAP (user request).
+ * Still sequential ConPTY creates with a short gap to reduce Windows crashes.
+ * Set TRUEDECK_RESTORE_PTYS=0 to skip auto-respawn entirely.
  */
-const MAX_RESTORE_TOTAL = process.platform === 'win32' ? 6 : 8
-const MAX_RESTORE_IMMEDIATE = process.platform === 'win32' ? 1 : 4
-const RESTORE_SPAWN_GAP_MS = process.platform === 'win32' ? 2800 : 250
-/** Wait after first tab before spawning more (Windows ConPTY settle). */
-const RESTORE_DEFER_START_MS = process.platform === 'win32' ? 6000 : 800
+const MAX_RESTORE_TOTAL = 12
+const MAX_RESTORE_IMMEDIATE = 12
+const RESTORE_SPAWN_GAP_MS = process.platform === 'win32' ? 100 : 40
+const RESTORE_DEFER_START_MS = 0
 const MAX_RESTORE_TABS = MAX_RESTORE_TOTAL
 
 function sameRootPath(a?: string | null, b?: string | null): boolean {
@@ -1351,11 +1350,14 @@ function registerIpc(): void {
  // live is optional - when missing (sync quit), renderer tabs are enough.
  // Prefer explicit live list; on sync quit renderer tabs alone are enough
  const sessions = live ?? []
- const built = layoutFromPersistSnapshot(
- snapshot || ({} as PersistSnapshot),
- sessions
- )
- return saveSessionLayout(built)
+ const snap = snapshot || ({} as PersistSnapshot)
+ const built = layoutFromPersistSnapshot(snap, sessions)
+ const allowEmpty =
+ Array.isArray(snap.sessionOrder) &&
+ snap.sessionOrder.length === 0 &&
+ Array.isArray(snap.tabs) &&
+ snap.tabs.length === 0
+ return saveSessionLayout(built, { allowEmpty })
  }
 
  /** Persist current open tabs + focus/split from the renderer. */
@@ -1385,16 +1387,75 @@ function registerIpc(): void {
  * Spawn remaining restore tabs after the window is up. One at a time with a
  * long gap — Windows ConPTY dies if we open several agent CLIs at once.
  */
+
+/** Map saved tabs → live sessions (by resumeToken) and push full paneTree to UI. */
+async function rehydratePaneTreeFromLayout(fullLayout: SessionLayout): Promise<void> {
+  const live = (await listLiveSessions()).filter((s) => s.status === 'running')
+  if (!live.length || !fullLayout.tabs?.length) return
+  const used = new Set<string>()
+  const sessionIds: string[] = []
+  for (const t of fullLayout.tabs) {
+    const tok = (t.resumeToken || '').trim()
+    let match =
+      (tok &&
+        live.find(
+          (s) => !used.has(s.id) && (s.resumeToken || '').trim() === tok
+        )) ||
+      live.find(
+        (s) =>
+          !used.has(s.id) &&
+          s.agentId === t.agentId &&
+          sameRootPath(s.projectRoot, t.projectRoot)
+      )
+    if (match) {
+      used.add(match.id)
+      sessionIds.push(match.id)
+      // Ensure UI has resumeToken + minimize flags
+      if (tok || t.uiMinimized) {
+        mainWindow?.webContents.send('pty:spawned', {
+          ...match,
+          resumeToken: tok || match.resumeToken,
+          uiMinimized: Boolean(t.uiMinimized)
+        })
+      }
+    }
+  }
+  for (const s of live) {
+    if (!used.has(s.id)) sessionIds.push(s.id)
+  }
+  if (sessionIds.length < 2 && fullLayout.paneTree?.type === 'split') {
+    console.warn('[layout] rehydrate: not enough live sessions for multi-pane yet')
+  }
+  mainWindow?.webContents.send('layout:rehydrate', {
+    sessionIds,
+    paneTree: fullLayout.paneTree,
+    focusedGroupTabIndex: fullLayout.focusedGroupTabIndex,
+    activeProjectRoot: fullLayout.activeProjectRoot
+  })
+  console.log(
+    `[layout] rehydrate sent ${sessionIds.length} session(s), tree=${fullLayout.paneTree?.type || 'none'}`
+  )
+}
+
 function scheduleDeferredRestore(
   remaining: { tab: SavedSessionTab; ti: number }[],
-  claimed: Set<string>
+  claimed: Set<string>,
+  fullLayout: SessionLayout
 ): void {
   if (!remaining.length) return
   const queue = [...remaining]
   const gap = RESTORE_SPAWN_GAP_MS
   const runNext = async (): Promise<void> => {
     const item = queue.shift()
-    if (!item) return
+    if (!item) {
+      // All deferred tabs done — re-apply full multi-pane tree by resumeToken order.
+      try {
+        await rehydratePaneTreeFromLayout(fullLayout)
+      } catch (e) {
+        console.warn('[layout] rehydrate after deferred failed', e)
+      }
+      return
+    }
     const { tab, ti } = item
     try {
       if (tab.kind === 'document' || tab.documentPath) {
@@ -1556,8 +1617,9 @@ function scheduleDeferredRestore(
  ...pick.filter((p) => p.ti === focusTi),
  ...pick.filter((p) => p.ti !== focusTi)
  ].slice(0, MAX_RESTORE_TOTAL)
- const deferredPick = allForRestore.slice(MAX_RESTORE_IMMEDIATE)
- pick = allForRestore.slice(0, MAX_RESTORE_IMMEDIATE)
+ // Spawn everything now — user wants layout back ASAP.
+ const deferredPick: { tab: SavedSessionTab; ti: number }[] = []
+ pick = allForRestore
 
  console.log(
  `[layout] restore: immediate=${pick.length} deferred=${deferredPick.length}/${layout.tabs.length} ` +
@@ -1840,11 +1902,33 @@ function scheduleDeferredRestore(
       } catch (e) {
         console.warn('[layout] keep full layout failed', e)
       }
-      scheduleDeferredRestore(deferredPick, claimedResumeTokens)
+      scheduleDeferredRestore(deferredPick, claimedResumeTokens, layout)
       return { layout: uiLayout, sessions, restored: sessions.length }
     }
 
-    const nextLayout = saveSessionLayout(uiLayout)
+    // Re-apply multi-pane tree against live sessions (by resumeToken order).
+    try {
+      await rehydratePaneTreeFromLayout(layout)
+      console.log('[layout] full restore rehydrate sent')
+    } catch (e) {
+      console.warn('[layout] full restore rehydrate failed', e)
+    }
+
+    // Persist full layout: original tabs+tokens+minimize + remapped multi-pane.
+    const nextLayout = saveSessionLayout({
+      version: 2,
+      activeProjectRoot: layout.activeProjectRoot,
+      activeIndex,
+      splitIndex:
+        splitIndex != null && sessions.length >= 2 && splitIndex !== activeIndex
+          ? splitIndex
+          : null,
+      splitRatio: layout.splitRatio,
+      tabs: sessions.map(sessionInfoToSavedTab),
+      paneTree: remappedTree || layout.paneTree,
+      focusedGroupTabIndex,
+      savedAt: Date.now()
+    })
     console.log(
       `[layout] restore done: ${sessions.length}/${layout.tabs.length} tab(s), paneTree=${
         nextLayout.paneTree?.type || 'none'

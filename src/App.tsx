@@ -302,6 +302,12 @@ export default function App(): JSX.Element {
  seen.add(id)
  orderFinal.push(id)
  }
+ for (const s of running) {
+ if (seen.has(s.id)) continue
+ if (project && !sameProjectRoot(s.projectRoot, project.root)) continue
+ seen.add(s.id)
+ orderFinal.push(s.id)
+ }
  const focusSid = st.activeSessionId
  const focusSession = running.find((s) => s.id === focusSid)
  const activeProjectRoot =
@@ -318,7 +324,15 @@ export default function App(): JSX.Element {
  groups.length > 1
  ? groups[1]?.activeSessionId || groups[1]?.sessionIds[0] || null
  : null
- const tree = serializePaneTree(layout, orderFinal)
+ // Keep multi-pane: if order has sessions missing from the tree, sync first.
+ let layoutForSave = layout
+ {
+ const inTree = new Set(groups.flatMap((g) => g.sessionIds))
+ if (orderFinal.some((id) => !inTree.has(id))) {
+ layoutForSave = syncSessions(normalizeLayout(layout), orderFinal, focusSid)
+ }
+ }
+ const tree = serializePaneTree(layoutForSave, orderFinal)
  const tabs = orderFinal.map((id) => {
  const s = running.find((x) => x.id === id)!
  const title =
@@ -351,7 +365,8 @@ export default function App(): JSX.Element {
  activeProjectRoot,
  activeSessionId: st.activeSessionId,
  splitSessionId: splitSid && live.has(splitSid) ? splitSid : null,
- splitRatio: layout.root.type === 'split' ? layout.root.ratio : 0.5,
+ splitRatio:
+ layoutForSave.root.type === 'split' ? layoutForSave.root.ratio : 0.5,
  sessionOrder: orderFinal,
  tabs,
  paneTree: tree,
@@ -1264,6 +1279,59 @@ export default function App(): JSX.Element {
  // Avoid treating restore spawns as user-created (active jumps / double-save).
  let restoring = true
 
+ const offRehydrate =
+ typeof (window.truedeck as { onLayoutRehydrate?: Function }).onLayoutRehydrate ===
+ 'function'
+ ? (
+ window.truedeck as {
+ onLayoutRehydrate: (
+ cb: (payload: {
+ sessionIds: string[]
+ paneTree: import('../electron/shared/types').SessionLayout['paneTree']
+ focusedGroupTabIndex?: number | null
+ }) => void
+ ) => () => void
+ }
+ ).onLayoutRehydrate((payload) => {
+ if (cancelled) return
+ const ids = (payload.sessionIds || []).filter(Boolean)
+ if (!ids.length) return
+ const st = useDeck.getState()
+ const focusId =
+ (typeof payload.focusedGroupTabIndex === 'number' &&
+ ids[payload.focusedGroupTabIndex]) ||
+ st.activeSessionId ||
+ ids[0] ||
+ null
+ try {
+ let pl = payload.paneTree
+ ? deserializePaneTree(payload.paneTree, ids, focusId)
+ : createLayout(ids, focusId)
+ pl = syncSessions(pl, ids, focusId)
+ if (focusId) pl = layoutFocusSession(pl, focusId)
+ setPaneLayout(pl)
+ if (focusId) setActiveSession(focusId)
+ setStatus(
+ payload.paneTree?.type === 'split'
+ ? `Restored ${ids.length} tabs · multi-pane`
+ : `Restored ${ids.length} tabs`
+ )
+ window.setTimeout(() => {
+ try {
+ const snap = buildPersistSnapshotRef.current?.()
+ if (snap && typeof window.truedeck.persistSessionsSync === 'function') {
+ window.truedeck.persistSessionsSync(snap)
+ }
+ } catch {
+ /* ignore */
+ }
+ }, 150)
+ } catch (e) {
+ console.warn('[truedeck] layout rehydrate failed', e)
+ }
+ })
+ : undefined
+
  const offSpawn = window.truedeck.onPtySpawned((info) => {
  if (restoring) return
  // Document tabs from MCP truedeck_show / restore: dedupe by path and focus
@@ -1551,6 +1619,7 @@ export default function App(): JSX.Element {
  return () => {
  cancelled = true
  restoring = false
+ offRehydrate?.()
  offSpawn()
  offExit()
  }
@@ -1587,6 +1656,13 @@ export default function App(): JSX.Element {
  seen.add(id)
  orderFinal.push(id)
  }
+ // Also persist running sessions not yet in the tree (deferred restore / races)
+ for (const s of running) {
+ if (seen.has(s.id)) continue
+ if (project && !sameProjectRoot(s.projectRoot, project.root)) continue
+ seen.add(s.id)
+ orderFinal.push(s.id)
+ }
  // Workspace root is the UI-selected project - never a random focused tab
  // from another folder (that rewrote activeProjectRoot and jumped projects
  // on the next launch).
@@ -1596,7 +1672,17 @@ export default function App(): JSX.Element {
  groups.length > 1
  ? groups[1]?.activeSessionId || groups[1]?.sessionIds[0] || null
  : null
- const tree = serializePaneTree(layout, orderFinal)
+ // If sessions were appended after the tree, put them on the focused leaf so
+ // serializePaneTree still emits a valid multi-pane layout.
+ let layoutForSave = layout
+ if (orderFinal.length) {
+ const inTree = new Set(groups.flatMap((g) => g.sessionIds))
+ const missing = orderFinal.filter((id) => !inTree.has(id))
+ if (missing.length) {
+ layoutForSave = syncSessions(normalizeLayout(layout), orderFinal, activeSessionId)
+ }
+ }
+ const tree = serializePaneTree(layoutForSave, orderFinal)
  // Explicit tab metadata so disk does not depend only on ptyManager list order.
  // title / resumeToken let the next launch reattach the real conversation.
  const tabs = orderFinal.map((id) => {
