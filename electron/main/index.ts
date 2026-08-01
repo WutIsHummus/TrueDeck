@@ -1379,14 +1379,15 @@ function registerIpc(): void {
  return { layout, sessions: [] as SessionInfo[], restored: 0 }
  }
 
- // STABILITY (Windows): auto-respawning many ConPTY agent tabs on launch was
- // freezing/killing the app ("closed by itself"). Skip PTY restore by default;
- // keep project root so the UI opens to the right workspace. User launches agents.
+  // Opt out only: TRUEDECK_RESTORE_PTYS=0 (legacy crash escape hatch).
+ // Default is restore on - packaged exe users expect tabs back after quit.
+ // Safety rails below: active project only, MAX_RESTORE_TABS, sequential spawn.
  const skipPtyRestore =
- process.env.TRUEDECK_RESTORE_PTYS !== '1' && process.env.TRUEDECK_RESTORE_PTYS !== 'true'
+ process.env.TRUEDECK_RESTORE_PTYS === '0' ||
+ process.env.TRUEDECK_RESTORE_PTYS === 'false'
  if (skipPtyRestore) {
  console.log(
- `[layout] restore: skipping ${layout.tabs.length} PTY tab(s) on launch (set TRUEDECK_RESTORE_PTYS=1 to enable)`
+ `[layout] restore: skipping ${layout.tabs.length} PTY tab(s) (TRUEDECK_RESTORE_PTYS=0)`
  )
  if (layout.activeProjectRoot && existsSync(layout.activeProjectRoot)) {
  try {
@@ -1412,8 +1413,8 @@ function registerIpc(): void {
  }
  }
 
- // Prefer tabs for the last active project only — restoring 9 ConPTYs across
- // 5 folders has been freezing/killing Electron on Windows.
+ // Prefer tabs for the last active project only - restoring many ConPTYs across
+ // folders has frozen Electron on Windows; cap + sequential spawn below.
  const activeRoot = layout.activeProjectRoot
  const indexed = layout.tabs
  .map((tab, ti) => ({ tab, ti }))

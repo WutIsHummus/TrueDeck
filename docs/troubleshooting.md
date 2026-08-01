@@ -65,14 +65,22 @@ See [Agent frame](./agent-frame.md).
 
 **Symptom:** On launch, many agent CLIs spawn at once.
 
-**Cause:** `reopenLastProject` + saved `session-layout.json` respawns up to **16** tabs.
+**Cause:** `reopenLastProject` + saved `session-layout.json` respawns tabs for the last active project (hard-capped, sequential on Windows).
 
 **Fix:**
 
 - Close tabs you do not need before quitting
-- Disable reopen last project in settings if you prefer a clean launch
-- Layout clamps to 16 and drops install-helper shells; still many real agents if you left them open
+- Disable **Reopen last project** in settings if you prefer a clean launch
+- Emergency: set env `TRUEDECK_RESTORE_PTYS=0` to open the project with no tabs
 - Delete or edit `session-layout.json` in the [data directory](./configuration.md) as a last resort
+
+## Sessions empty after restart (exe)
+
+**Symptom:** You quit with agent tabs open; reopening the packaged app shows no terminals.
+
+**Cause (fixed in source):** restore used to skip PTY respawn unless `TRUEDECK_RESTORE_PTYS=1`. Default is now **restore on**.
+
+**If you still see it on an older build:** rebuild/reinstall from current source, or set `TRUEDECK_RESTORE_PTYS=1` for that install only.
 
 ## TERM / colors / broken agent TUI
 
