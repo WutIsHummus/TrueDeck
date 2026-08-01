@@ -994,11 +994,15 @@ export function TerminalPane({
  if ((k === 'd' || k === 'x') && !ev.shiftKey) {
  return blockEvent(ev)
  }
+ // Ctrl+M minimize · Ctrl+Shift+M restore (both claimed by App)
+ if (k === 'm' && !ev.altKey) {
+ return blockEvent(ev)
+ }
  // Leave other Ctrl+Alt / Ctrl+Shift chords for the agent
  if (ev.altKey || ev.shiftKey) return true
 
  // Plain Ctrl+letter / digit app shortcuts
- if (['o', 'w', 's', 't', 'n'].includes(k)) return blockEvent(ev)
+ if (['o', 'w', 's', 't', 'n', 'm'].includes(k)) return blockEvent(ev)
  if (k >= '1' && k <= '9') return blockEvent(ev)
  return true
  })

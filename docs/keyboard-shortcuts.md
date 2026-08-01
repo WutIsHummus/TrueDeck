@@ -14,6 +14,8 @@ Normal terminal keys (including **Ctrl+C**) still reach the PTY unless listed be
 | **Ctrl+N** | Pop focused pane into a **new window** (also: drag a tab outside the deck) |
 | **Ctrl+Shift+N** | New shell tab |
 | **Ctrl+W** | Close active tab |
+| **Ctrl+M** | Minimize active tab (PTY keeps running as a chip) |
+| **Ctrl+Shift+M** | Restore last minimized tab |
 | **Ctrl+S** | Toggle settings (in a document tab: **save** the file) |
 | **Escape** | Close settings and agent palette |
 
@@ -91,17 +93,17 @@ TrueDeck intentionally leaves many combos to the shell / agent TUI, for example:
 
 Settings → Terminal shows a short hint:
 
-> **T** new agent · **O** project · **W** close · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab · **+/-** font zoom
+> **T** new agent · **O** project · **W** close · **M** minimize · **Shift+M** restore · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab · **+/-** font zoom
 
 ## Ownership (avoid fighting)
 
 | Layer | Owns |
 |-------|------|
-| Main `before-input-event` | Claims app chords only (arrows, Tab, zoom, plain Ctrl+letter, Ctrl+1-9, Ctrl+Alt+D/X). Does **not** claim Ctrl+C/V. |
+| Main `before-input-event` | Claims app chords only (arrows, Tab, zoom, plain Ctrl+letter, Ctrl+M / Ctrl+Shift+M, Ctrl+1-9, Ctrl+Alt+D/X). Does **not** claim Ctrl+C/V. |
 | `App.tsx` `handleShortcut` | Runs the claimed app actions (IPC primary, DOM fallback). Dedupe guards double-fire. |
 | `TerminalPane` | Copy/paste (C/V), scrollback keys, blocks app chords from the PTY. Clears selection after copy so the next Ctrl+C is SIGINT. |
 
-Ctrl+Shift+letter (except C/V/A) is left for the agent or shell.
+Ctrl+Shift+letter (except **M** restore, plus C/V/A for terminal) is left for the agent or shell.
 
 ## Source of truth
 

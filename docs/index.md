@@ -65,6 +65,7 @@ Each agent or command pane is a **session** (PTY):
 
 - Running sessions stream into an xterm instance
 - **Ctrl+W** closes the active tab
+- **Ctrl+M** minimizes the active tab (still running); **Ctrl+Shift+M** restores
 - **Ctrl+Tab** / **Ctrl+Shift+Tab** cycles tabs inside the focused pane group
 - **Ctrl+1-9** jumps to tab index 1-9
 - **Ctrl+N** opens a plain **Shell** tab in the project root

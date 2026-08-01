@@ -106,6 +106,8 @@ export interface SavedSessionTab {
  title?: string
  /** CLI session / chat id when known (Claude/Cursor/Codex UUID, etc.). */
  resumeToken?: string
+ /** Minimized to a chip; paneTree still holds the home group/index. */
+ uiMinimized?: boolean
 }
 
 /**

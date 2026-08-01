@@ -325,6 +325,7 @@ export default function App(): JSX.Element {
  s.title && s.title.trim().toLowerCase() !== (s.agentName || '').toLowerCase()
  ? s.title.trim()
  : undefined
+ const minimized = Boolean(s.uiMinimized || s.uiHidden)
  return {
  agentId: s.agentId,
  agentName: s.agentName,
@@ -338,7 +339,8 @@ export default function App(): JSX.Element {
  commandLine: s.commandLine,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
- ...(s.resumeToken ? { resumeToken: s.resumeToken } : {})
+ ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(minimized ? { uiMinimized: true } : {})
  }
  })
  const focusedGroupTabIndex =
@@ -590,9 +592,9 @@ export default function App(): JSX.Element {
  )
  setPaneLayout((prev) => {
  const base = prev?.root ? prev : normalizeLayout(prev)
- // Membership + collapse empty minimized-only leaves so restore gets stage space
+ // Keep minimized tabs in the membership tree so persist can save *where*
+ // they sit. Collapse is display-only (displayLayout).
  let next = syncSessions(base, ids, prefer)
- next = collapseLeavesWithoutExpanded(next, expanded)
  // If active tab is expanded, keep layout focus on it (un-minimize path)
  if (prefer && expanded.has(prefer) && findGroup(next, prefer)) {
  next = layoutFocusSession(next, prefer)
@@ -1603,6 +1605,7 @@ export default function App(): JSX.Element {
  s.title && s.title.trim().toLowerCase() !== (s.agentName || '').toLowerCase()
  ? s.title.trim()
  : undefined
+ const minimized = Boolean(s.uiMinimized || s.uiHidden)
  return {
  agentId: s.agentId,
  agentName: s.agentName,
@@ -1616,7 +1619,8 @@ export default function App(): JSX.Element {
  commandLine: s.commandLine,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
- ...(s.resumeToken ? { resumeToken: s.resumeToken } : {})
+ ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(minimized ? { uiMinimized: true } : {})
  }
  })
  const focusedGroupTabIndex =
@@ -1681,6 +1685,7 @@ export default function App(): JSX.Element {
  * Ctrl+O project · Ctrl+W close · Ctrl+S settings · Ctrl+T new agent
  * Ctrl+Tab next · Ctrl+D split vertical · Ctrl+X horizontal · Ctrl+Z undo move
  * Ctrl+N pop pane to new window · Ctrl+Shift+N shell
+ * Ctrl+M minimize tab · Ctrl+Shift+M restore minimized
  * Ctrl+1-9 jump · Ctrl+←/→/↑/↓ panes · Ctrl+=/+/- /0 font zoom
  */
  const shortcutCtxRef = useRef({
@@ -1691,6 +1696,7 @@ export default function App(): JSX.Element {
  paneLayout,
  closeSession,
  persistLayoutSnapshot,
+ restoreMinimizedSession: null as null | ((id: string) => void),
  addProjectFn: null as null | (() => void),
  launchAgentFn: null as null | ((id: string) => void)
  })
@@ -1703,6 +1709,7 @@ export default function App(): JSX.Element {
  shortcutCtxRef.current.paneLayout = paneLayout
  shortcutCtxRef.current.closeSession = closeSession
  shortcutCtxRef.current.persistLayoutSnapshot = persistLayoutSnapshot
+ shortcutCtxRef.current.restoreMinimizedSession = restoreMinimizedSession
  paneLayoutRef.current = paneLayout
 
  useEffect(() => {
@@ -1859,6 +1866,62 @@ export default function App(): JSX.Element {
  } else {
  setStatus('No tab to close')
  }
+ return
+ }
+
+ // Ctrl+M → minimize active tab (PTY keeps running as a chip)
+ // Ctrl+Shift+M → restore the last minimized tab in this project
+ if (letter === 'm' && !raw.alt) {
+ if (!once(raw.shift ? 'shift-m' : 'm')) return
+ raw.claim?.()
+ const st = useDeck.getState()
+ const project = st.projects.find((p) => p.id === st.activeProjectId) || null
+ const inProject = (s: SessionInfo): boolean =>
+ project ? sameProjectRoot(s.projectRoot, project.root) : true
+ const running = st.sessions.filter((s) => s.status === 'running' && inProject(s))
+ const isMin = (s: SessionInfo): boolean => Boolean(s.uiMinimized || s.uiHidden)
+
+ if (raw.shift) {
+ const minimized = running.filter(isMin)
+ if (!minimized.length) {
+ setStatus('No minimized tabs')
+ return
+ }
+ // Prefer most recently created minimized tab (sessions append as opened)
+ const target = minimized[minimized.length - 1]
+ ctx.restoreMinimizedSession?.(target.id)
+ return
+ }
+
+ const visibleIds = new Set(
+ running.filter((s) => !isMin(s)).map((s) => s.id)
+ )
+ const target =
+ (ctx.activeSessionId &&
+ visibleIds.has(ctx.activeSessionId) &&
+ ctx.activeSessionId) ||
+ activeSessionOf(ctx.displayLayout) ||
+ null
+ if (!target || !visibleIds.has(target)) {
+ // Nothing expanded to minimize — restore instead if possible
+ const minimized = running.filter(isMin)
+ if (minimized.length) {
+ ctx.restoreMinimizedSession?.(minimized[minimized.length - 1].id)
+ return
+ }
+ setStatus('No tab to minimize')
+ return
+ }
+ const victim = running.find((s) => s.id === target)
+ useDeck.getState().patchSession(target, { uiMinimized: true, uiHidden: false })
+ const other = running.find((s) => s.id !== target && !isMin(s))
+ if (other) {
+ setPaneLayout((prev) => layoutFocusSession(prev, other.id))
+ setActiveSession(other.id)
+ }
+ const label =
+ (victim && sessionTabLabel(victim)) || victim?.agentName || 'tab'
+ setStatus(`Minimized ${label} · still running (Ctrl+Shift+M restore)`)
  return
  }
 
@@ -3008,7 +3071,7 @@ export default function App(): JSX.Element {
  <br />
  <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+T</kbd> agent ·{' '}
  <kbd>Ctrl+B</kbd> explorer · <kbd>Ctrl+Shift+O</kbd> open file ·{' '}
- <kbd>Ctrl+W</kbd> close
+ <kbd>Ctrl+W</kbd> close · <kbd>Ctrl+M</kbd> minimize
  </p>
  <div className="row" style={{ justifyContent: 'center' }}>
  <button type="button" className="primary" onClick={() => void addProject()}>
@@ -3115,6 +3178,9 @@ export default function App(): JSX.Element {
  </span>
  <span title="Ctrl+W - close tab">
  <kbd>Ctrl+W</kbd> close
+ </span>
+ <span title="Ctrl+M minimize · Ctrl+Shift+M restore">
+ <kbd>Ctrl+M</kbd> min
  </span>
  <span title="Ctrl+S - settings">
  <kbd>Ctrl+S</kbd> settings

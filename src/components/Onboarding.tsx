@@ -214,7 +214,7 @@ export function Onboarding({
  </button>
 
  <p className="onboard-hints">
- <kbd>Ctrl+T</kbd> new agent · <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+W</kbd> close
+ <kbd>Ctrl+T</kbd> new agent · <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+W</kbd> close · <kbd>Ctrl+M</kbd> minimize
  </p>
  </div>
 

@@ -23,6 +23,9 @@ const EMPTY: SessionLayout = {
  savedAt: 0
 }
 
+/** Used to refuse empty overwrites that race startup restore. */
+const LAYOUT_BOOT_MS = Date.now()
+
 export function sanitizePaneTree(node: unknown): SavedPaneNode | null {
  if (!node || typeof node !== 'object') return null
  const n = node as SavedPaneNode
@@ -209,8 +212,17 @@ export function loadSessionLayout(): SessionLayout {
  agentName: String(t.agentName || t.agentId),
  projectRoot: String(t.projectRoot),
  color: String(t.color || '#6cb6ff'),
- kind: t.kind === 'command' ? 'command' : 'agent',
- commandLine: t.commandLine ? String(t.commandLine) : undefined
+ kind:
+ t.kind === 'document' || t.documentPath
+ ? 'document'
+ : t.kind === 'command' || t.commandLine
+ ? 'command'
+ : 'agent',
+ commandLine: t.commandLine ? String(t.commandLine) : undefined,
+ documentPath: t.documentPath ? String(t.documentPath) : undefined,
+ ...(t.title ? { title: String(t.title) } : {}),
+ ...(t.resumeToken ? { resumeToken: String(t.resumeToken) } : {}),
+ ...(t.uiMinimized ? { uiMinimized: true } : {})
  }))
  )
  const paneTree = sanitizePaneTree(raw.paneTree)
@@ -266,10 +278,28 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  const tabs = compact.tabs
  const map = compact.indexMap
 
+ // Startup race: empty UI after failed/skipped restore used to wipe a good disk layout.
+ // Refuse empty overwrites for the first 45s of process life (long enough for restore + hydrate).
+ if (!tabs.length && Date.now() - LAYOUT_BOOT_MS < 45_000) {
+ try {
+ const diskPath = getSessionLayoutPath()
+ if (existsSync(diskPath)) {
+ const raw = JSON.parse(readFileSync(diskPath, 'utf8')) as Partial<SessionLayout>
+ if (Array.isArray(raw.tabs) && raw.tabs.length > 0) {
+ console.warn(
+ `[layout] refuse empty overwrite of ${raw.tabs.length} saved tab(s) (startup guard)`
+ )
+ return loadSessionLayout()
+ }
+ }
+ } catch {
+ /* fall through and write empty */
+ }
+ }
+
  const mapIndex = (i: number | null | undefined): number | null => {
  if (i == null || typeof i !== 'number' || i < 0) return null
  if (map.has(i)) return map.get(i)!
- // If compact kept identity order, clamp
  if (i < tabs.length) return i
  return tabs.length ? Math.min(i, tabs.length - 1) : null
  }
@@ -295,8 +325,17 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  agentName: t.agentName,
  projectRoot: t.projectRoot,
  color: t.color,
- kind: t.kind === 'command' ? 'command' : 'agent',
- commandLine: t.commandLine
+ kind:
+ t.kind === 'document' || t.documentPath
+ ? 'document'
+ : t.kind === 'command' || t.commandLine
+ ? 'command'
+ : 'agent',
+ commandLine: t.commandLine,
+ ...(t.documentPath ? { documentPath: t.documentPath } : {}),
+ ...(t.title ? { title: t.title } : {}),
+ ...(t.resumeToken ? { resumeToken: t.resumeToken } : {}),
+ ...(t.uiMinimized ? { uiMinimized: true } : {})
  })),
  paneTree: compact.paneTree,
  focusedGroupTabIndex: focusMapped,
@@ -307,7 +346,6 @@ export function saveSessionLayout(layout: SessionLayout): SessionLayout {
  writeFileSync(path, JSON.stringify(next, null, 2), 'utf8')
  return next
 }
-
 export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  const title =
  s.title && s.title.trim() && s.title.trim().toLowerCase() !== (s.agentName || '').toLowerCase()
@@ -328,7 +366,8 @@ export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  commandLine: s.commandLine,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
- ...(s.resumeToken ? { resumeToken: s.resumeToken } : {})
+ ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(s.uiMinimized || s.uiHidden ? { uiMinimized: true } : {})
  }
 }
 
@@ -468,7 +507,8 @@ export function layoutFromPersistSnapshot(
  ? String(fromMeta.documentPath)
  : s?.documentPath,
  ...(title ? { title: String(title) } : {}),
- ...(resumeToken ? { resumeToken: String(resumeToken) } : {})
+ ...(resumeToken ? { resumeToken: String(resumeToken) } : {}),
+ ...(fromMeta.uiMinimized || s?.uiMinimized || s?.uiHidden ? { uiMinimized: true } : {})
  }
  } else if (s && s.status === 'running') {
  tab = sessionInfoToSavedTab(s)
@@ -501,7 +541,8 @@ export function layoutFromPersistSnapshot(
  ? String(fromMeta.documentPath)
  : undefined,
  ...(fromMeta.title ? { title: String(fromMeta.title) } : {}),
- ...(fromMeta.resumeToken ? { resumeToken: String(fromMeta.resumeToken) } : {})
+ ...(fromMeta.resumeToken ? { resumeToken: String(fromMeta.resumeToken) } : {}),
+ ...(fromMeta.uiMinimized ? { uiMinimized: true } : {})
  })
  keptIds.push(snapshot.sessionOrder?.[i] || `meta-${i}`)
  }

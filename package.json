@@ -1,6 +1,6 @@
 {
  "name": "truedeck",
- "version": "0.3.2",
+ "version": "0.3.3",
  "description": "Terminal-first multi-agent coding deck - Grok, Codex, Cursor, Claude with pane groups, automatic memory, and Ctrl shortcuts that work inside the terminal.",
  "main": "./out/main/index.js",
  "author": "TrueDeck Contributors",

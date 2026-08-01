@@ -366,6 +366,71 @@ export function tryDiscoverClaudeSessionId(
   return best?.id || null
 }
 
+
+/** Encode project root the way Grok names session dirs (e.g. C%3A%5CSPTS). */
+export function grokSessionProjectDir(projectRoot: string): string {
+  const normalized = projectRoot.replace(/\//g, '\\')
+  return join(homedir(), '.grok', 'sessions', encodeURIComponent(normalized))
+}
+
+export type DiscoveredSession = { id: string; mtimeMs: number }
+
+/**
+ * List Grok conversation ids under ~/.grok/sessions/<encoded-cwd>/ (newest first).
+ * Only includes dirs that look like UUIDs and have some chat history when present.
+ */
+export function listGrokSessionIds(projectRoot: string): DiscoveredSession[] {
+  const dir = grokSessionProjectDir(projectRoot)
+  if (!existsSync(dir)) return []
+  const out: DiscoveredSession[] = []
+  try {
+    for (const name of readdirSync(dir)) {
+      if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(name)) {
+        continue
+      }
+      const full = join(dir, name)
+      try {
+        const st = statSync(full)
+        if (!st.isDirectory()) continue
+        // Prefer sessions that actually have history
+        const hist = join(full, 'chat_history.jsonl')
+        let score = st.mtimeMs
+        if (existsSync(hist)) {
+          try {
+            const hs = statSync(hist)
+            if (hs.size > 32) score = Math.max(score, hs.mtimeMs)
+            else score -= 1e12 // empty history sinks
+          } catch {
+            /* ignore */
+          }
+        }
+        out.push({ id: name, mtimeMs: score })
+      } catch {
+        /* ignore */
+      }
+    }
+  } catch {
+    return []
+  }
+  out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+  return out
+}
+
+/**
+ * Pick the newest Grok session for this project not already claimed.
+ * Used when a saved tab has no resumeToken so multi-Grok restore still reattaches chats.
+ */
+export function claimGrokSessionId(
+  projectRoot: string,
+  claimed: Set<string>
+): string | null {
+  for (const s of listGrokSessionIds(projectRoot)) {
+    if (claimed.has(s.id)) continue
+    claimed.add(s.id)
+    return s.id
+  }
+  return null
+}
 export function resumeLatestKey(agentId: string, projectRoot: string): string {
   return `${agentId.toLowerCase()}|${normRoot(projectRoot)}`
 }

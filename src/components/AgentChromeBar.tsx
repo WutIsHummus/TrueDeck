@@ -468,8 +468,8 @@ export function AgentChromeBar({
  <button
  type="button"
  className={`agent-chrome-btn${session.uiMinimized || session.uiHidden ? ' active-eye' : ''}`}
- title="Minimize tab"
- aria-label="Minimize tab"
+ title="Minimize tab (Ctrl+M)"
+ aria-label="Minimize tab (Ctrl+M)"
  onClick={(e) => {
  e.stopPropagation()
  patchSession(session.id, { uiMinimized: true, uiHidden: false })
@@ -591,8 +591,8 @@ export function AgentChromeBar({
  type="button"
  className={`agent-chrome-btn${session.uiMinimized || session.uiHidden ? ' active-eye' : ''}`}
  draggable={false}
- title="Minimize tab (remove from strip, keeps running)"
- aria-label="Minimize tab"
+ title="Minimize tab (Ctrl+M) — keeps running"
+ aria-label="Minimize tab (Ctrl+M)"
  onClick={(e) => {
  e.stopPropagation()
  patchSession(session.id, { uiMinimized: true, uiHidden: false })

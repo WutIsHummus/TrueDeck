@@ -343,7 +343,7 @@ export function GroupTabBar({
                 <button
                   type="button"
                   className="tab-eye-btn"
-                  title={`Minimize ${label} (remove from strip, keeps running)`}
+                  title={`Minimize ${label} (Ctrl+M) — keeps running`}
                   aria-label={`Minimize ${label}`}
                   onClick={(e) => minimizeTab(s, e)}
                   onMouseDown={(e) => {
