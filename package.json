@@ -137,6 +137,7 @@
   "mac": {
    "icon": "build/icon.png",
    "category": "public.app-category.developer-tools",
+   "artifactName": "${productName}-${version}-${arch}.${ext}",
    "target": [
     "dmg"
    ],
