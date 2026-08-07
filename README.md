@@ -29,7 +29,15 @@ Memory, MCP wiring, and project context are **handled for you**. No note apps to
 
 ## Download
 
-Get installers and portable builds from the **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** tab.
+Get installers from **[Releases](https://github.com/WutIsHummus/TrueDeck/releases)** (do not clone the repo just to run the app).
+
+| Platform | Asset |
+| :--- | :--- |
+| **Windows** | `TrueDeck Setup … .exe` (installer) or portable `.exe` |
+| **macOS Apple Silicon** | `TrueDeck-…-arm64.dmg` |
+| **macOS Intel** | `TrueDeck-…-x64.dmg` |
+
+macOS builds are unsigned open-source binaries. First open: right-click → **Open**, or `xattr -cr /Applications/TrueDeck.app`.
 
 ## Docs
 
