@@ -10,6 +10,7 @@ import {
   type BackendBridge
 } from './backend-bridge'
 import type { SessionInfo } from '../shared/types'
+import { attachBusOnSpawn, unbindBusSession } from './agent-bus'
 
 let win: BrowserWindow | null = null
 
@@ -56,7 +57,22 @@ export async function spawnAgent(params: {
   color?: string
   env?: Record<string, string>
 }): Promise<SessionInfo> {
-  return rustRequest<SessionInfo>('sessions.spawn', params)
+  const bus = attachBusOnSpawn({
+    projectRoot: params.projectRoot,
+    agentId: params.agentId,
+    env: params.env,
+    agentName: params.agentName
+  })
+  const session = await rustRequest<SessionInfo>('sessions.spawn', {
+    ...params,
+    env: bus.env
+  })
+  try {
+    bus.bind(session)
+  } catch {
+    /* ignore */
+  }
+  return session
 }
 
 export async function spawnCommand(params: {
@@ -83,6 +99,11 @@ export async function resizeSession(
 }
 
 export async function killSession(id: string): Promise<void> {
+  try {
+    unbindBusSession(id)
+  } catch {
+    /* ignore */
+  }
   await rustRequest('sessions.kill', { id })
 }
 

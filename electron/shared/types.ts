@@ -129,9 +129,19 @@ export type SavedPaneNode =
  second: SavedPaneNode
  }
 
+/** One project's pane tree, keyed by normalized project root. */
+export interface ProjectWorkspaceLayout {
+  paneTree: SavedPaneNode | null
+  /** Indices into SessionLayout.tabs that belong to this project (first-seen order). */
+  tabIndices?: number[]
+  activeIndex?: number
+  splitRatio?: number
+  focusedGroupTabIndex?: number | null
+}
+
 export interface SessionLayout {
- /** 1 = flat tabs only · 2 = optional nested paneTree */
- version: 1 | 2
+ /** 1 = flat tabs only · 2 = optional nested paneTree · 3 = per-project workspaces */
+ version: 1 | 2 | 3
  activeProjectRoot: string | null
  /** Index into `tabs` for the focused session */
  activeIndex: number
@@ -139,9 +149,14 @@ export interface SessionLayout {
  splitIndex: number | null
  splitRatio: number
  tabs: SavedSessionTab[]
- /** Nested studio layout (version 2+) */
+ /** Nested studio layout for the *active* project (version 2+) */
  paneTree?: SavedPaneNode | null
  focusedGroupTabIndex?: number | null
+ /**
+  * Per-project pane trees so switching folders does not drop background
+  * sessions. Keys are normalized project roots.
+  */
+ workspaces?: Record<string, ProjectWorkspaceLayout>
  savedAt: number
 }
 

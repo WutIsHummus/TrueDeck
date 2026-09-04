@@ -20,6 +20,13 @@ import { createInterface } from 'node:readline'
 import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 import { execSync } from 'node:child_process'
+import {
+  whoami as busWhoami,
+  listPeers as busListPeers,
+  sendMessage as busSend,
+  listInbox as busInbox,
+  ackMessages as busAck
+} from './agent-bus-lib.mjs'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const SERVER_NAME = 'truedeck-hub'
@@ -664,7 +671,7 @@ function listAllEntries() {
       source: 'builtin',
       command: self.command,
       args: self.args,
-      description: 'Edit TrueDeck MCP servers; syncs to all CLIs'
+      description: 'TrueDeck hub: MCP config, launch, show, agent bus (peers/send/inbox)'
     })
   }
   return out
@@ -1002,6 +1009,91 @@ function toolList() {
               description: 'Wait up to ~12s for TrueDeck to open the window (default true)'
             }
           },
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'truedeck_whoami',
+        description:
+          'This TrueDeck session identity (device, session id, agent id). Use with truedeck_peers / truedeck_send.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'truedeck_peers',
+        description:
+          'List TrueDeck agents that can be messaged: other terminals on this PC, and other PCs running TrueDeck (when global notes/memory are synced). Returns device + session ids for truedeck_send.',
+        inputSchema: {
+          type: 'object',
+          properties: {},
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'truedeck_send',
+        description:
+          'Send a message to another TrueDeck agent. `to` can be a session id, agent id (grok), device name, agent@device (grok@macbook), local (other terminals here), or all. Live sessions get the text injected into their terminal; they can also poll truedeck_inbox.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            to: {
+              type: 'string',
+              description:
+                'Recipient: session id (or first 8 chars), agent id, device name, agent@device, local, or all'
+            },
+            body: {
+              type: 'string',
+              description: 'Message text (max 16KB). Keep it short and actionable.'
+            },
+            deliver: {
+              type: 'string',
+              description:
+                'both (default): inbox + type into live terminal. inbox: store only. interrupt: type into live terminal.'
+            },
+            channel: {
+              type: 'string',
+              description: 'Optional channel/topic label'
+            }
+          },
+          required: ['to', 'body'],
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'truedeck_inbox',
+        description:
+          'Read messages sent to this TrueDeck session (or this device). Check at session start and when coordinating with other agents.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            unreadOnly: {
+              type: 'boolean',
+              description: 'Default true'
+            },
+            ack: {
+              type: 'boolean',
+              description: 'Mark returned messages as read (default true)'
+            }
+          },
+          additionalProperties: false
+        }
+      },
+      {
+        name: 'truedeck_ack',
+        description: 'Mark agent-bus message ids as read.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            messageIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Message ids from truedeck_inbox'
+            }
+          },
+          required: ['messageIds'],
           additionalProperties: false
         }
       }
@@ -1407,6 +1499,43 @@ function callTool(name, args = {}) {
             )
           }
         ]
+      }
+    }
+    case 'truedeck_whoami': {
+      return {
+        content: [{ type: 'text', text: JSON.stringify(busWhoami(), null, 2) }]
+      }
+    }
+    case 'truedeck_peers': {
+      return {
+        content: [{ type: 'text', text: JSON.stringify(busListPeers(), null, 2) }]
+      }
+    }
+    case 'truedeck_send': {
+      const result = busSend({
+        to: args.to,
+        body: args.body,
+        deliver: args.deliver,
+        channel: args.channel
+      })
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+      }
+    }
+    case 'truedeck_inbox': {
+      const result = busInbox({ unreadOnly: args.unreadOnly })
+      if (args.ack !== false && result.messages?.length) {
+        busAck(result.messages.map((m) => m.id))
+      }
+      return {
+        content: [{ type: 'text', text: JSON.stringify(result, null, 2) }]
+      }
+    }
+    case 'truedeck_ack': {
+      const ids = Array.isArray(args.messageIds) ? args.messageIds : []
+      if (!ids.length) throw new Error('messageIds required')
+      return {
+        content: [{ type: 'text', text: JSON.stringify(busAck(ids), null, 2) }]
       }
     }
     default:

@@ -67,6 +67,13 @@ When agents connect to **TrueDeck MCP Hub** (`truedeck-hub`), they can call:
 | `truedeck_update_task` | Update title/body/status/assignee |
 | `truedeck_delete_task` | Delete a task |
 | `truedeck_graph_status` | Graphify knowledge graph status |
+| `truedeck_whoami` | This session’s device / session / agent id |
+| `truedeck_peers` | Live TrueDeck agents on this PC and other synced PCs |
+| `truedeck_send` | Message another agent (`to`: session id, agent id, device, `local`, `all`) |
+| `truedeck_inbox` | Read messages for this session |
+| `truedeck_ack` | Mark bus messages read |
+
+See [Agent bus](./agent-bus.md) for addressing and PC-to-PC sync.
 
 ### Show content (`truedeck_show`)
 
@@ -146,4 +153,5 @@ Memory backends (TrueMemory files, MemPalace native, OpenMemory, custom) are doc
 
 - [Architecture](./architecture.md)
 - [Task board](./task-board.md) - task tools
+- [Agent bus](./agent-bus.md) - agents messaging each other (terminals and PC-to-PC)
 - [Configuration](./configuration.md)

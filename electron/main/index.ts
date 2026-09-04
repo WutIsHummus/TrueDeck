@@ -20,6 +20,11 @@ import {
  backendStatus
 } from './sessions-rust'
 import { loadAgents, saveAgents, getDefaultAgents, createCustomAgentPreset } from './agents'
+import {
+ agentColorEnv,
+ claudeColorSeed,
+ pickSessionColor
+} from '../shared/session-color'
 import { probeAgents, resolveAgentCommand, clearResolveCache } from './resolve-command'
 import {
  prepareNewSessionSpawn,
@@ -124,6 +129,7 @@ import {
 import { listRuns, endRun } from './runs'
 import { dispatchTask } from './task-dispatch'
 import { startDeckCommandWorker } from './deck-commands'
+import { startAgentBus } from './agent-bus'
 import { setDocumentViewerParent } from './document-viewer'
 import { writeAppLock, clearAppLock } from './app-lock'
 import { maybeWrapAgentFrame } from './agent-frame'
@@ -516,12 +522,12 @@ function createWindow(): void {
  (code.startsWith('Key') ? code.slice(3).toLowerCase() : '')
 
  // Plain Ctrl+letter (no Shift/Alt): app actions. Skip auto-repeat.
- // w close · t agent · o project · s settings · n pop-out · d v-split · x h-split · z undo move
+ // w close · t agent · o project · p switch project · s settings · n pop-out · d v-split · x h-split · z undo move
  if (
  !shift &&
  !alt &&
  !repeat &&
- ['w', 't', 'o', 's', 'n', 'd', 'x', 'z'].includes(letter)
+ ['w', 't', 'o', 's', 'n', 'd', 'x', 'z', 'p'].includes(letter)
  ) {
  send(letter)
  return
@@ -1192,11 +1198,22 @@ function registerIpc(): void {
  ...memEnv,
  TRUEDECK_PROJECT: opts.projectRoot
  }
- Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.command))
+Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.command))
+ if (prepared.resumeToken) {
+ extraEnv.TRUEDECK_CLI_SESSION = prepared.resumeToken
+ }
+ const liveColors = (await listLiveSessions()).map((s) => s.color)
+ const sessionColor = pickSessionColor({
+ agentId: agent.id,
+ resumeToken: prepared.resumeToken,
+ seed: `${opts.projectRoot}:${agent.id}:${Date.now()}`,
+ taken: liveColors
+ })
+ Object.assign(extraEnv, agentColorEnv(agent.id, sessionColor))
  void maybeWrapAgentFrame
 
  console.log(
- `[spawn] ${agent.id} bind session=${prepared.resumeToken || '(discover)'} args=${spawnArgs.join(' ')}`
+ `[spawn] ${agent.id} bind session=${prepared.resumeToken || '(discover)'} args=${spawnArgs.join(' ')} color=${sessionColor.hex}`
  )
 
  const viaRust = await rustSpawnAgent({
@@ -1207,9 +1224,19 @@ function registerIpc(): void {
  command: spawnCommand,
  args: spawnArgs,
  agentName: agent.name,
- color: agent.color,
+ color: sessionColor.hex,
  env: extraEnv
  })
+ if (agent.id === 'claude' && !prepared.resumeToken) {
+ const seed = claudeColorSeed(sessionColor.cliName)
+ setTimeout(() => {
+ void writeSession(viaRust.id, process.platform === 'win32' ? `${seed}\r` : `${seed}\n`).catch(
+ () => {
+ /* ignore */
+ }
+ )
+ }, 1600)
+ }
 
  // Codex session id discovery is background-only — never block palette spawn
  // for up to 5s while scanning ~/.codex.
@@ -2196,6 +2223,8 @@ function scheduleDeferredRestore(
 
  const agents = loadAgents()
  const { env } = onAgentSpawnFast(project.root)
+ const liveColorsOpen = liveHere.map((s) => s.color)
+ const notBefore = Date.now() - 500
  for (const agentId of project.defaultAgents || []) {
  const agent = agents.find((a) => a.id === agentId)
  if (!agent) continue
@@ -2215,19 +2244,37 @@ function scheduleDeferredRestore(
  project.root,
  resolved.command
  )
- const notBefore = Date.now() - 500
+ const sessionColor = pickSessionColor({
+ agentId: agent.id,
+ resumeToken: prepared.resumeToken,
+ seed: `${project.root}:${agent.id}:${Date.now()}`,
+ taken: liveColorsOpen
+ })
+ liveColorsOpen.push(sessionColor.hex)
  const info = await rustSpawnAgent({
  projectRoot: project.root,
  agentId: agent.id,
  command: resolved.command,
  args: prepared.args,
  agentName: agent.name,
- color: agent.color,
+ color: sessionColor.hex,
  env: {
  ...env,
- ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command)
+...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command),
+ ...agentColorEnv(agent.id, sessionColor),
+ ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
  }
  })
+ if (agent.id === 'claude' && !prepared.resumeToken) {
+ const seed = claudeColorSeed(sessionColor.cliName)
+ setTimeout(() => {
+ void writeSession(info.id, process.platform === 'win32' ? `${seed}\r` : `${seed}\n`).catch(
+ () => {
+ /* ignore */
+ }
+ )
+ }, 1600)
+ }
  let resumeToken = prepared.resumeToken
  const kind = resumeAgentKind(agent.id, resolved.command)
  if (!resumeToken && prepared.needsDiscover && kind === 'codex') {
@@ -2486,6 +2533,7 @@ app.whenReady().then(() => {
 
  // Always register quit cleanup immediately (never nest inside deferred setTimeout)
  let stopDeckWorker: (() => void) | null = null
+ let stopAgentBus: (() => void) | null = null
  const cleanupOnQuit = (): void => {
  try {
  restoreProjectSwipeOnQuit()
@@ -2494,6 +2542,11 @@ app.whenReady().then(() => {
  }
  try {
  stopDeckWorker?.()
+ } catch {
+ /* ignore */
+ }
+ try {
+ stopAgentBus?.()
  } catch {
  /* ignore */
  }
@@ -2559,6 +2612,14 @@ app.whenReady().then(() => {
  })
  } catch (e) {
  console.warn('[deck-commands] worker start failed', e)
+ }
+ try {
+ stopAgentBus = startAgentBus({
+ listSessions,
+ writeSession
+ })
+ } catch (e) {
+ console.warn('[agent-bus] start failed', e)
  }
  }, deferMs)
 

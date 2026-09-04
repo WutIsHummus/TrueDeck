@@ -55,7 +55,8 @@ function memoryPointerBlock(): string {
     'Durable facts: `.memory/context/` or `.memory/decisions/`; MemPalace MCP for search/recall.',
     'Project agent rules and MCP live under **`.agents/`** (unified for all CLIs).',
     'Canonical instructions: `.agents/AGENTS.md`. Project MCP: `.agents/mcp.json` (mirrored to root `.mcp.json`).',
-    'TrueDeck hub (`truedeck-hub`): `truedeck_show`, `truedeck_launch`, MCP config tools — app must be running.',
+    'TrueDeck hub (`truedeck-hub`): `truedeck_show`, `truedeck_launch`, `truedeck_peers`, `truedeck_send`, `truedeck_inbox` — app must be running.',
+    'Message other TrueDeck agents (other terminals, or another PC running TrueDeck with notes sync) via those tools.',
     'Do not ask the user to manage memory, Graphify, or MCP wiring.',
     `<!-- /${POINTER_MARK} -->`,
     ''
@@ -96,7 +97,8 @@ function hasCurrentAgentsPointer(content: string): boolean {
   return (
     content.includes(POINTER_MARK) &&
     content.includes('.agents/') &&
-    (content.includes('.agents/AGENTS.md') || content.includes('**`.agents/`**'))
+    (content.includes('.agents/AGENTS.md') || content.includes('**`.agents/`**')) &&
+    content.includes('truedeck_send')
   )
 }
 
@@ -293,6 +295,7 @@ export function writeGlobalAgentsMemoryNote(
       '- MCP is injected by TrueDeck (see project `.agents/mcp.json` + root `.mcp.json`).',
       projectRoot ? `- Last project: \`${projectRoot}\`` : '',
       '- Env (when spawned by TrueDeck): `TRUEDECK_AGENTS_DIR`, `TRUEDECK_AGENTS_MD`, `TRUEDECK_AGENTS_MCP`.',
+      '- Agent bus: `truedeck_peers` / `truedeck_send` / `truedeck_inbox` (other terminals + other PCs running TrueDeck).',
       '- Do not ask the user to manage memory, Graphify, or MCP wiring.',
       ''
     ]

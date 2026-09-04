@@ -6,7 +6,12 @@ import { existsSync, mkdirSync, writeFileSync, readFileSync } from 'fs'
 import { join } from 'path'
 import { loadAgents } from './agents'
 import { resolveAgentCommand } from './resolve-command'
-import { spawnAgent as rustSpawnAgent, writeSession } from './sessions-rust'
+import { spawnAgent as rustSpawnAgent, writeSession, listSessions } from './sessions-rust'
+import {
+ agentColorEnv,
+ claudeColorSeed,
+ pickSessionColor
+} from '../shared/session-color'
 import {
  prepareNewSessionSpawn,
  discoverCodexSessionId,
@@ -179,8 +184,21 @@ export async function dispatchTask(
  if (role?.label) idea = `[${role.label}] ${idea}`.slice(0, 160)
  if (worktreePath) idea = `${idea} · wt:${worktreeLabel(worktreePath)}`.slice(0, 160)
 
+ let liveColors: string[] = []
+ try {
+ liveColors = (await listSessions()).map((s) => s.color)
+ } catch {
+ /* ignore */
+ }
+ const sessionColor = pickSessionColor({
+ agentId: agent.id,
+ taskId: task.id,
+ seed: `task:${task.id}`,
+ taken: liveColors
+ })
  const extraEnv = {
  ...env,
+ ...agentColorEnv(agent.id, sessionColor),
  TRUEDECK_TASK: task.id,
  TRUEDECK_TASK_FILE: taskFile,
  TRUEDECK_TASK_TITLE: title.slice(0, 80),
@@ -213,7 +231,7 @@ export async function dispatchTask(
  command: resolved.command,
  args: prepared.args,
  agentName: agent.name,
- color: agent.color,
+ color: sessionColor.hex,
  env: {
  ...extraEnv,
  ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command)
@@ -263,10 +281,13 @@ export async function dispatchTask(
  if (updated?.status) session.taskStatus = updated.status
 
  const seed = seedText(task, taskFile, worktreePath)
+ const colorLine =
+ agent.id === 'claude' && !prepared.resumeToken ? claudeColorSeed(sessionColor.cliName) : ''
  setTimeout(() => {
  try {
+ const body = colorLine ? `${colorLine}\n${seed}` : seed
  const payload =
- process.platform === 'win32' ? seed.replace(/\n/g, '\r') + '\r' : seed + '\n'
+ process.platform === 'win32' ? body.replace(/\n/g, '\r') + '\r' : body + '\n'
  void writeSession(session.id, payload)
  } catch {
  // ignore

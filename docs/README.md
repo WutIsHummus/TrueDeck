@@ -23,7 +23,7 @@ TrueDeck runs coding agent CLIs (Grok, Codex, Cursor Agent, Claude, Gemini, and 
 | New users | [Getting started](./getting-started.md) |
 | Daily use | [User guide](./user-guide.md) · [Keyboard shortcuts](./keyboard-shortcuts.md) |
 | Contributors | [Development](./development.md) · [Architecture](./architecture.md) |
-| Agents & tooling | [Agents](./agents.md) · [MCP](./mcp.md) · [Task board](./task-board.md) |
+| Agents & tooling | [Agents](./agents.md) · [MCP](./mcp.md) · [Agent bus](./agent-bus.md) · [Task board](./task-board.md) |
 
 ---
 
@@ -46,6 +46,7 @@ TrueDeck runs coding agent CLIs (Grok, Codex, Cursor Agent, Claude, Gemini, and 
 | [Agent frame](./agent-frame.md) | In-terminal TrueDeck chrome (`truedeck-frame.mjs`) |
 | [Configuration](./configuration.md) | Settings, env vars, data dirs, project config |
 | [MCP](./mcp.md) | Unified MCP hub and TrueDeck hub tools |
+| [Agent bus](./agent-bus.md) | Agents message other terminals and other TrueDeck PCs |
 | [Memory providers](./memory-providers.md) | TrueMemory, MemPalace, OpenMemory, custom backends |
 | [BridgeSpace parity](./bridgespace-parity.md) | Gap matrix vs BridgeSpace; Graphify + orchestration roadmap |
 

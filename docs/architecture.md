@@ -116,6 +116,17 @@ Shell / `cmd-*` panes only wrap when `frameShellPanes` is true. See [Agent frame
 
 Then injects the same stdio set into Cursor / Claude Code / Grok / Codex / Gemini configs and project `.mcp.json`. See [MCP](./mcp.md).
 
+## Agent bus
+
+`electron/main/agent-bus.ts` + hub tools (`truedeck_peers` / `truedeck_send` / `truedeck_inbox`):
+
+1. Each spawn gets `TRUEDECK_SESSION_ID` / `TRUEDECK_DEVICE_ID` in the PTY env
+2. Electron heartbeats live sessions to `<globalMemory>/.agent-bus/devices/`
+3. MCP `truedeck_send` writes `<globalMemory>/.agent-bus/messages/<id>.json`
+4. The local app injects matching messages into the recipient PTY; the other PC picks them up when that folder is synced (TrueMemory / Syncthing)
+
+See [Agent bus](./agent-bus.md).
+
 ## Task dispatch
 
 `task-dispatch.ts`:
@@ -146,3 +157,4 @@ See [Development](./development.md).
 - [Fast PTY](./FAST-PTY.md) - PTY-only Rust sidecar
 - [Rust backend](./RUST-BACKEND.md) - full native service protocol
 - [Agents](./agents.md) - resolve and spawn policy
+- [Agent bus](./agent-bus.md) - terminals and PC-to-PC agent messaging

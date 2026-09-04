@@ -5,18 +5,22 @@ import {
  useState,
  type KeyboardEvent as ReactKeyboardEvent
 } from 'react'
-import type { ProjectConfig } from '../../electron/shared/types'
+import type { ProjectConfig, SessionInfo } from '../../electron/shared/types'
+import { sameProjectRoot } from '../lib/paths'
 import { CloseIcon } from './CloseIcon'
 
 interface Props {
  projects: ProjectConfig[]
  activeProject: ProjectConfig | null
+ sessions?: SessionInfo[]
  shortPath: (p: string) => string
  onOpenProject: (p: ProjectConfig) => void
  onAddProject: () => void
  onImportGit: () => void
  onImportReposFolder: () => void
  onRemoveProject?: (p: ProjectConfig) => void
+ /** Icon-only trigger — title-bar project tabs already show the folder name. */
+ compact?: boolean
 }
 
 /**
@@ -26,12 +30,14 @@ interface Props {
 export function ProjectMenu({
  projects,
  activeProject,
+ sessions = [],
  shortPath,
  onOpenProject,
  onAddProject,
  onImportGit,
  onImportReposFolder,
- onRemoveProject
+ onRemoveProject,
+ compact = false
 }: Props): JSX.Element {
  const [open, setOpen] = useState(false)
  const [query, setQuery] = useState('')
@@ -104,22 +110,36 @@ export function ProjectMenu({
  }
 
  return (
- <div className="project-menu no-drag" ref={rootRef}>
+ <div className={`project-menu no-drag${compact ? ' compact' : ''}`} ref={rootRef}>
  <button
  type="button"
- className={`project-title ${open ? 'open' : ''} ${activeProject ? '' : 'empty'}`}
+ className={`project-title ${open ? 'open' : ''} ${activeProject ? '' : 'empty'}${compact ? ' compact' : ''}`}
  title={
- activeProject
- ? `${activeProject.root}\nClick to switch · three-finger swipe stays in this window · Ctrl+O open folder`
+compact
+ ? 'Open or switch project · Ctrl+O folder · Ctrl+P switcher · swipe stays in this window'
+ : activeProject
+ ? `${activeProject.root}\nClick to switch · three-finger swipe stays in this window · Ctrl+O folder · Ctrl+P switcher`
  : 'Open a project folder (Ctrl+O)'
  }
  aria-haspopup="menu"
  aria-expanded={open}
+ aria-label={compact ? 'Project menu' : undefined}
  onClick={(e) => {
  e.stopPropagation()
  setOpen((v) => !v)
  }}
  >
+ {compact ? (
+ <>
+ <span className="project-title-plus" aria-hidden>
+ +
+ </span>
+ <span className="project-title-chevron" aria-hidden>
+ ▾
+ </span>
+ </>
+ ) : (
+ <>
  <span className="project-title-name">{label}</span>
  {projects.length > 0 && (
  <span className="project-title-count" title={`${projects.length} projects`}>
@@ -129,6 +149,8 @@ export function ProjectMenu({
  <span className="project-title-chevron" aria-hidden>
  ▾
  </span>
+ </>
+ )}
  </button>
 
  {open && (
@@ -209,6 +231,9 @@ export function ProjectMenu({
  )}
  {filtered.map((p, i) => {
  const active = activeProject?.id === p.id
+ const live = sessions.filter(
+ (s) => s.status === 'running' && sameProjectRoot(s.projectRoot, p.root)
+ ).length
  return (
  <div
  key={p.id}
@@ -227,10 +252,20 @@ export function ProjectMenu({
  >
  <span className="item-title">
  {active && <span className="item-check">✓ </span>}
+ {p.color ? (
+ <span className="project-live-dot" style={{ background: p.color }} />
+ ) : live > 0 ? (
+ <span className="project-live-dot live" />
+ ) : null}
  {p.name}
+ {live > 0 && !active && (
+ <span className="project-live-count" title={`${live} terminal${live === 1 ? '' : 's'} still running`}>
+ {live}
+ </span>
+ )}
  </span>
  <span className="item-path" title={p.root}>
- {shortPath(p.root)}
+ {live > 0 && active ? `${live} live · ${shortPath(p.root)}` : shortPath(p.root)}
  </span>
  </button>
  {onRemoveProject && (

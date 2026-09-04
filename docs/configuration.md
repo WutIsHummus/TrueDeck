@@ -41,7 +41,7 @@ Home convenience path helper: `~/.truedeck` (`getHomeTrueDeckDir`) - used for so
 | `palacePath` | unset | MemPalace (or compatible) data directory |
 | `memoryProviders` | built-in list | See [memory-providers.md](./memory-providers.md) |
 | `maxPanes` | `16` | Soft max agent panes |
-| `worktreeIsolationDefault` | `false` | Future dispatch worktrees |
+| `worktreeIsolationDefault` | `false` | Isolate dispatched tasks in git worktrees under `.truedeck/worktrees/` |
 | `agentFrameTui` | `true` | Wrap agents in frame TUI |
 | `frameShellPanes` | `false` | Also frame shell/command panes |
 
@@ -56,6 +56,9 @@ Edit via **Settings** UI when possible. Invalid JSON falls back to defaults merg
 | `session-layout.json` | Last-active project tabs + pane tree (app launch restore) |
 | `session-layouts.json` | Per-project tab/pane snapshots so switching folders does not wipe the others |
 | `tasks.json` | Board tasks |
+| `device.json` | Stable TrueDeck device id (agent bus) |
+| `agent-bus/` | Local bus receipts (not synced) |
+| `memory/.agent-bus/` | Synced presence + messages (PC-to-PC) |
 | `mcp-servers.json` | User-managed MCP servers |
 | `memory-providers.json` | Memory backend list (may live here; see memory docs) |
 
@@ -124,6 +127,11 @@ Configure on-open commands under Settings → **Project**.
 | `TRUEDECK_FRAME` | `1` when framed |
 | `TRUEDECK_FRAME_HEADER` | Header row count for frame |
 | `TRUEDECK_INTENT` | Intent / idea when set |
+| `TRUEDECK_DEVICE_ID` | This PC (agent bus) |
+| `TRUEDECK_DEVICE_NAME` | Hostname (agent bus) |
+| `TRUEDECK_SESSION_ID` | This terminal’s bus id |
+| `TRUEDECK_AGENT_ID` | Agent preset id (bus + spawn) |
+| `TRUEDECK_BUS_DIR` | Public agent-bus folder |
 | `TERM_PROGRAM` | `TrueDeck` |
 
 ## Agents config
