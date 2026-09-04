@@ -225,6 +225,8 @@ const api = {
  ipcRenderer.invoke('sessions:resize', id, cols, rows, force),
  killSession: (id: string): Promise<void> => ipcRenderer.invoke('sessions:kill', id),
  getSessionLayout: (): Promise<SessionLayout> => ipcRenderer.invoke('sessions:getLayout'),
+ getProjectLayout: (projectRoot: string): Promise<SessionLayout | null> =>
+  ipcRenderer.invoke('sessions:getProjectLayout', projectRoot),
  saveSessionLayout: (layout: SessionLayout): Promise<SessionLayout> =>
  ipcRenderer.invoke('sessions:saveLayout', layout),
  persistSessions: (snapshot: {
@@ -267,6 +269,7 @@ const api = {
  /** Already-running tabs that matched on-open (not re-spawned) */
  reusedSessionIds?: string[]
  memory?: { ok: boolean; label: string; detail: string }
+ parkedLayout?: SessionLayout | null
  }> => ipcRenderer.invoke('sessions:openProject', projectId),
 
  memoryStatus: (

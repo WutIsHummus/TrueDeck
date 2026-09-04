@@ -89,6 +89,8 @@ Task dispatch adds `TRUEDECK_TASK`, `TRUEDECK_TASK_FILE`, `TRUEDECK_TASK_TITLE`,
 
 If the CLI is missing, spawn throws with the install hint.
 
+OpenCode `--session` is continue-only (`ses_*` ids). New tabs start unbound; TrueDeck only passes `--session` for a real `ses_*` id. A leftover UUID (or a custom **OpenCode (direct)** preset) must not change that. See [Troubleshooting](./troubleshooting.md#opencode-error-invalid-session-id-unknown-error).
+
 ## Agent palette
 
 **Ctrl+T** opens the palette (requires an open project). Entries can show probe availability (`available`, `resolvedFrom`, `installCommand`). Installing a CLI outside TrueDeck is required for non-shell agents.

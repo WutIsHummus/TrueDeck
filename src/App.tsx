@@ -59,12 +59,49 @@ import type {
  AppSettings,
  ProjectConfig,
  ProjectSetupStatus,
- SessionInfo
+ SessionInfo,
+ SessionLayout
 } from '../electron/shared/types'
 import appIconUrl from '../resources/icons/icon-32.png'
 import { sessionTabLabel } from './lib/session-label'
 import { sameProjectRoot } from './lib/paths'
 import { AgentIcon } from './components/AgentIcon'
+
+function workspaceKey(root: string): string {
+ return root.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase()
+}
+
+/** Map a parked project's tabs onto live PTYs (resume token, then agent+cwd). */
+function matchParkedTabsToLive(
+ tabs: SessionLayout['tabs'],
+ live: SessionInfo[]
+): string[] {
+ const used = new Set<string>()
+ const ids: string[] = []
+ for (const t of tabs || []) {
+ const tok = (t.resumeToken || '').trim()
+ const match =
+ (tok &&
+ live.find(
+ (s) => !used.has(s.id) && (s.resumeToken || '').trim() === tok
+ )) ||
+ live.find(
+ (s) =>
+ !used.has(s.id) &&
+ s.agentId === t.agentId &&
+ sameProjectRoot(s.projectRoot, t.projectRoot) &&
+ (t.commandLine || '') === (s.commandLine || '')
+ )
+ if (match) {
+ used.add(match.id)
+ ids.push(match.id)
+ }
+ }
+ for (const s of live) {
+ if (!used.has(s.id)) ids.push(s.id)
+ }
+ return ids
+}
 
 /**
  * Studio layout - between Codex TUI and raw CLI.
@@ -280,6 +317,9 @@ export default function App(): JSX.Element {
  /** Latest snapshot builder for close flush + immediate geometry saves. */
  // eslint-disable-next-line @typescript-eslint/no-explicit-any
  const buildPersistSnapshotRef = useRef<(() => any) | null>(null)
+ /** Parked pane tree per project root so swipe is a Space switch, not a merge. */
+ const layoutByRootRef = useRef<Map<string, PaneLayout>>(new Map())
+ const workspaceRootRef = useRef<string | null>(null)
 
  /**
  * Persist an explicit layout tree immediately (the *next* tree from a
@@ -290,9 +330,17 @@ export default function App(): JSX.Element {
  try {
  const st = useDeck.getState()
  const project = st.projects.find((p) => p.id === st.activeProjectId)
- const running = st.sessions.filter((s) => s.status === 'running')
+ const running = st.sessions.filter((s) => {
+ if (s.status !== 'running') return false
+ if (project && !sameProjectRoot(s.projectRoot, project.root)) return false
+ return true
+ })
  const live = new Set(running.map((s) => s.id))
- const layout = layoutIn?.root ? layoutIn : normalizeLayout(layoutIn)
+ const scoped = filterLayoutToSessionIds(
+ layoutIn?.root ? layoutIn : normalizeLayout(layoutIn),
+ live
+ )
+ const layout = scoped
  const groups = listGroups(layout)
  const fromLayout = groups.flatMap((g) => g.sessionIds).filter((id) => live.has(id))
  const seen = new Set<string>()
@@ -347,10 +395,10 @@ export default function App(): JSX.Element {
  color: s.color,
  kind: (s.kind === 'document' || s.documentPath
  ? 'document'
- : s.kind === 'command' || s.commandLine
+ : s.kind === 'command'
  ? 'command'
  : 'agent') as 'agent' | 'command' | 'document',
- commandLine: s.commandLine,
+ commandLine: s.kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
@@ -577,23 +625,29 @@ export default function App(): JSX.Element {
  }, [agents, paletteQuery, agentProbes])
 
  /**
- * Keep the *canonical* pane tree aligned with **all** live sessions.
- * Never sync against project-filtered ids - that collapsed multi-pane layouts
- * whenever the active project didn't match session roots (or on project switch).
- * Display uses `displayLayout` (filtered) so other projects stay hidden.
+ * Keep the pane tree aligned with the *active project* only (macOS Spaces).
+ * Other folders' PTYs stay alive but out of this tree so persist cannot mix them.
  *
- * Important: do **not** depend on `activeSessionId`. Ctrl+Arrow / click update
- * layout first, then the store. Re-running syncSessions with a stale
- * preferActive snapped focus back to the previous tab after every move.
- * Membership changes (spawn/close) still flow through `sessions`.
+ * On project switch, reuse the parked tree for that folder instead of dumping
+ * the new ids into the previous project's splits.
+ *
+ * Do **not** depend on `activeSessionId`. Ctrl+Arrow / click update layout
+ * first, then the store. Re-running syncSessions with a stale preferActive
+ * snapped focus back to the previous tab after every move.
  */
  useEffect(() => {
  if (!sessionHydrated) return
- // Detached windows own those sessions — keep them out of the main tree
+ const st = useDeck.getState()
+ const project = st.projects.find((p) => p.id === st.activeProjectId) || null
  const detached = detachedIdsRef.current
- const ids = sessions.map((s) => s.id).filter((id) => !detached.has(id))
- const prefer = useDeck.getState().activeSessionId
- // Expanded = still showing content (not minimized)
+ const ids = sessions
+ .filter((s) => {
+ if (detached.has(s.id)) return false
+ if (project && !sameProjectRoot(s.projectRoot, project.root)) return false
+ return true
+ })
+ .map((s) => s.id)
+ const prefer = st.activeSessionId
  const expanded = new Set(
  sessions
  .filter(
@@ -601,23 +655,36 @@ export default function App(): JSX.Element {
  s.status === 'running' &&
  !s.uiMinimized &&
  !s.uiHidden &&
- !detached.has(s.id)
+ !detached.has(s.id) &&
+ (!project || sameProjectRoot(s.projectRoot, project.root))
  )
  .map((s) => s.id)
  )
+ const root = project?.root || null
+ const switched = Boolean(
+ root &&
+ workspaceRootRef.current &&
+ !sameProjectRoot(workspaceRootRef.current, root)
+ )
+ if (root) workspaceRootRef.current = root
  setPaneLayout((prev) => {
- const base = prev?.root ? prev : normalizeLayout(prev)
- // Keep minimized tabs in the membership tree so persist can save *where*
- // they sit. Collapse is display-only (displayLayout).
+ const cached =
+ root && switched ? layoutByRootRef.current.get(workspaceKey(root)) : null
+ const base = cached?.root
+ ? cached
+ : switched
+ ? createLayout(ids, prefer)
+ : prev?.root
+ ? prev
+ : normalizeLayout(prev)
  let next = syncSessions(base, ids, prefer)
- // If active tab is expanded, keep layout focus on it (un-minimize path)
  if (prefer && expanded.has(prefer) && findGroup(next, prefer)) {
  next = layoutFocusSession(next, prefer)
  }
  return next
  })
  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not activeSessionId
- }, [sessionHydrated, sessions, detachedIds])
+ }, [sessionHydrated, sessions, detachedIds, activeProjectId])
 
  const expandedSessionIds = useMemo(
  () =>
@@ -1297,6 +1364,11 @@ export default function App(): JSX.Element {
  const ids = (payload.sessionIds || []).filter(Boolean)
  if (!ids.length) return
  const st = useDeck.getState()
+ const payloadRoot = (payload as { activeProjectRoot?: string | null }).activeProjectRoot
+ const curProj = st.projects.find((p) => p.id === st.activeProjectId) || null
+ if (payloadRoot && curProj && !sameProjectRoot(payloadRoot, curProj.root)) {
+ return
+ }
  const focusId =
  (typeof payload.focusedGroupTabIndex === 'number' &&
  ids[payload.focusedGroupTabIndex]) ||
@@ -1316,6 +1388,12 @@ export default function App(): JSX.Element {
  ? `Restored ${ids.length} tabs · multi-pane`
  : `Restored ${ids.length} tabs`
  )
+ window.setTimeout(() => {
+ window.dispatchEvent(new CustomEvent('truedeck:terminals-settle'))
+ }, 80)
+ window.setTimeout(() => {
+ window.dispatchEvent(new CustomEvent('truedeck:terminals-settle'))
+ }, 600)
  window.setTimeout(() => {
  try {
  const snap = buildPersistSnapshotRef.current?.()
@@ -1562,6 +1640,12 @@ export default function App(): JSX.Element {
  if (!cancelled) {
  setSessionHydrated(true)
  setTerminalLoadMsg('')
+ const kickTerminals = (): void => {
+ window.dispatchEvent(new CustomEvent('truedeck:terminals-settle'))
+ }
+ window.setTimeout(kickTerminals, 250)
+ window.setTimeout(kickTerminals, 900)
+ window.setTimeout(kickTerminals, 2000)
  // Re-seed layout focus after hydrate - first Ctrl+Arrow used to miss
  // because focusedGroupId lagged the restored activeSessionId.
  const st = useDeck.getState()
@@ -1639,10 +1723,17 @@ export default function App(): JSX.Element {
  const buildPersistSnapshot = useCallback(() => {
  const st = useDeck.getState()
  const project = st.projects.find((p) => p.id === st.activeProjectId)
- const running = st.sessions.filter((s) => s.status === 'running')
+ const running = st.sessions.filter((s) => {
+ if (s.status !== 'running') return false
+ if (project && !sameProjectRoot(s.projectRoot, project.root)) return false
+ return true
+ })
  const live = new Set(running.map((s) => s.id))
  // Always normalize so empty / partial state still serializes a valid tree
- const layout = paneLayout?.root ? paneLayout : normalizeLayout(paneLayout)
+ const layout = filterLayoutToSessionIds(
+ paneLayout?.root ? paneLayout : normalizeLayout(paneLayout),
+ live
+ )
  const groups = listGroups(layout)
  // Only sessions that are actually in the pane tree - appending "orphan" running
  // PTYs (restore races / onOpen stacks) bloated session-layout.json to MAX tabs
@@ -1699,10 +1790,10 @@ export default function App(): JSX.Element {
  color: s.color,
  kind: (s.kind === 'document' || s.documentPath
  ? 'document'
- : s.kind === 'command' || s.commandLine
+ : s.kind === 'command'
  ? 'command'
  : 'agent') as 'agent' | 'command' | 'document',
- commandLine: s.commandLine,
+ commandLine: s.kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
@@ -1773,6 +1864,7 @@ export default function App(): JSX.Element {
  * Ctrl+N pop pane to new window · Ctrl+Shift+N shell
  * Ctrl+M minimize tab · Ctrl+Shift+M restore minimized
  * Ctrl+1-9 jump · Ctrl+←/→/↑/↓ panes · Ctrl+=/+/- /0 font zoom
+ * Three-finger swipe / mouse back-forward → next/prev project
  */
  const shortcutCtxRef = useRef({
  activeSessionId,
@@ -1784,7 +1876,8 @@ export default function App(): JSX.Element {
  persistLayoutSnapshot,
  restoreMinimizedSession: null as null | ((id: string) => void),
  addProjectFn: null as null | (() => void),
- launchAgentFn: null as null | ((id: string) => void)
+ launchAgentFn: null as null | ((id: string) => void),
+ cycleProjectFn: null as null | ((dir: 1 | -1) => void)
  })
  /** Always-current layout for shortcuts (setState alone can lag one IPC event). */
  const paneLayoutRef = useRef(paneLayout)
@@ -1828,6 +1921,12 @@ export default function App(): JSX.Element {
  repeat?: boolean
  claim?: () => void
  }): void => {
+ if (raw.key === 'ProjectNext' || raw.key === 'ProjectPrev') {
+ raw.claim?.()
+ if (!once(`project-cycle:${raw.key}`, 400)) return
+ shortcutCtxRef.current.cycleProjectFn?.(raw.key === 'ProjectNext' ? 1 : -1)
+ return
+ }
  if (!raw.ctrl) return
  try {
  const ctx = shortcutCtxRef.current
@@ -2371,8 +2470,25 @@ export default function App(): JSX.Element {
 
  // Fallback path: capture-phase DOM (covers cases before-input does not fire)
  window.addEventListener('keydown', onKey, true)
+
+ // Horizontal three-finger / precision-touchpad flick stays in this window.
+ let wheelAt = 0
+ const onWheel = (e: WheelEvent): void => {
+ if (e.ctrlKey || e.altKey || e.metaKey) return
+ if (Math.abs(e.deltaX) < 80) return
+ if (Math.abs(e.deltaX) < Math.abs(e.deltaY) * 1.8) return
+ e.preventDefault()
+ e.stopPropagation()
+ const now = Date.now()
+ if (now - wheelAt < 450) return
+ wheelAt = now
+ shortcutCtxRef.current.cycleProjectFn?.(e.deltaX > 0 ? 1 : -1)
+ }
+ window.addEventListener('wheel', onWheel, { capture: true, passive: false })
+
  return () => {
  window.removeEventListener('keydown', onKey, true)
+ window.removeEventListener('wheel', onWheel, true)
  offShortcut?.()
  }
  // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2392,12 +2508,74 @@ export default function App(): JSX.Element {
  void addProject()
  }
 
+ const projectCycleOrderRef = useRef<string[]>([])
+
+ const applyWorkspace = (root: string, parked?: SessionLayout | null): void => {
+ const st = useDeck.getState()
+ const live = st.sessions.filter(
+ (s) => s.status === 'running' && sameProjectRoot(s.projectRoot, root)
+ )
+ const cached = layoutByRootRef.current.get(workspaceKey(root))
+ if (cached?.root) {
+ const pl = syncSessions(
+ cached,
+ live.map((s) => s.id),
+ st.activeSessionId
+ )
+ setPaneLayout(pl)
+ return
+ }
+ if (parked?.tabs?.length) {
+ const ids = matchParkedTabsToLive(parked.tabs, live)
+ if (ids.length) {
+ const focus =
+ (typeof parked.focusedGroupTabIndex === 'number' &&
+ ids[parked.focusedGroupTabIndex]) ||
+ st.activeSessionId ||
+ ids[0]
+ let pl = parked.paneTree
+ ? deserializePaneTree(parked.paneTree, ids, focus)
+ : createLayout(ids, focus)
+ pl = syncSessions(
+ pl,
+ live.map((s) => s.id),
+ focus
+ )
+ setPaneLayout(pl)
+ layoutByRootRef.current.set(workspaceKey(root), pl)
+ return
+ }
+ }
+ if (live.length) {
+ const ids = live.map((s) => s.id)
+ setPaneLayout(createLayout(ids, st.activeSessionId || ids[ids.length - 1]))
+ }
+ }
+
  const openProject = async (p: ProjectConfig): Promise<void> => {
+ const prev = useDeck.getState().projects.find((x) => x.id === useDeck.getState().activeProjectId)
+ if (prev && prev.id !== p.id) {
+ const outgoing = paneLayoutRef.current
+ if (outgoing?.root) {
+ layoutByRootRef.current.set(workspaceKey(prev.root), outgoing)
+ }
+ flushLayoutToDisk()
+ }
  // setActiveProject also moves focus onto a tab in this folder (or clears it)
  setActiveProject(p.id)
  setTerminalLoadMsg(`Opening ${p.name}…`)
  setStatus(`Opening ${p.name}…`)
  try {
+ let parked: SessionLayout | null = null
+ try {
+ const api = window.truedeck as {
+ getProjectLayout?: (root: string) => Promise<SessionLayout | null>
+ }
+ parked = (await api.getProjectLayout?.(p.root)) || null
+ } catch {
+ parked = null
+ }
+ applyWorkspace(p.root, parked)
  const res = await window.truedeck.openProject(p.id)
  const n = res.sessionIds?.length || 0
  if (n > 0) {
@@ -2410,6 +2588,7 @@ export default function App(): JSX.Element {
  const found = all.find((s) => s.id === id)
  if (found) addSession(found, { focus: true })
  }
+ applyWorkspace(p.root, res.parkedLayout || parked)
  // Reused on-open tabs: ensure we land on something in this project
  const st = useDeck.getState()
  const cur = st.sessions.find((s) => s.id === st.activeSessionId)
@@ -2435,8 +2614,32 @@ export default function App(): JSX.Element {
  setStatus(e instanceof Error ? e.message : String(e))
  } finally {
  setTerminalLoadMsg('')
+ window.setTimeout(() => {
+ window.dispatchEvent(new CustomEvent('truedeck:terminals-settle'))
+ }, 120)
+ window.setTimeout(() => {
+ window.dispatchEvent(new CustomEvent('truedeck:terminals-settle'))
+ }, 700)
  }
  }
+
+ const cycleProject = (dir: 1 | -1): void => {
+ const st = useDeck.getState()
+ const ids = st.projects.map((p) => p.id)
+ const order = projectCycleOrderRef.current.filter((id) => ids.includes(id))
+ for (const id of ids) if (!order.includes(id)) order.push(id)
+ projectCycleOrderRef.current = order
+ if (order.length < 2) {
+ setStatus('Add another project to swipe between them')
+ return
+ }
+ const idx = Math.max(0, order.indexOf(st.activeProjectId || ''))
+ const nextId = order[(idx + dir + order.length) % order.length]
+ const next = st.projects.find((p) => p.id === nextId)
+ if (!next || next.id === st.activeProjectId) return
+ void openProject(next)
+ }
+ shortcutCtxRef.current.cycleProjectFn = cycleProject
 
  const importReposFromFolder = async (): Promise<void> => {
  setTerminalLoadMsg('Scanning for git repos…')

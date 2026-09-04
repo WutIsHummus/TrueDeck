@@ -83,9 +83,11 @@ Helpers live in `src/lib/pane-layout.ts` (renderer) and `electron/main/session-l
 ## Session restore
 
 1. Renderer loads settings; if `reopenLastProject`, call `sessions:restore`
-2. Main loads `session-layout.json`, clamps tabs (max 16), filters install helpers
+2. Main loads `session-layout.json` (last-active project) and `session-layouts.json` (per-project bank)
 3. For each tab, resolve agent + spawn PTY (memory env, agent frame when enabled)
-4. Renderer rebuilds pane tree from saved structure + new session ids
+4. Run the last project's **on-open commands** (e.g. `rojo serve`) if they are not already live — same path as opening from the Projects tab
+5. Renderer rebuilds pane tree from saved structure + new session ids
+6. Opening another project from the list restores that folder's parked tabs from the bank, then runs its on-open commands
 
 ## Memory inject
 

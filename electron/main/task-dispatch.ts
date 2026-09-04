@@ -10,7 +10,11 @@ import { spawnAgent as rustSpawnAgent, writeSession } from './sessions-rust'
 import {
  prepareNewSessionSpawn,
  discoverCodexSessionId,
- tryDiscoverCodexSessionId
+ tryDiscoverCodexSessionId,
+ resumeAgentKind,
+ cliSessionEnv,
+ discoverOpenCodeSessionId,
+ tryDiscoverOpenCodeSessionId
 } from './agent-resume'
 import { onAgentSpawnFast } from './memory-service'
 import { getTask, attachRun, updateTask } from './tasks'
@@ -212,14 +216,19 @@ export async function dispatchTask(
  color: agent.color,
  env: {
  ...extraEnv,
- ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
+ ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command)
  }
  })
  let resumeToken = prepared.resumeToken
- if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ const kind = resumeAgentKind(agent.id, resolved.command)
+ if (!resumeToken && prepared.needsDiscover && kind === 'codex') {
  resumeToken =
  (await discoverCodexSessionId(cwd, notBefore, 4000)) ||
  tryDiscoverCodexSessionId(cwd, notBefore)
+ } else if (!resumeToken && prepared.needsDiscover && kind === 'opencode') {
+ resumeToken =
+ (await discoverOpenCodeSessionId(cwd, notBefore, 2500)) ||
+ tryDiscoverOpenCodeSessionId(cwd, notBefore)
  }
  // Keep session metadata pointing at main project for board filters
  session.projectRoot = task.projectRoot

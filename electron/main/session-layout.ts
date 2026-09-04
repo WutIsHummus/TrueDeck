@@ -6,7 +6,7 @@ import type {
  SessionInfo,
  SessionLayout
 } from '../shared/types'
-import { getSessionLayoutPath } from './paths'
+import { getProjectLayoutsPath, getSessionLayoutPath } from './paths'
 
 /** Hard cap - never restore/persist more than this many tabs (prevents CLI storms). */
 export const MAX_SAVED_TABS = 16
@@ -266,7 +266,8 @@ export function loadSessionLayout(): SessionLayout {
  // ignore rewrite failures
  }
  }
- return fixed
+ seedBankFromLayout(fixed)
+ return preferParkedLayout(fixed)
  } catch {
  return { ...EMPTY }
  }
@@ -307,18 +308,32 @@ export function saveSessionLayout(
  let tabsForWrite = tabs
  let treeForWrite = compact.paneTree
  let mapForWrite = map
- if (tabs.length > 0 && Date.now() - LAYOUT_BOOT_MS < 120_000) {
+    if (tabs.length > 0 && Date.now() - LAYOUT_BOOT_MS < 120_000) {
  try {
  const diskPath = getSessionLayoutPath()
  if (existsSync(diskPath)) {
  const raw = JSON.parse(readFileSync(diskPath, 'utf8')) as Partial<SessionLayout>
- if (Array.isArray(raw.tabs) && raw.tabs.length > tabs.length) {
+ const sameWorkspace =
+  !layout.activeProjectRoot ||
+  !raw.activeProjectRoot ||
+  sameProjectRoot(raw.activeProjectRoot, layout.activeProjectRoot)
+ if (
+  sameWorkspace &&
+  Array.isArray(raw.tabs) &&
+  raw.tabs.length > tabs.length
+ ) {
  const have = new Set(
  tabs.map((t) => (t.resumeToken || '').trim()).filter(Boolean)
  )
  const extras: SavedSessionTab[] = []
  for (const t of raw.tabs) {
- if (!t?.projectRoot || !t.agentId) continue
+            if (!t?.projectRoot || !t.agentId) continue
+            if (
+             layout.activeProjectRoot &&
+             !sameProjectRoot(t.projectRoot, layout.activeProjectRoot)
+            ) {
+             continue
+            }
  const tok = (t.resumeToken || '').trim()
  if (!tok || have.has(tok)) continue
  have.add(tok)
@@ -456,7 +471,11 @@ const mapIndex = (i: number | null | undefined): number | null => {
  if (t.type === 'leaf') return 1
  return 10 + score(t.first) + score(t.second)
  }
- if (diskTree && score(diskTree) > score(next.paneTree)) {
+ const sameWorkspace =
+  !next.activeProjectRoot ||
+  !raw2.activeProjectRoot ||
+  sameProjectRoot(raw2.activeProjectRoot, next.activeProjectRoot)
+ if (sameWorkspace && diskTree && score(diskTree) > score(next.paneTree)) {
  // Only prefer disk tree if tab counts are compatible
  if (Array.isArray(raw2.tabs) && raw2.tabs.length === next.tabs.length) {
  const re2 = compactTabsToPaneTree(next.tabs, diskTree)
@@ -472,6 +491,11 @@ const mapIndex = (i: number | null | undefined): number | null => {
  }
 
  writeFileSync(path, JSON.stringify(next, null, 2), 'utf8')
+ try {
+ upsertBankFromLayout(next, opts)
+ } catch (e) {
+ console.warn('[layout] per-project bank save failed', e)
+ }
  return next
 }
 export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
@@ -482,7 +506,7 @@ export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  const kind: SavedSessionTab['kind'] =
  s.kind === 'document' || s.documentPath
  ? 'document'
- : s.kind === 'command' || s.commandLine
+ : s.kind === 'command'
  ? 'command'
  : 'agent'
  return {
@@ -491,7 +515,7 @@ export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  projectRoot: s.projectRoot,
  color: s.color,
  kind,
- commandLine: s.commandLine,
+ commandLine: kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
@@ -619,7 +643,9 @@ export function layoutFromPersistSnapshot(
  const kind: SavedSessionTab['kind'] =
  fromMeta.kind === 'document' || fromMeta.documentPath || s?.documentPath
  ? 'document'
- : fromMeta.kind === 'command' || fromMeta.commandLine || s?.commandLine
+ : fromMeta.kind === 'agent'
+ ? 'agent'
+ : fromMeta.kind === 'command' || fromMeta.commandLine
  ? 'command'
  : 'agent'
  tab = {
@@ -628,9 +654,12 @@ export function layoutFromPersistSnapshot(
  projectRoot: String(fromMeta.projectRoot),
  color: String(fromMeta.color || s?.color || '#6cb6ff'),
  kind,
- commandLine: fromMeta.commandLine
+ commandLine:
+ kind === 'command'
+ ? fromMeta.commandLine
  ? String(fromMeta.commandLine)
- : s?.commandLine,
+ : s?.commandLine
+ : undefined,
  documentPath: fromMeta.documentPath
  ? String(fromMeta.documentPath)
  : s?.documentPath,
@@ -653,18 +682,24 @@ export function layoutFromPersistSnapshot(
  const fromMeta = meta[i]
  if (!fromMeta?.projectRoot || !fromMeta.agentId) continue
  oldToNew.set(i, tabs.length)
+ const kind: SavedSessionTab['kind'] =
+ fromMeta.kind === 'document' || fromMeta.documentPath
+ ? 'document'
+ : fromMeta.kind === 'agent'
+ ? 'agent'
+ : fromMeta.kind === 'command' || fromMeta.commandLine
+ ? 'command'
+ : 'agent'
  tabs.push({
  agentId: String(fromMeta.agentId),
  agentName: String(fromMeta.agentName || fromMeta.agentId),
  projectRoot: String(fromMeta.projectRoot),
  color: String(fromMeta.color || '#6cb6ff'),
- kind:
- fromMeta.kind === 'document' || fromMeta.documentPath
- ? 'document'
- : fromMeta.kind === 'command' || fromMeta.commandLine
- ? 'command'
- : 'agent',
- commandLine: fromMeta.commandLine ? String(fromMeta.commandLine) : undefined,
+ kind,
+ commandLine:
+ kind === 'command' && fromMeta.commandLine
+ ? String(fromMeta.commandLine)
+ : undefined,
  documentPath: fromMeta.documentPath
  ? String(fromMeta.documentPath)
  : undefined,
@@ -746,4 +781,232 @@ export function layoutFromLiveSessions(
  focusedGroupTabIndex: base.focusedGroupTabIndex ?? null,
  savedAt: Date.now()
  }
+}
+
+export function layoutRootKey(root: string): string {
+ return root.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase()
+}
+
+type ProjectLayoutBank = {
+ version: 1
+ activeProjectRoot: string | null
+ byRoot: Record<string, SessionLayout>
+}
+
+const EMPTY_BANK: ProjectLayoutBank = {
+ version: 1,
+ activeProjectRoot: null,
+ byRoot: {}
+}
+
+function loadProjectBank(): ProjectLayoutBank {
+ try {
+ const p = getProjectLayoutsPath()
+ if (!existsSync(p)) return { ...EMPTY_BANK, byRoot: {} }
+ const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<ProjectLayoutBank>
+ if (!raw || typeof raw !== 'object') return { ...EMPTY_BANK, byRoot: {} }
+ const byRoot: Record<string, SessionLayout> = {}
+ const src = raw.byRoot && typeof raw.byRoot === 'object' ? raw.byRoot : {}
+ for (const [k, v] of Object.entries(src)) {
+ if (!v || !Array.isArray(v.tabs) || !v.tabs.length) continue
+ byRoot[layoutRootKey(k)] = {
+ version: 2,
+ activeProjectRoot: v.activeProjectRoot ?? k,
+ activeIndex: typeof v.activeIndex === 'number' ? v.activeIndex : 0,
+ splitIndex: typeof v.splitIndex === 'number' ? v.splitIndex : null,
+ splitRatio:
+ typeof v.splitRatio === 'number' && v.splitRatio > 0 && v.splitRatio < 1
+ ? v.splitRatio
+ : 0.5,
+ tabs: clampTabs(v.tabs),
+ paneTree: sanitizePaneTree(v.paneTree),
+ focusedGroupTabIndex:
+ typeof v.focusedGroupTabIndex === 'number' ? v.focusedGroupTabIndex : null,
+ savedAt: typeof v.savedAt === 'number' ? v.savedAt : 0
+ }
+ }
+ return {
+ version: 1,
+ activeProjectRoot: raw.activeProjectRoot ?? null,
+ byRoot
+ }
+ } catch {
+ return { ...EMPTY_BANK, byRoot: {} }
+ }
+}
+
+function saveProjectBank(bank: ProjectLayoutBank): void {
+ const path = getProjectLayoutsPath()
+ mkdirSync(dirname(path), { recursive: true })
+ writeFileSync(
+ path,
+ JSON.stringify(
+ {
+ version: 1,
+ activeProjectRoot: bank.activeProjectRoot,
+ byRoot: bank.byRoot
+ },
+ null,
+ 2
+ ),
+ 'utf8'
+ )
+}
+
+/** Tabs + remapped pane tree for one project root. */
+export function sliceLayoutForProject(
+ layout: SessionLayout,
+ root: string
+): SessionLayout | null {
+ if (!root || !layout.tabs?.length) return null
+ const keep: number[] = []
+ layout.tabs.forEach((t, i) => {
+ if (t?.projectRoot && sameProjectRoot(t.projectRoot, root)) keep.push(i)
+ })
+ if (!keep.length) return null
+ const indexMap = new Map<number, number>()
+ keep.forEach((old, neu) => indexMap.set(old, neu))
+ const tabs = keep.map((i) => layout.tabs[i])
+ const paneTree = remapPaneTree(sanitizePaneTree(layout.paneTree), indexMap)
+ const mapIdx = (i: number | null | undefined): number | null => {
+ if (i == null || typeof i !== 'number') return null
+ return indexMap.has(i) ? indexMap.get(i)! : null
+ }
+ const compact = compactTabsToPaneTree(tabs, paneTree)
+ return {
+ version: 2,
+ activeProjectRoot: root,
+ activeIndex: mapIdx(layout.activeIndex) ?? 0,
+ splitIndex: mapIdx(layout.splitIndex),
+ splitRatio: layout.splitRatio,
+ tabs: compact.tabs,
+ paneTree: compact.paneTree,
+ focusedGroupTabIndex: mapIdx(layout.focusedGroupTabIndex ?? null),
+ savedAt: layout.savedAt || Date.now()
+ }
+}
+
+function seedBankFromLayout(layout: SessionLayout): void {
+ const roots: string[] = []
+ const seen: Record<string, true> = {}
+ const addRoot = (r: string): void => {
+ const k = layoutRootKey(r)
+ if (seen[k]) return
+ seen[k] = true
+ roots.push(r)
+ }
+ for (const t of layout.tabs || []) {
+ if (t?.projectRoot) addRoot(t.projectRoot)
+ }
+ if (layout.activeProjectRoot) addRoot(layout.activeProjectRoot)
+ if (!roots.length) return
+ const bank = loadProjectBank()
+ let changed = false
+ for (const root of roots) {
+ const slice = sliceLayoutForProject(layout, root)
+ if (!slice?.tabs.length) continue
+ const key = layoutRootKey(root)
+    const prev = bank.byRoot[key]
+    if (!prev || prev.tabs.length < slice.tabs.length) {
+      bank.byRoot[key] = slice
+      changed = true
+    } else if (
+      prev &&
+      slice.savedAt >= (prev.savedAt || 0) &&
+      slice.tabs.length === prev.tabs.length
+    ) {
+      // Same tab count: still take newer resume tokens / pane tree.
+      bank.byRoot[key] = slice
+      changed = true
+    }
+ }
+ if (layout.activeProjectRoot) {
+ bank.activeProjectRoot = layout.activeProjectRoot
+ changed = true
+ }
+ if (changed) saveProjectBank(bank)
+}
+
+function preferParkedLayout(layout: SessionLayout): SessionLayout {
+ const root = layout.activeProjectRoot
+ if (!root) return layout
+ const parked = loadProjectLayout(root)
+ if (!parked?.tabs?.length) return layout
+ const here = layout.tabs.filter((t) => sameProjectRoot(t.projectRoot, root)).length
+ if (parked.tabs.length <= here) return layout
+ console.warn(
+ `[layout] using parked ${parked.tabs.length} tab(s) for ${root} (active snapshot had ${here})`
+ )
+ return { ...parked, activeProjectRoot: root }
+}
+
+function upsertBankFromLayout(layout: SessionLayout, opts?: SaveLayoutOpts): void {
+ const bank = loadProjectBank()
+ const roots: string[] = []
+ const seen: Record<string, true> = {}
+ const addRoot = (r: string): void => {
+ const k = layoutRootKey(r)
+ if (seen[k]) return
+ seen[k] = true
+ roots.push(r)
+ }
+ for (const t of layout.tabs || []) {
+ if (t?.projectRoot) addRoot(t.projectRoot)
+ }
+ if (layout.activeProjectRoot) addRoot(layout.activeProjectRoot)
+
+ for (const root of roots) {
+ const key = layoutRootKey(root)
+ const slice = sliceLayoutForProject(layout, root)
+ if (!slice?.tabs.length) {
+ if (
+ opts?.allowEmpty &&
+ layout.activeProjectRoot &&
+ sameProjectRoot(root, layout.activeProjectRoot)
+ ) {
+ delete bank.byRoot[key]
+ }
+ continue
+ }
+        const prev = bank.byRoot[key]
+        // Never let a partial persist (project switch, deferred spawn) wipe a
+        // richer parked layout. Only allowEmpty (user closed every tab) shrinks.
+        if (prev && prev.tabs.length > slice.tabs.length && !opts?.allowEmpty) {
+ // Startup partial persist: keep extra parked tabs (resumeToken / command line).
+ const have = new Set(
+ slice.tabs.map((t) => `${t.agentId}\0${t.resumeToken || ''}\0${t.commandLine || ''}`)
+ )
+ const extras = prev.tabs.filter((t) => {
+ const k = `${t.agentId}\0${t.resumeToken || ''}\0${t.commandLine || ''}`
+ if (have.has(k)) return false
+ have.add(k)
+ return true
+ })
+ if (extras.length) {
+ const mergedTabs = [...slice.tabs, ...extras].slice(0, MAX_SAVED_TABS)
+ const preferTree =
+ prev.paneTree && collectTreeIndices(prev.paneTree).length >= mergedTabs.length
+ ? prev.paneTree
+ : slice.paneTree
+ const re = compactTabsToPaneTree(mergedTabs, preferTree)
+ bank.byRoot[key] = {
+ ...slice,
+ tabs: re.tabs,
+ paneTree: re.paneTree || slice.paneTree
+ }
+ continue
+ }
+ }
+ bank.byRoot[key] = slice
+ }
+
+ if (layout.activeProjectRoot) bank.activeProjectRoot = layout.activeProjectRoot
+ saveProjectBank(bank)
+}
+
+/** Last saved layout for a project folder (empty if never persisted). */
+export function loadProjectLayout(projectRoot: string): SessionLayout | null {
+ if (!projectRoot) return null
+ const bank = loadProjectBank()
+ return bank.byRoot[layoutRootKey(projectRoot)] || null
 }

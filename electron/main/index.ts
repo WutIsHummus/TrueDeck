@@ -26,7 +26,12 @@ import {
  prepareResumeSpawn,
  tryDiscoverCodexSessionId,
  discoverCodexSessionId,
- claimGrokSessionId
+ claimGrokSessionId,
+ isOpenCodeSessionId,
+ resumeAgentKind,
+ cliSessionEnv,
+ tryDiscoverOpenCodeSessionId,
+ discoverOpenCodeSessionId
 } from './agent-resume'
 import {
  listProjects,
@@ -60,9 +65,11 @@ import {
  sessionInfoToSavedTab,
  isCommandSessionRunning,
  isAgentSessionRunning,
+ loadProjectLayout,
  type PersistSnapshot
 } from './session-layout'
 import { runFirstRunSeed } from './first-run'
+import { attachProjectSwipe, restoreProjectSwipeOnQuit } from './win-project-swipe'
 import { getMemPalaceStatus, ensureMemPalace, mempalaceMcpSnippet } from './mempalace'
 import {
  loadMemoryProviders,
@@ -387,6 +394,23 @@ function createWindow(): void {
  console.warn(`[renderer console] ${message} (${sourceId}:${line})`)
  }
  })
+
+ // Precision-touchpad three-finger swipe is "browser back/forward" on Windows.
+ mainWindow.on('app-command', (e, cmd) => {
+ if (cmd !== 'browser-backward' && cmd !== 'browser-forward') return
+ e.preventDefault()
+ const win = mainWindow
+ if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
+ win.webContents.send('app:shortcut', {
+ key: cmd === 'browser-forward' ? 'ProjectNext' : 'ProjectPrev',
+ shift: false,
+ alt: false,
+ ctrl: false,
+ repeat: false
+ })
+ })
+ // While focused: keep three-finger swipe in this window (do not Alt+Tab).
+ attachProjectSwipe(mainWindow)
 
  // Terminal font uses Ctrl+/- (see app:shortcut). Never use Chromium page zoom —
  // old Ctrl+- left partition zoom_levels (e.g. localhost: -2.5) and the whole
@@ -1168,9 +1192,7 @@ function registerIpc(): void {
  ...memEnv,
  TRUEDECK_PROJECT: opts.projectRoot
  }
- if (prepared.resumeToken) {
- extraEnv.TRUEDECK_CLI_SESSION = prepared.resumeToken
- }
+ Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.command))
  void maybeWrapAgentFrame
 
  console.log(
@@ -1191,13 +1213,28 @@ function registerIpc(): void {
 
  // Codex session id discovery is background-only — never block palette spawn
  // for up to 5s while scanning ~/.codex.
- const resumeToken = prepared.resumeToken || viaRust.resumeToken
- if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ let resumeToken = prepared.resumeToken || viaRust.resumeToken
+ const spawnKind = resumeAgentKind(agent.id, resolved.command)
+ if (!resumeToken && prepared.needsDiscover && spawnKind === 'codex') {
  void discoverCodexSessionId(opts.projectRoot, notBefore, 5000)
  .then((token) => {
  const found = token || tryDiscoverCodexSessionId(opts.projectRoot, notBefore)
  if (!found) return
  console.log(`[spawn] codex discovered session ${found}`)
+ mainWindow?.webContents.send('pty:spawned', {
+ ...viaRust,
+ resumeToken: found
+ })
+ })
+ .catch(() => {
+ /* ignore */
+ })
+ } else if (!resumeToken && prepared.needsDiscover && spawnKind === 'opencode') {
+ void discoverOpenCodeSessionId(opts.projectRoot, notBefore, 4000)
+ .then((token) => {
+ const found = token || tryDiscoverOpenCodeSessionId(opts.projectRoot, notBefore)
+ if (!found) return
+ console.log(`[spawn] opencode discovered session ${found}`)
  mainWindow?.webContents.send('pty:spawned', {
  ...viaRust,
  resumeToken: found
@@ -1334,6 +1371,9 @@ function registerIpc(): void {
  // focusedGroupTabIndex and save_layout rewrites version:1, which used to
  // strip multi-pane state from session-layout.json.
  ipcMain.handle('sessions:getLayout', async () => loadSessionLayout())
+ ipcMain.handle('sessions:getProjectLayout', async (_e, projectRoot: string) =>
+  loadProjectLayout(String(projectRoot || ''))
+ )
 
  ipcMain.handle('sessions:saveLayout', async (_e, layout: SessionLayout) => {
  return saveSessionLayout(layout)
@@ -1388,13 +1428,226 @@ function registerIpc(): void {
  * long gap — Windows ConPTY dies if we open several agent CLIs at once.
  */
 
+async function spawnSavedTab(
+ tab: SavedSessionTab,
+ claimed: Set<string>,
+ liveAll: SessionInfo[]
+): Promise<SessionInfo | null> {
+ if (!tab?.projectRoot || !existsSync(tab.projectRoot)) return null
+
+ if (tab.kind === 'document' || tab.documentPath) {
+ const docPath = (tab.documentPath || '').trim()
+ if (!docPath || !existsSync(docPath)) return null
+ const name = docPath.replace(/\\/g, '/').split('/').filter(Boolean).pop() || 'File'
+ const info: SessionInfo = {
+ id: `doc-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+ agentId: 'document',
+ agentName: 'Doc',
+ color: tab.color || '#a78bfa',
+ projectRoot: tab.projectRoot,
+ status: 'running',
+ createdAt: Date.now(),
+ title: tab.title || name,
+ kind: 'document',
+ documentPath: docPath,
+ uiMinimized: Boolean(tab.uiMinimized)
+ }
+ mainWindow?.webContents.send('pty:spawned', info)
+ return info
+ }
+
+ if (tab.kind === 'command' || tab.commandLine) {
+ const existing = liveAll.find((s) =>
+ isCommandSessionRunning([s], tab.projectRoot, {
+ command: tab.commandLine,
+ label: tab.agentName,
+ agentId: tab.agentId
+ })
+ )
+ if (existing) {
+ return {
+ ...existing,
+ title: tab.title || existing.title,
+ uiMinimized: Boolean(tab.uiMinimized)
+ }
+ }
+ const info = await rustSpawnCommand({
+ projectRoot: tab.projectRoot,
+ label: tab.agentName || 'cmd',
+ command: tab.commandLine || 'echo restored',
+ color: tab.color
+ })
+ const cmdInfo: SessionInfo = {
+ ...info,
+ title: tab.title || info.title,
+ uiMinimized: Boolean(tab.uiMinimized)
+ }
+ mainWindow?.webContents.send('pty:spawned', cmdInfo)
+ return cmdInfo
+ }
+
+ const agents = loadAgents()
+ const agent = agents.find((a) => a.id === tab.agentId)
+ if (!agent) return null
+
+ const savedTokenEarly = (tab.resumeToken || '').trim()
+ if (savedTokenEarly) {
+ const reuse = liveAll.find(
+ (s) =>
+ s.status === 'running' &&
+ sameRootPath(s.projectRoot, tab.projectRoot) &&
+ (s.resumeToken || '').trim() === savedTokenEarly
+ )
+ if (reuse) {
+ return {
+ ...reuse,
+ title: tab.title || reuse.title,
+ resumeToken: savedTokenEarly || reuse.resumeToken,
+ uiMinimized: Boolean(tab.uiMinimized)
+ }
+ }
+ }
+
+ const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
+ if (!resolved.available) return null
+
+ const kind = resumeAgentKind(agent.id, resolved.command)
+ let resumeToken: string | null = savedTokenEarly || null
+ if (kind === 'opencode' && resumeToken && !isOpenCodeSessionId(resumeToken)) {
+ resumeToken = null
+ }
+ if (!resumeToken && kind === 'grok') {
+ resumeToken = claimGrokSessionId(tab.projectRoot, claimed)
+ }
+ if (resumeToken) claimed.add(resumeToken)
+
+ let spawnArgs = resolved.args || []
+ let needsDiscover = false
+ const notBefore = Date.now() - 500
+ if (resumeToken) {
+ const resumed = prepareResumeSpawn(
+ agent.id,
+ resolved.args || [],
+ resumeToken,
+ resolved.command
+ )
+ if (resumed) {
+ spawnArgs = resumed
+ } else {
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ tab.projectRoot,
+ resolved.command
+ )
+ spawnArgs = prepared.args
+ resumeToken = prepared.resumeToken
+ needsDiscover = prepared.needsDiscover
+ if (resumeToken) claimed.add(resumeToken)
+ }
+ } else {
+ const prepared = prepareNewSessionSpawn(
+ agent.id,
+ resolved.args || [],
+ tab.projectRoot,
+ resolved.command
+ )
+ spawnArgs = prepared.args
+ resumeToken = prepared.resumeToken
+ needsDiscover = prepared.needsDiscover
+ if (resumeToken) claimed.add(resumeToken)
+ }
+
+ const { env } = onAgentSpawnFast(tab.projectRoot)
+ const info = await rustSpawnAgent({
+ projectRoot: tab.projectRoot,
+ agentId: agent.id,
+ command: resolved.command,
+ args: spawnArgs,
+ agentName: agent.name,
+ color: agent.color,
+ env: {
+ ...env,
+ ...cliSessionEnv(agent.id, resumeToken, resolved.command)
+ }
+ })
+
+ if (!resumeToken && needsDiscover) {
+ if (kind === 'codex') {
+ resumeToken =
+ (await discoverCodexSessionId(tab.projectRoot, notBefore, 800)) ||
+ tryDiscoverCodexSessionId(tab.projectRoot, notBefore)
+ } else if (kind === 'opencode') {
+ resumeToken =
+ (await discoverOpenCodeSessionId(tab.projectRoot, notBefore, 1200)) ||
+ tryDiscoverOpenCodeSessionId(tab.projectRoot, notBefore)
+ }
+ if (resumeToken) claimed.add(resumeToken)
+ }
+
+ const withTitle: SessionInfo = {
+ ...info,
+ title: tab.title || info.title,
+ resumeToken: resumeToken || info.resumeToken,
+ uiMinimized: Boolean(tab.uiMinimized)
+ }
+ mainWindow?.webContents.send('pty:spawned', withTitle)
+ return withTitle
+}
+
+async function ensureOnOpenCommands(
+ projectRoot: string,
+ liveHere: SessionInfo[]
+): Promise<SessionInfo[]> {
+ const project =
+ getProject(projectRoot) ||
+ listProjects().find((p) => sameRootPath(p.root, projectRoot))
+ if (!project) return []
+ const launched: SessionInfo[] = []
+ for (const cmd of project.onOpenCommands || []) {
+ if (!cmd.enabled) continue
+ if (
+ isCommandSessionRunning(liveHere, project.root, {
+ command: cmd.command,
+ label: cmd.label
+ })
+ ) {
+ continue
+ }
+ try {
+ const info = await rustSpawnCommand({
+ projectRoot: project.root,
+ label: cmd.label,
+ command: cmd.command,
+ color: '#3b82f6'
+ })
+ mainWindow?.webContents.send('pty:spawned', info)
+ launched.push(info)
+ liveHere.push(info)
+ console.log(`[open] on-open "${cmd.label}" → ${cmd.command}`)
+ } catch (e) {
+ console.warn(`[open] on-open "${cmd.label}" failed`, e)
+ }
+ }
+ return launched
+}
+
 /** Map saved tabs → live sessions (by resumeToken) and push full paneTree to UI. */
-async function rehydratePaneTreeFromLayout(fullLayout: SessionLayout): Promise<void> {
-  const live = (await listLiveSessions()).filter((s) => s.status === 'running')
+async function rehydratePaneTreeFromLayout(
+  fullLayout: SessionLayout,
+  opts?: { projectRoot?: string }
+): Promise<void> {
+  const scope = opts?.projectRoot
+  const live = (await listLiveSessions()).filter((s) => {
+    if (s.status !== 'running') return false
+    if (scope && !sameRootPath(s.projectRoot, scope)) return false
+    return true
+  })
   if (!live.length || !fullLayout.tabs?.length) return
   const used = new Set<string>()
   const sessionIds: string[] = []
   for (const t of fullLayout.tabs) {
+    if (scope && t.projectRoot && !sameRootPath(t.projectRoot, scope)) continue
     const tok = (t.resumeToken || '').trim()
     let match =
       (tok &&
@@ -1430,7 +1683,7 @@ async function rehydratePaneTreeFromLayout(fullLayout: SessionLayout): Promise<v
     sessionIds,
     paneTree: fullLayout.paneTree,
     focusedGroupTabIndex: fullLayout.focusedGroupTabIndex,
-    activeProjectRoot: fullLayout.activeProjectRoot
+    activeProjectRoot: scope || fullLayout.activeProjectRoot
   })
   console.log(
     `[layout] rehydrate sent ${sessionIds.length} session(s), tree=${fullLayout.paneTree?.type || 'none'}`
@@ -1458,93 +1711,13 @@ function scheduleDeferredRestore(
     }
     const { tab, ti } = item
     try {
-      if (tab.kind === 'document' || tab.documentPath) {
-        /* documents already cheap — skip in deferred for now */
-        setTimeout(() => void runNext(), gap)
-        return
-      }
-      if (tab.kind === 'command' || tab.commandLine) {
-        const info = await rustSpawnCommand({
-          projectRoot: tab.projectRoot,
-          label: tab.agentName || 'cmd',
-          command: tab.commandLine || 'echo restored',
-          color: tab.color
-        })
-        const cmdInfo = {
-          ...info,
-          title: tab.title || info.title,
-          uiMinimized: Boolean(tab.uiMinimized)
-        }
-        mainWindow?.webContents.send('pty:spawned', cmdInfo)
-        console.log(`[layout] deferred command tab ${ti} ${tab.agentName}`)
-        setTimeout(() => void runNext(), gap)
-        return
-      }
-      const agents = loadAgents()
-      const agent = agents.find((a) => a.id === tab.agentId)
-      if (!agent) {
-        setTimeout(() => void runNext(), gap)
-        return
-      }
-      const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
-      if (!resolved.available) {
-        setTimeout(() => void runNext(), gap)
-        return
-      }
-      let resumeToken: string | null = (tab.resumeToken || '').trim() || null
-      if (!resumeToken && agent.id === 'grok') {
-        resumeToken = claimGrokSessionId(tab.projectRoot, claimed)
-      }
-      if (resumeToken) claimed.add(resumeToken)
-      let spawnArgs = resolved.args || []
-      if (resumeToken) {
-        const resumed = prepareResumeSpawn(agent.id, resolved.args || [], resumeToken)
-        if (resumed) spawnArgs = resumed
-        else {
-          const prepared = prepareNewSessionSpawn(
-            agent.id,
-            resolved.args || [],
-            tab.projectRoot,
-            resolved.command
-          )
-          spawnArgs = prepared.args
-          resumeToken = prepared.resumeToken
-          if (resumeToken) claimed.add(resumeToken)
-        }
-      } else {
-        const prepared = prepareNewSessionSpawn(
-          agent.id,
-          resolved.args || [],
-          tab.projectRoot,
-          resolved.command
+      const live = await listLiveSessions()
+      const info = await spawnSavedTab(tab, claimed, live)
+      if (info) {
+        console.log(
+          `[layout] deferred ${info.agentId} tab ${ti} resume=${info.resumeToken || 'new'}`
         )
-        spawnArgs = prepared.args
-        resumeToken = prepared.resumeToken
-        if (resumeToken) claimed.add(resumeToken)
       }
-      const { env } = onAgentSpawnFast(tab.projectRoot)
-      const info = await rustSpawnAgent({
-        projectRoot: tab.projectRoot,
-        agentId: agent.id,
-        command: resolved.command,
-        args: spawnArgs,
-        agentName: agent.name,
-        color: agent.color,
-        env: {
-          ...env,
-          ...(resumeToken ? { TRUEDECK_CLI_SESSION: resumeToken } : {})
-        }
-      })
-      const withTitle = {
-        ...info,
-        title: tab.title || info.title,
-        resumeToken: resumeToken || info.resumeToken,
-        uiMinimized: Boolean(tab.uiMinimized)
-      }
-      mainWindow?.webContents.send('pty:spawned', withTitle)
-      console.log(
-        `[layout] deferred ${agent.id} tab ${ti} resume=${resumeToken || 'new'}`
-      )
     } catch (e) {
       console.warn('[layout] deferred skip tab', ti, tab.agentId, e)
     }
@@ -1752,9 +1925,13 @@ function scheduleDeferredRestore(
         const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
         if (!resolved.available) continue
 
+        const restoreKind = resumeAgentKind(agent.id, resolved.command)
         let resumeToken: string | null = savedTokenEarly || null
+        if (restoreKind === 'opencode' && resumeToken && !isOpenCodeSessionId(resumeToken)) {
+          resumeToken = null
+        }
         // Tabs without a token: claim a distinct Grok chat on disk for this project.
-        if (!resumeToken && agent.id === 'grok') {
+        if (!resumeToken && restoreKind === 'grok') {
           resumeToken = claimGrokSessionId(tab.projectRoot, claimedResumeTokens)
           if (resumeToken) {
             console.log(
@@ -1769,7 +1946,12 @@ function scheduleDeferredRestore(
         const notBefore = Date.now() - 500
 
         if (resumeToken) {
-          const resumed = prepareResumeSpawn(agent.id, resolved.args || [], resumeToken)
+          const resumed = prepareResumeSpawn(
+            agent.id,
+            resolved.args || [],
+            resumeToken,
+            resolved.command
+          )
           if (resumed) {
             spawnArgs = resumed
             console.log(
@@ -1812,14 +1994,19 @@ function scheduleDeferredRestore(
           color: agent.color,
           env: {
             ...env,
-            ...(resumeToken ? { TRUEDECK_CLI_SESSION: resumeToken } : {})
+            ...cliSessionEnv(agent.id, resumeToken, resolved.command)
           }
         })
 
-        if (!resumeToken && needsDiscover && agent.id === 'codex') {
+        if (!resumeToken && needsDiscover && restoreKind === 'codex') {
           resumeToken =
             (await discoverCodexSessionId(tab.projectRoot, notBefore, 800)) ||
             tryDiscoverCodexSessionId(tab.projectRoot, notBefore)
+          if (resumeToken) claimedResumeTokens.add(resumeToken)
+        } else if (!resumeToken && needsDiscover && restoreKind === 'opencode') {
+          resumeToken =
+            (await discoverOpenCodeSessionId(tab.projectRoot, notBefore, 1200)) ||
+            tryDiscoverOpenCodeSessionId(tab.projectRoot, notBefore)
           if (resumeToken) claimedResumeTokens.add(resumeToken)
         }
 
@@ -1837,6 +2024,22 @@ function scheduleDeferredRestore(
  }
  // Yield between ConPTY creates
  await new Promise((r) => setTimeout(r, RESTORE_SPAWN_GAP_MS))
+ }
+
+ // App launch used to skip on-open (Rojo, etc.) — those only ran from the
+ // Projects tab. Run them now if restore did not already spawn a match.
+ if (activeRoot) {
+ try {
+ const extra = await ensureOnOpenCommands(activeRoot, [
+ ...sessions,
+ ...backendLive
+ ])
+ for (const info of extra) {
+ if (!sessions.some((s) => s.id === info.id)) sessions.push(info)
+ }
+ } catch (e) {
+ console.warn('[layout] on-open after restore failed', e)
+ }
  }
 
  for (const root of rootsWarmed) {
@@ -1958,34 +2161,39 @@ function scheduleDeferredRestore(
 
  const launched: string[] = []
  const reused: string[] = []
- for (const cmd of project.onOpenCommands || []) {
- if (!cmd.enabled) continue
- if (
- isCommandSessionRunning(liveHere, project.root, {
- command: cmd.command,
- label: cmd.label
- })
- ) {
- const existing = liveHere.find((s) =>
- isCommandSessionRunning([s], project.root, {
- command: cmd.command,
- label: cmd.label
- })
- )
- if (existing) reused.push(existing.id)
- console.log(`[openProject] skip on-open "${cmd.label}" - already running`)
+ const onOpenLaunched = await ensureOnOpenCommands(project.root, liveHere)
+ for (const info of onOpenLaunched) launched.push(info.id)
+
+ // Re-open from the projects list should bring back this folder's parked
+ // agent tabs (app launch only restores the last active project).
+ const parked = loadProjectLayout(project.root)
+ if (parked?.tabs?.length) {
+ const claimed = new Set<string>()
+ for (const t of parked.tabs) {
+ const tok = (t.resumeToken || '').trim()
+ if (tok) claimed.add(tok)
+ }
+ for (const tab of parked.tabs) {
+ if (launched.length + liveHere.length >= MAX_RESTORE_TABS) break
+ try {
+ const info = await spawnSavedTab(tab, claimed, liveHere)
+ if (!info) continue
+ const already = liveHere.find((s) => s.id === info.id)
+ if (already) {
+ if (!reused.includes(info.id) && !launched.includes(info.id)) {
+ reused.push(info.id)
+ }
  continue
  }
- const info = await rustSpawnCommand({
- projectRoot: project.root,
- label: cmd.label,
- command: cmd.command,
- color: '#3b82f6'
- })
- mainWindow?.webContents.send('pty:spawned', info)
  launched.push(info.id)
  liveHere.push(info)
+ } catch (e) {
+ console.warn('[openProject] parked tab skip', tab.agentId, e)
  }
+ await new Promise((r) => setTimeout(r, RESTORE_SPAWN_GAP_MS))
+ }
+ }
+
  const agents = loadAgents()
  const { env } = onAgentSpawnFast(project.root)
  for (const agentId of project.defaultAgents || []) {
@@ -2017,14 +2225,19 @@ function scheduleDeferredRestore(
  color: agent.color,
  env: {
  ...env,
- ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
+ ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command)
  }
  })
  let resumeToken = prepared.resumeToken
- if (!resumeToken && prepared.needsDiscover && agent.id === 'codex') {
+ const kind = resumeAgentKind(agent.id, resolved.command)
+ if (!resumeToken && prepared.needsDiscover && kind === 'codex') {
  resumeToken =
  (await discoverCodexSessionId(project.root, notBefore, 4000)) ||
  tryDiscoverCodexSessionId(project.root, notBefore)
+ } else if (!resumeToken && prepared.needsDiscover && kind === 'opencode') {
+ resumeToken =
+ (await discoverOpenCodeSessionId(project.root, notBefore, 2500)) ||
+ tryDiscoverOpenCodeSessionId(project.root, notBefore)
  }
  const withToken: SessionInfo = {
  ...info,
@@ -2035,7 +2248,21 @@ function scheduleDeferredRestore(
  liveHere.push(withToken)
  }
  // sessionIds = newly launched only; reused are already in the UI store
- return { project, sessionIds: launched, reusedSessionIds: reused, memory: mem }
+ const parkedNow = loadProjectLayout(project.root)
+ if (parkedNow?.tabs?.length) {
+ try {
+ await rehydratePaneTreeFromLayout(parkedNow, { projectRoot: project.root })
+ } catch (e) {
+ console.warn('[openProject] rehydrate failed', e)
+ }
+ }
+ return {
+ project,
+ sessionIds: launched,
+ reusedSessionIds: reused,
+ memory: mem,
+ parkedLayout: parkedNow
+ }
  })
 
  ipcMain.handle('memory:status', (_e, projectRoot?: string) => getRuntimeStatus(projectRoot))
@@ -2260,6 +2487,11 @@ app.whenReady().then(() => {
  // Always register quit cleanup immediately (never nest inside deferred setTimeout)
  let stopDeckWorker: (() => void) | null = null
  const cleanupOnQuit = (): void => {
+ try {
+ restoreProjectSwipeOnQuit()
+ } catch {
+ /* ignore */
+ }
  try {
  stopDeckWorker?.()
  } catch {

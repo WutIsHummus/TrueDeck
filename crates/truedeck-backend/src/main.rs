@@ -447,14 +447,25 @@ fn spawn_agent(sessions: &SessionManager, p: SpawnParams) -> Result<Value, Strin
         created_at: now_ms(),
         title: agent.name.clone(),
         exit_code: None,
-        kind: p.kind.or_else(|| {
+        kind: p.kind.clone().or_else(|| {
             if agent.id.starts_with("cmd-") {
                 Some("command".into())
             } else {
                 Some("agent".into())
             }
         }),
-        command_line: p.command_line.or(agent.description),
+        command_line: {
+            let kind = p.kind.as_deref().unwrap_or(if agent.id.starts_with("cmd-") {
+                "command"
+            } else {
+                "agent"
+            });
+            if kind == "command" {
+                p.command_line.clone()
+            } else {
+                None
+            }
+        },
     };
 
     let cols = p.cols.unwrap_or(120).max(40);

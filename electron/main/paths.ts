@@ -26,6 +26,11 @@ export function getSessionLayoutPath(): string {
   return join(getGlobalDataDir(), 'session-layout.json')
 }
 
+/** Per-project tab/pane snapshots so switching folders does not wipe the others. */
+export function getProjectLayoutsPath(): string {
+  return join(getGlobalDataDir(), 'session-layouts.json')
+}
+
 export function getRepoMemoryDir(projectRoot: string): string {
   return join(projectRoot, '.memory')
 }

@@ -228,14 +228,26 @@ export function TerminalPane({
  * clear and repaint (visible flicker). Reserve for mount / first bytes / blank.
  */
  const lastKickAtRef = useRef(0)
- const isCursorAgent = (): boolean => {
+ const sessionAgentIdEarly = (): string => {
  try {
  return (
  useDeck.getState().sessions.find((s) => s.id === sessionId)?.agentId || ''
- ).toLowerCase() === 'cursor'
+ ).toLowerCase()
  } catch {
- return false
+ return ''
  }
+ }
+ const isCursorAgent = (): boolean => sessionAgentIdEarly() === 'cursor'
+ /** CLIs that often paint blank on ConPTY until WINCH/focus. */
+ const isLaunchKickAgent = (): boolean => {
+ const id = sessionAgentIdEarly()
+ return (
+ id === 'cursor' ||
+ id === 'opencode' ||
+ id === 'custom-opencode' ||
+ id.includes('opencode') ||
+ id === 'kiro'
+ )
  }
  const kickAgentTui = (reason: 'mount' | 'first-byte' | 'blank' | 'manual' = 'manual'): void => {
  const term = termRef.current
@@ -245,9 +257,9 @@ export function TerminalPane({
  // Host still collapsing (connecting overlay / split) - wait for a real box
  if (host && (host.clientWidth < 8 || host.clientHeight < 8)) return
  const now = Date.now()
- const cursor = isCursorAgent()
+ const cursor = isLaunchKickAgent()
  // Tab switches used to re-kick every time → Grok flicker. Cooldown unless blank.
- // Cursor: shorter cooldown — it often needs repeated WINCH to first paint.
+ // Cursor/OpenCode: shorter cooldown — they often need repeated WINCH to first paint.
  const cooldown = cursor ? 400 : 2500
  if (
  reason !== 'blank' &&
@@ -538,7 +550,7 @@ export function TerminalPane({
  fitRef.current = fit
  // Immediate fit + staged WINCH kicks only on mount (Cursor Agent is slow on ConPTY).
  // Later tab switches use soft fit/refresh only — see visible/focused effects.
- const cursorLaunch = isCursorAgent()
+ const cursorLaunch = isLaunchKickAgent()
  requestAnimationFrame(() => {
  fitAndResize(true)
  forceRefresh()
@@ -1154,17 +1166,50 @@ export function TerminalPane({
  let idleRefreshTimer: number | null = null
  let writing = false
 
+ const sessAtMount = (() => {
+ try {
+ return useDeck.getState().sessions.find((s) => s.id === sessionId)
+ } catch {
+ return undefined
+ }
+ })()
+ // Cursor --resume dumps the whole transcript to the normal buffer. Painting
+ // every chunk makes the pane auto-scroll through history for a long time.
+ let resumeHold =
+ isCursorAgent() && Boolean(sessAtMount?.resumeToken)
+ const resumeHoldDeadline = resumeHold ? Date.now() + 2800 : 0
+ let resumeHoldTimer: number | null = null
+
  const flushWrites = (): void => {
  rafId = null
  if (!writeBuf) return
+ if (resumeHold && Date.now() < resumeHoldDeadline) {
+ if (resumeHoldTimer != null) window.clearTimeout(resumeHoldTimer)
+ resumeHoldTimer = window.setTimeout(() => {
+ resumeHoldTimer = null
+ resumeHold = false
+ if (rafId == null) rafId = requestAnimationFrame(flushWrites)
+ }, 140)
+ return
+ }
+ const wasHolding = resumeHold
+ resumeHold = false
  const chunk = writeBuf
  writeBuf = ''
  writing = true
  term.write(chunk, () => {
  writing = false
- // Normal buffer only — alt-screen scrollToBottom causes Codex stream jitter
- if (!isStreamingTui()) scrollLiveIfFollowing()
- // If more arrived while the parser was busy, schedule another flush
+ if (wasHolding) {
+ setAwaitingOutput(false)
+ try {
+ term.scrollToBottom()
+ } catch {
+ /* ignore */
+ }
+ forceRefresh()
+ } else if (!isStreamingTui()) {
+ scrollLiveIfFollowing()
+ }
  if (writeBuf && rafId == null) {
  rafId = requestAnimationFrame(flushWrites)
  }
@@ -1188,12 +1233,12 @@ export function TerminalPane({
  const offPty = window.truedeck.onPtyData(({ id, data }) => {
  if (id !== sessionId) return
  if (data) {
- setAwaitingOutput(false)
+ if (!resumeHold) setAwaitingOutput(false)
  // First paint: Grok/Cursor alt-screen often lands before canvas has size
  scheduleIdleRefresh()
  if (!firstByteKicked) {
  firstByteKicked = true
- const cursor = isCursorAgent()
+ const cursor = isLaunchKickAgent()
  // Post-first-byte WINCH - Cursor TUI frequently stays blank until this
  window.setTimeout(() => {
  fitAndResize(true)
@@ -1238,6 +1283,7 @@ export function TerminalPane({
  // Quiet CLI (shell / Cursor before first paint): drop awaiting flag soon and
  // kick once — no full-pane loading UI.
  const connectTimeout = window.setTimeout(() => {
+ if (resumeHold) return
  setAwaitingOutput(false)
  fitAndResize(true)
  kickAgentTui('blank')
@@ -1247,7 +1293,7 @@ export function TerminalPane({
  } catch {
  /* ignore */
  }
- if (isCursorAgent()) {
+ if (isLaunchKickAgent()) {
  ;[200, 600, 1400].forEach((ms) => {
  window.setTimeout(() => {
  if (!termRef.current) return
@@ -1261,7 +1307,7 @@ export function TerminalPane({
  }, ms)
  })
  }
- }, isCursorAgent() ? 900 : 1200)
+ }, isLaunchKickAgent() ? 900 : 1200)
 
  /**
  * Wheel / scroll for agent TUIs (Grok Build model):
@@ -1553,10 +1599,25 @@ export function TerminalPane({
  }
  window.addEventListener('focus', onWinFocus)
  document.addEventListener('visibilitychange', onDocVis)
+ const onTerminalsSettle = (): void => {
+ if (closingRef.current || !termRef.current) return
+ lastSizeRef.current = { cols: 0, rows: 0 }
+ fitAndResize(true)
+ kickAgentTui('blank')
+ forceRefresh()
+ try {
+ termRef.current?.focus()
+ } catch {
+ /* ignore */
+ }
+ }
+ window.addEventListener('truedeck:terminals-settle', onTerminalsSettle)
 
  return () => {
  window.clearTimeout(t1)
  window.clearTimeout(t2)
+ window.removeEventListener('truedeck:terminals-settle', onTerminalsSettle)
+ if (resumeHoldTimer != null) window.clearTimeout(resumeHoldTimer)
  if (resizeTimer != null) window.clearTimeout(resizeTimer)
  if (idleRefreshTimer != null) window.clearTimeout(idleRefreshTimer)
  if (tuiOwnerFitTimer != null) window.clearTimeout(tuiOwnerFitTimer)

@@ -110,7 +110,7 @@ See [Configuration](/configuration).
 
 ## Session restore
 
-On quit, TrueDeck saves `session-layout.json` (tabs, multi-pane tree, active project). On next launch it respawns those PTYs (max 16 tabs).
+On quit, TrueDeck saves the last-active layout to `session-layout.json` and a per-project bank to `session-layouts.json`. Launch restores the last folder (plus its on-open commands, e.g. Rojo). Opening another project restores that folder's parked tabs.
 
 ## Memory (automatic)
 

@@ -22,6 +22,42 @@ Common TrueDeck issues and fixes. Version target: **0.3.x**.
 
 See [Agents](./agents.md).
 
+## OpenCode: `Error: Invalid session ID: unknown error`
+
+**Symptom:** Launching **OpenCode** from the TrueDeck palette (or restoring an OpenCode tab) immediately prints `Error: Invalid session ID: unknown error` and the TUI never starts. A custom **OpenCode (direct)** preset may still work.
+
+**Cause:** OpenCode `--session` continues an existing conversation whose id looks like `ses_fd3b42…`. Older TrueDeck builds passed a random UUID on new tabs (`opencode --session <uuid>`), which OpenCode rejects. The "direct" preset skipped that bind.
+
+**Fix:** Use a TrueDeck build that starts OpenCode unbound and only passes `--session` for a real `ses_*` id. Builtin OpenCode and OpenCode (direct) then behave the same. Close the failed tab and launch OpenCode again (**Ctrl+T**). Stale UUID `resumeToken`s on saved tabs are ignored and a new session is opened.
+
+Workaround on an unfixed build: in Settings → Agents, clear extra args on the OpenCode preset so it is just `opencode` with no `--session`, or use the OpenCode (direct) custom CLI.
+
+## Sessions missing after switching projects
+
+**Symptom:** Agent tabs from project A disappear after you work in project B (or after quit from B).
+
+**Cause:** A single `session-layout.json` used to be overwritten with only the active folder. App launch then restored B and dropped A's parked conversations.
+
+**Fix:** Current builds keep `session-layouts.json` (one snapshot per project root). Switching projects updates that folder's slot only. Opening a project from the list restores its parked tabs. Quit from any folder still leaves the others on disk.
+
+## On-open (Rojo) only runs from the Projects tab
+
+**Symptom:** `rojo serve` (or other on-open commands) start when you reopen the project from the list, but not when TrueDeck launches into that same project.
+
+**Cause:** App launch restored saved tabs and skipped on-open. Launch restore now runs the last project's enabled on-open commands if they are not already live.
+
+## CLI looks blank until you refresh
+
+**Symptom:** After launch, project switch, or resume, an agent TUI stays black / half-drawn until you click, resize, or press Ctrl+L.
+
+**Cause:** Windows ConPTY often paints before xterm has a real size. TrueDeck now sends a delayed fit + WINCH after restore, after opening a project, and for Cursor/OpenCode/Kiro first paint. If a pane is still blank, click it or press **Ctrl+L** once.
+
+## Cursor resume scrolls through the whole chat
+
+**Symptom:** Resuming a Cursor Agent tab auto-scrolls through transcript history for a long time before you can type.
+
+**Cause:** `cursor-agent --resume` dumps the conversation into the terminal. TrueDeck now holds that dump off-screen for a moment, then paints the live prompt (no history marquee). The conversation is still in context; only the visual replay is skipped.
+
 ## Agent CLI not found
 
 **Symptom:** `CLI not found (…); Install with: …`

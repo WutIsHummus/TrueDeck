@@ -53,7 +53,8 @@ Edit via **Settings** UI when possible. Invalid JSON falls back to defaults merg
 |------|---------|
 | `projects.json` | Project list, on-open commands, default agents |
 | `agents.json` | Agent presets (merged with built-ins) |
-| `session-layout.json` | Saved tabs + pane tree |
+| `session-layout.json` | Last-active project tabs + pane tree (app launch restore) |
+| `session-layouts.json` | Per-project tab/pane snapshots so switching folders does not wipe the others |
 | `tasks.json` | Board tasks |
 | `mcp-servers.json` | User-managed MCP servers |
 | `memory-providers.json` | Memory backend list (may live here; see memory docs) |

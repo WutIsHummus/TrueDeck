@@ -4,7 +4,7 @@
  * Changes are written to TrueDeck's store and synced to Cursor / Claude /
  * Grok / Codex / Gemini / project .mcp.json files.
  *
- * stdio JSON-RPC (Content-Length framed), MCP protocol subset.
+ * stdio JSON-RPC (newline-delimited JSON; also accepts Content-Length input).
  */
 import {
   existsSync,
@@ -1414,13 +1414,12 @@ function callTool(name, args = {}) {
   }
 }
 
-// ── MCP stdio (Content-Length framing) ──────────────────────────────────────
+// ── MCP stdio (NDJSON; Content-Length input still accepted) ─────────────────
+// Official MCP stdio is one JSON object per line. Grok/Claude/Cursor time out
+// if we speak LSP Content-Length framing on stdout.
 
 function send(msg) {
-  const body = JSON.stringify(msg)
-  const buf = Buffer.from(body, 'utf8')
-  process.stdout.write(`Content-Length: ${buf.length}\r\n\r\n`)
-  process.stdout.write(buf)
+  process.stdout.write(JSON.stringify(msg) + '\n')
 }
 
 function handleMessage(msg) {
