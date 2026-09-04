@@ -78,7 +78,7 @@ function walkMarkdown(root: string, base = root): MemoryNote[] {
     const full = join(root, name)
     const st = statSync(full)
     if (st.isDirectory()) {
-      if (name === 'node_modules' || name === '.git') continue
+      if (name === 'node_modules' || name === '.git' || name === '.agent-bus') continue
       out.push(...walkMarkdown(full, base))
     } else if (name.endsWith('.md')) {
       const content = readFileSync(full, 'utf8')

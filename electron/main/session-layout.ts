@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs'
 import { dirname } from 'path'
 import type {
+ ProjectWorkspaceLayout,
  SavedPaneNode,
  SavedSessionTab,
  SessionInfo,
@@ -8,11 +9,13 @@ import type {
 } from '../shared/types'
 import { getSessionLayoutPath } from './paths'
 
-/** Hard cap - never restore/persist more than this many tabs (prevents CLI storms). */
-export const MAX_SAVED_TABS = 16
+/** Hard cap across every project (prevents CLI storms on restore). */
+export const MAX_SAVED_TABS = 48
+/** Soft cap inside one folder. */
+export const MAX_SAVED_TABS_PER_PROJECT = 16
 
 const EMPTY: SessionLayout = {
- version: 2,
+ version: 3,
  activeProjectRoot: null,
  activeIndex: 0,
  splitIndex: null,
@@ -20,6 +23,7 @@ const EMPTY: SessionLayout = {
  tabs: [],
  paneTree: null,
  focusedGroupTabIndex: null,
+ workspaces: {},
  savedAt: 0
 }
 
@@ -196,12 +200,115 @@ export function compactTabsToPaneTree(
  }
 }
 
+function tabKey(t: SavedSessionTab): string {
+ const tok = (t.resumeToken || '').trim()
+ if (tok) return `tok:${tok}`
+ return `${t.projectRoot}\0${t.agentId}\0${t.commandLine || ''}\0${t.documentPath || ''}\0${t.title || ''}`
+}
+
+/**
+ * compactTabsToPaneTree drops anything the *active* tree does not reference.
+ * Multi-project switch keeps those PTYs alive, so re-append other folders'
+ * tabs (capped) after the active compact.
+ */
+export function compactTabsKeepingOtherProjects(
+ tabs: SavedSessionTab[],
+ tree: SavedPaneNode | null | undefined,
+ activeProjectRoot: string | null | undefined
+): {
+ tabs: SavedSessionTab[]
+ paneTree: SavedPaneNode | null
+ indexMap: Map<number, number>
+} {
+ const compact = compactTabsToPaneTree(tabs, tree)
+ if (!activeProjectRoot || !tabs.length) return compact
+ const have = new Set(compact.tabs.map(tabKey))
+ const extras: SavedSessionTab[] = []
+ const extraOldIndex: number[] = []
+ tabs.forEach((t, i) => {
+ if (!t?.projectRoot || !t.agentId) return
+ if (sameProjectRoot(t.projectRoot, activeProjectRoot)) return
+ const k = tabKey(t)
+ if (have.has(k)) return
+ have.add(k)
+ extras.push(t)
+ extraOldIndex.push(i)
+ })
+ if (!extras.length) return compact
+ const perProject = new Map<string, number>()
+ const keptExtras: SavedSessionTab[] = []
+ const keptOld: number[] = []
+ for (let i = 0; i < extras.length; i++) {
+ const t = extras[i]
+ const root = t.projectRoot.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase()
+ const n = perProject.get(root) || 0
+ if (n >= MAX_SAVED_TABS_PER_PROJECT) continue
+ if (compact.tabs.length + keptExtras.length >= MAX_SAVED_TABS) break
+ perProject.set(root, n + 1)
+ keptExtras.push(t)
+ keptOld.push(extraOldIndex[i])
+ }
+ if (!keptExtras.length) return compact
+ const indexMap = new Map(compact.indexMap)
+ keptOld.forEach((old, j) => indexMap.set(old, compact.tabs.length + j))
+ return {
+ tabs: [...compact.tabs, ...keptExtras],
+ paneTree: compact.paneTree,
+ indexMap
+ }
+}
+
+function sanitizeWorkspaces(
+ raw: SessionLayout['workspaces'] | undefined,
+ tabs: SavedSessionTab[],
+ indexMap?: Map<number, number>
+): Record<string, ProjectWorkspaceLayout> {
+ const out: Record<string, ProjectWorkspaceLayout> = {}
+ if (!raw || typeof raw !== 'object') return out
+ for (const [key, ws] of Object.entries(raw)) {
+ if (!key || !ws || typeof ws !== 'object') continue
+ const tree = sanitizePaneTree(ws.paneTree)
+ const tabIndices = Array.isArray(ws.tabIndices)
+ ? ws.tabIndices
+ .map((i) => (indexMap && indexMap.has(i) ? indexMap.get(i)! : i))
+ .filter((i) => typeof i === 'number' && i >= 0 && i < tabs.length)
+ : tabs
+ .map((t, i) =>
+ t.projectRoot.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase() ===
+ key.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase()
+ ? i
+ : -1
+ )
+ .filter((i) => i >= 0)
+ if (!tree && !tabIndices.length) continue
+ out[key.replace(/\//g, '\\').replace(/[\\/]+$/, '').toLowerCase()] = {
+ paneTree: tree,
+ tabIndices,
+ activeIndex:
+ typeof ws.activeIndex === 'number'
+ ? Math.min(ws.activeIndex, Math.max(0, tabs.length - 1))
+ : undefined,
+ splitRatio:
+ typeof ws.splitRatio === 'number' && ws.splitRatio > 0 && ws.splitRatio < 1
+ ? ws.splitRatio
+ : 0.5,
+ focusedGroupTabIndex:
+ typeof ws.focusedGroupTabIndex === 'number' ? ws.focusedGroupTabIndex : null
+ }
+ }
+ return out
+}
+
 export function loadSessionLayout(): SessionLayout {
  try {
  const p = getSessionLayoutPath()
  if (!existsSync(p)) return { ...EMPTY }
  const raw = JSON.parse(readFileSync(p, 'utf8')) as Partial<SessionLayout>
- if (!raw || (raw.version !== 1 && raw.version !== 2) || !Array.isArray(raw.tabs)) {
+ if (
+ !raw ||
+ (raw.version !== 1 && raw.version !== 2 && raw.version !== 3) ||
+ !Array.isArray(raw.tabs)
+ ) {
  return { ...EMPTY }
  }
  const tabs = clampTabs(
@@ -226,7 +333,11 @@ export function loadSessionLayout(): SessionLayout {
  }))
  )
  const paneTree = sanitizePaneTree(raw.paneTree)
- const compact = compactTabsToPaneTree(tabs, paneTree)
+ const compact = compactTabsKeepingOtherProjects(
+ tabs,
+ paneTree,
+ raw.activeProjectRoot ?? null
+ )
  const activeRaw = typeof raw.activeIndex === 'number' ? raw.activeIndex : 0
  const focusRaw =
  typeof raw.focusedGroupTabIndex === 'number' ? raw.focusedGroupTabIndex : null
@@ -236,7 +347,7 @@ export function loadSessionLayout(): SessionLayout {
  const focusedGroupTabIndex =
  focusRaw != null ? (compact.indexMap.get(focusRaw) ?? null) : null
  const fixed: SessionLayout = {
- version: 2,
+ version: 3,
  activeProjectRoot: raw.activeProjectRoot ?? null,
  activeIndex: Math.min(activeIndex, Math.max(0, compact.tabs.length - 1)),
  splitIndex:
@@ -253,6 +364,7 @@ export function loadSessionLayout(): SessionLayout {
  tabs: compact.tabs,
  paneTree: compact.paneTree,
  focusedGroupTabIndex,
+ workspaces: sanitizeWorkspaces(raw.workspaces, compact.tabs, compact.indexMap),
  savedAt: typeof raw.savedAt === 'number' ? raw.savedAt : 0
  }
  // Rewrite bloated / desynced disk layouts immediately
@@ -278,7 +390,11 @@ export function saveSessionLayout(
  opts?: SaveLayoutOpts
 ): SessionLayout {
  const rawTabs = layout.tabs || []
- const compact = compactTabsToPaneTree(rawTabs, layout.paneTree ?? null)
+ const compact = compactTabsKeepingOtherProjects(
+ rawTabs,
+ layout.paneTree ?? null,
+ layout.activeProjectRoot ?? null
+ )
  const tabs = compact.tabs
  const map = compact.indexMap
 
@@ -398,7 +514,7 @@ const mapIndex = (i: number | null | undefined): number | null => {
  const splitMapped = mapIndex(layout.splitIndex ?? null)
 
  let next: SessionLayout = {
- version: 2,
+ version: 3,
  activeProjectRoot: layout.activeProjectRoot ?? null,
  activeIndex: activeMapped ?? 0,
  splitIndex:
@@ -428,6 +544,7 @@ const mapIndex = (i: number | null | undefined): number | null => {
  })),
  paneTree: treeForWrite,
  focusedGroupTabIndex: focusMapped,
+ workspaces: sanitizeWorkspaces(layout.workspaces, tabsForWrite, mapForWrite),
  savedAt: Date.now()
  }
  const path = getSessionLayoutPath()
@@ -574,6 +691,8 @@ export type PersistSnapshot = {
  tabs?: SavedSessionTab[]
  paneTree?: SessionLayout['paneTree']
  focusedGroupTabIndex?: number | null
+ /** Per-project pane trees (normalized root → layout). */
+ workspaces?: SessionLayout['workspaces']
 }
 
 /**
@@ -704,7 +823,7 @@ export function layoutFromPersistSnapshot(
  }
 
  return {
- version: 2,
+ version: 3,
  activeProjectRoot: snapshot.activeProjectRoot,
  activeIndex: Math.min(Math.max(0, activeIndex), Math.max(0, tabs.length - 1)),
  splitIndex,
@@ -717,6 +836,7 @@ export function layoutFromPersistSnapshot(
  tabs,
  paneTree,
  focusedGroupTabIndex: activeIndex,
+ workspaces: sanitizeWorkspaces(snapshot.workspaces, tabs, oldToNew),
  savedAt: Date.now()
  }
 }
@@ -729,7 +849,7 @@ export function layoutFromLiveSessions(
  const base = prev || loadSessionLayout()
  const running = sessions.filter((s) => s.status === 'running')
  return {
- version: 2,
+ version: 3,
  activeProjectRoot: base.activeProjectRoot,
  activeIndex: Math.min(base.activeIndex, Math.max(0, running.length - 1)),
  splitIndex:
@@ -744,6 +864,7 @@ export function layoutFromLiveSessions(
  paneTree:
  base.paneTree && (base.tabs?.length || 0) === running.length ? base.paneTree : null,
  focusedGroupTabIndex: base.focusedGroupTabIndex ?? null,
+ workspaces: base.workspaces || {},
  savedAt: Date.now()
  }
 }

@@ -197,6 +197,129 @@ textarea:focus {
   -webkit-app-region: no-drag;
 }
 
+.project-tabbar {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  height: 100%;
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-app-region: no-drag;
+  scrollbar-width: none;
+}
+.project-tabbar::-webkit-scrollbar {
+  display: none;
+}
+
+.project-tab {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 180px;
+  min-width: 72px;
+  height: 28px;
+  margin: 4px 0;
+  padding: 0 8px 0 10px;
+  border: none;
+  border-radius: 6px 6px 0 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  flex-shrink: 0;
+  -webkit-app-region: no-drag;
+}
+.project-tab:hover {
+  background: #ffffff10;
+  color: var(--text);
+}
+.project-tab.active {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: inset 0 2px 0 var(--project-tab-accent, var(--accent));
+}
+.project-tab-dot {
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--project-tab-accent, var(--text-muted));
+}
+.project-tab.active .project-tab-dot {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--project-tab-accent, var(--accent)) 35%, transparent);
+}
+.project-tab-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.project-tab-live {
+  flex-shrink: 0;
+  min-width: 1.1em;
+  padding: 0 4px;
+  border-radius: 7px;
+  background: #ffffff14;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+}
+.project-tab.live .project-tab-live {
+  background: color-mix(in srgb, var(--project-tab-accent, #22c55e) 22%, transparent);
+  color: var(--text);
+}
+.project-tab-close {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  opacity: 0;
+  cursor: pointer;
+}
+.project-tab:hover .project-tab-close,
+.project-tab.active .project-tab-close {
+  opacity: 0.85;
+}
+.project-tab-close:hover {
+  background: #ffffff18;
+  color: var(--text);
+  opacity: 1;
+}
+
+.project-menu.compact {
+  flex-shrink: 0;
+}
+.project-title.compact {
+  max-width: none;
+  padding: 2px 6px;
+  gap: 2px;
+}
+.project-title-plus {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-muted);
+}
+.project-title.compact:hover .project-title-plus,
+.project-title.compact.open .project-title-plus {
+  color: var(--text);
+}
+
 .logo {
   font-family: var(--mono);
   font-weight: 700;
@@ -227,6 +350,14 @@ textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
   min-width: 0;
+}
+
+.titlebar:has(.project-tabbar) .logo {
+  max-width: 118px;
+  flex-shrink: 0;
+}
+.titlebar:has(.project-tabbar) .logo-session {
+  display: none;
 }
 
 /* Native-feel Windows window buttons */
@@ -5619,4 +5750,66 @@ html.theme-light {
   cursor: pointer !important;
   text-decoration: underline;
   text-underline-offset: 2px;
+}
+
+/* Per-project workspace layers: background projects stay mounted (PTY + xterm). */
+.project-layer {
+  flex: 1 1 auto;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.project-layer[hidden],
+.project-layer.parked {
+  display: none !important;
+}
+.project-layer .pane-workspace,
+.project-layer .stage-empty {
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.project-live-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  vertical-align: 1px;
+}
+.project-live-dot.live {
+  background: #22c55e;
+  box-shadow: 0 0 0 2px #22c55e33;
+}
+.project-live-count {
+  margin-left: 6px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #22c55e22;
+  color: #86efac;
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.project-switcher-dot {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.project-switcher .palette-item.highlight {
+  background: #ffffff12;
+}
+.project-switcher .palette-hint {
+  flex-shrink: 0;
+  padding: 0 12px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.project-switcher .palette-hint kbd {
+  font-family: var(--mono);
+  font-size: 10px;
 }

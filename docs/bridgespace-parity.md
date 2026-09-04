@@ -23,7 +23,8 @@ Agents still use all three when available via `.truedeck/auto-context.md` and en
 | Multi-pane agent terminals (≤16) | Yes | Nested pane dock, `MAX_PANES=16` | **Have** |
 | Named layout presets | Yes | Session restore only | Missing |
 | Kanban → dispatch agent | BridgeBoard | Task board + `dispatchTask` | **Have** |
-| Multi-agent pipelines / swarm | BridgeSwarm | Roles + orchestrator | **Building** |
+| Multi-agent pipelines / swarm | BridgeSwarm | Roles + orchestrator | **Have** |
+| Agent-to-agent messaging | Swarm channels | Agent bus (MCP + synced files) | **Have** |
 | Git worktree isolation | Common | Setting stub | **Building** |
 | Knowledge graph | Product UI | Graphify integrate + sync | **Building** |
 | Memory product | BridgeMemory | Dual TrueMemory + MemPalace | **Have** (polish UX) |
@@ -44,7 +45,7 @@ Agents still use all three when available via `.truedeck/auto-context.md` and en
 | 8 | Layouts + review | Done (IPC/layouts; review via git tools) |
 | 9 | Browser / voice / SSH | Deferred |
 
-**Deck actions are MCP-first** (`truedeck_launch`, pipelines, tasks) - no deck tools UI panel.
+**Deck actions are MCP-first** (`truedeck_launch`, pipelines, tasks, `truedeck_send`) - no deck tools UI panel.
 
 ## Related
 

@@ -83,6 +83,7 @@ Memory is automatic after this: TrueDeck writes `.truedeck/auto-context.md`, ens
 1. Press **Ctrl+O** (or use **Project ▾** in the title bar).
 2. Choose a folder. TrueDeck stores it under app data as a project with on-open commands and default agents.
 3. The folder name appears in the project menu (VS Code-style chevron + recents).
+4. Press **Ctrl+P** to switch between folders, or click a **project tab** in the title bar. Agent terminals in the previous project **keep running** in the background — they are not killed. Each task/terminal gets a distinct accent color automatically (Claude also receives `/color`; Grok is launched with `GROK_THEME=auto`). Closing a project tab hides it from the bar; terminals keep running until you close those panes.
 
 Project metadata lives in app data (`projects.json`), not only inside the repo. Per-repo agent context still uses `.memory/` and `.truedeck/` under the project root.
 

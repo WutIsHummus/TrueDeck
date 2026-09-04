@@ -179,8 +179,10 @@ export function SettingsMenu({
  />
  </label>
  <p className="hint">
- On launch, reopen your last project and respawn open agent tabs (max 16 - install
- helpers are skipped).
+ On launch, reopen your last project and respawn open agent tabs (up to 16 per
+ folder, 48 total — install helpers are skipped). Switching projects with{' '}
+ <kbd>Ctrl+P</kbd> leaves other folders&apos; terminals running in the
+ background.
  </p>
  <label className="settings-row">
  <span>Isolate tasks in git worktrees</span>

@@ -4,7 +4,8 @@ import {
  useMemo,
  useRef,
  useState,
- type MouseEvent as ReactMouseEvent
+ type MouseEvent as ReactMouseEvent,
+ type SetStateAction
 } from 'react'
 import { flushSync } from 'react-dom'
 import { useDeck } from './store'
@@ -13,6 +14,8 @@ import { SettingsMenu } from './components/SettingsMenu'
 import { Onboarding } from './components/Onboarding'
 import { WindowControls } from './components/WindowControls'
 import { ProjectMenu } from './components/ProjectMenu'
+import { ProjectTabBar } from './components/ProjectTabBar'
+import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { CloneRepoInput } from './components/CloneRepoInput'
 import { PaneWorkspace, type SplitAnim } from './components/PaneWorkspace'
 import { ProjectExplorer } from './components/ProjectExplorer'
@@ -63,7 +66,7 @@ import type {
 } from '../electron/shared/types'
 import appIconUrl from '../resources/icons/icon-32.png'
 import { sessionTabLabel } from './lib/session-label'
-import { sameProjectRoot } from './lib/paths'
+import { projectRootKey, sameProjectRoot } from './lib/paths'
 import { AgentIcon } from './components/AgentIcon'
 
 /**
@@ -113,7 +116,80 @@ export default function App(): JSX.Element {
  const [agentProbes, setAgentProbes] = useState<Record<string, AgentProbe>>({})
  const [onOpenProject, setOnOpenProject] = useState<ProjectConfig | null>(null)
  const [settingsOpen, setSettingsOpen] = useState(false)
- const [paneLayout, setPaneLayout] = useState<PaneLayout>(() => createLayout())
+ const [layoutsByRoot, setLayoutsByRoot] = useState<Record<string, PaneLayout>>({})
+ const activeRootKey = useMemo(() => {
+ const p = projects.find((x) => x.id === activeProjectId)
+ return p ? projectRootKey(p.root) : ''
+ }, [projects, activeProjectId])
+ const activeRootKeyRef = useRef(activeRootKey)
+ activeRootKeyRef.current = activeRootKey
+ const paneLayout = layoutsByRoot[activeRootKey] || createLayout()
+ const layoutsByRootRef = useRef(layoutsByRoot)
+ layoutsByRootRef.current = layoutsByRoot
+ const setPaneLayout = useCallback((action: SetStateAction<PaneLayout>) => {
+ const key = activeRootKeyRef.current
+ setLayoutsByRoot((prev) => {
+ const cur = prev[key] ?? createLayout()
+ const next = typeof action === 'function' ? action(cur) : action
+ if (next === cur) return prev
+ return { ...prev, [key]: next }
+ })
+ }, [])
+ const [projectSwitcherOpen, setProjectSwitcherOpen] = useState(false)
+ const [projectSwitcherQuery, setProjectSwitcherQuery] = useState('')
+ const [projectSwitcherIndex, setProjectSwitcherIndex] = useState(0)
+ const projectSwitcherSearchRef = useRef<HTMLInputElement | null>(null)
+ const [openedProjectIds, setOpenedProjectIds] = useState<string[]>(() => {
+ try {
+ const raw = localStorage.getItem('truedeck.openedProjectIds')
+ if (!raw) return []
+ const parsed = JSON.parse(raw) as unknown
+ return Array.isArray(parsed) ? parsed.filter((id) => typeof id === 'string') : []
+ } catch {
+ return []
+ }
+ })
+ const dismissedProjectIdsRef = useRef<Set<string>>(new Set())
+ const markProjectOpened = useCallback((id: string | null | undefined): void => {
+ if (!id) return
+ dismissedProjectIdsRef.current.delete(id)
+ setOpenedProjectIds((prev) => (prev.includes(id) ? prev : [...prev, id]))
+ }, [])
+
+ useEffect(() => {
+ try {
+ localStorage.setItem('truedeck.openedProjectIds', JSON.stringify(openedProjectIds))
+ } catch {
+ /* ignore */
+ }
+ }, [openedProjectIds])
+
+ useEffect(() => {
+ if (!projects.length) return
+ const known = new Set(projects.map((p) => p.id))
+ const liveIds = new Set<string>()
+ for (const s of sessions) {
+ if (s.status !== 'running') continue
+ const p = projects.find((x) => sameProjectRoot(x.root, s.projectRoot))
+ if (p && !dismissedProjectIdsRef.current.has(p.id)) liveIds.add(p.id)
+ }
+ setOpenedProjectIds((prev) => {
+ const next: string[] = []
+ const seen = new Set<string>()
+ const push = (id: string): void => {
+ if (!id || seen.has(id) || !known.has(id)) return
+ seen.add(id)
+ next.push(id)
+ }
+ for (const id of prev) push(id)
+ for (const id of liveIds) push(id)
+ if (activeProjectId && !dismissedProjectIdsRef.current.has(activeProjectId)) {
+ push(activeProjectId)
+ }
+ if (next.length === prev.length && next.every((id, i) => id === prev[i])) return prev
+ return next
+ })
+ }, [projects, sessions, activeProjectId])
  const [version, setVersion] = useState('')
  const [fontSize, setFontSize] = useState(13)
  /** Live font size for Ctrl+/- zoom (shortcut handler must not read stale state). */
@@ -304,7 +380,7 @@ export default function App(): JSX.Element {
  }
  for (const s of running) {
  if (seen.has(s.id)) continue
- if (project && !sameProjectRoot(s.projectRoot, project.root)) continue
+ // Keep background-project tabs in the snapshot (they stay running).
  seen.add(s.id)
  orderFinal.push(s.id)
  }
@@ -361,6 +437,25 @@ export default function App(): JSX.Element {
  st.activeSessionId && orderFinal.includes(st.activeSessionId)
  ? orderFinal.indexOf(st.activeSessionId)
  : null
+ const workspaces: NonNullable<
+ import('../electron/shared/types').SessionLayout['workspaces']
+ > = {}
+ for (const [key, lay] of Object.entries(layoutsByRootRef.current)) {
+ const ids = orderFinal.filter((id) => {
+ const s = running.find((x) => x.id === id)
+ return Boolean(s && projectRootKey(s.projectRoot) === key)
+ })
+ if (!ids.length && allSessionIds(lay).length === 0) continue
+ workspaces[key] = {
+ paneTree: serializePaneTree(normalizeLayout(lay), orderFinal),
+ tabIndices: ids.map((id) => orderFinal.indexOf(id)).filter((i) => i >= 0),
+ splitRatio: lay.root.type === 'split' ? lay.root.ratio : 0.5,
+ focusedGroupTabIndex:
+ st.activeSessionId && ids.includes(st.activeSessionId)
+ ? orderFinal.indexOf(st.activeSessionId)
+ : null
+ }
+ }
  const snap = {
  activeProjectRoot,
  activeSessionId: st.activeSessionId,
@@ -370,7 +465,8 @@ export default function App(): JSX.Element {
  sessionOrder: orderFinal,
  tabs,
  paneTree: tree,
- focusedGroupTabIndex
+ focusedGroupTabIndex,
+ workspaces
  }
  if (typeof window.truedeck.persistSessionsSync === 'function') {
  window.truedeck.persistSessionsSync(snap)
@@ -591,7 +687,13 @@ export default function App(): JSX.Element {
  if (!sessionHydrated) return
  // Detached windows own those sessions — keep them out of the main tree
  const detached = detachedIdsRef.current
- const ids = sessions.map((s) => s.id).filter((id) => !detached.has(id))
+ const ids = sessions
+ .filter((s) => {
+ if (detached.has(s.id)) return false
+ if (!activeRootKey) return true
+ return projectRootKey(s.projectRoot) === activeRootKey
+ })
+ .map((s) => s.id)
  const prefer = useDeck.getState().activeSessionId
  // Expanded = still showing content (not minimized)
  const expanded = new Set(
@@ -601,7 +703,8 @@ export default function App(): JSX.Element {
  s.status === 'running' &&
  !s.uiMinimized &&
  !s.uiHidden &&
- !detached.has(s.id)
+ !detached.has(s.id) &&
+ (!activeRootKey || projectRootKey(s.projectRoot) === activeRootKey)
  )
  .map((s) => s.id)
  )
@@ -617,7 +720,7 @@ export default function App(): JSX.Element {
  return next
  })
  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not activeSessionId
- }, [sessionHydrated, sessions, detachedIds])
+ }, [sessionHydrated, sessions, detachedIds, activeRootKey])
 
  const expandedSessionIds = useMemo(
  () =>
@@ -777,6 +880,24 @@ export default function App(): JSX.Element {
  }
  return projectSessions.filter((s) => !detachedIds.has(s.id))
  }, [isDetachedWindow, detachedSessionId, sessions, projectSessions, detachedIds])
+
+ /** Project roots with live PTYs (active first) — parked layers stay mounted. */
+ const liveRootKeys = useMemo(() => {
+ const keys: string[] = []
+ const seen = new Set<string>()
+ const add = (k: string): void => {
+ if (!k || seen.has(k)) return
+ seen.add(k)
+ keys.push(k)
+ }
+ add(activeRootKey)
+ for (const s of sessions) {
+ if (s.status === 'running' && !detachedIds.has(s.id)) {
+ add(projectRootKey(s.projectRoot))
+ }
+ }
+ return keys
+ }, [sessions, activeRootKey, detachedIds])
 
  const stageHasExpanded = useMemo(
  () => layoutHasExpandedSession(stageLayout, expandedSessionIds),
@@ -1478,7 +1599,14 @@ export default function App(): JSX.Element {
  findByRoot(restored[0]?.projectRoot) ||
  projects[0] ||
  null
- if (proj) setActiveProject(proj.id)
+ if (proj) {
+ setActiveProject(proj.id)
+ markProjectOpened(proj.id)
+ }
+ for (const s of restored) {
+ const owner = projects.find((x) => sameProjectRoot(x.root, s.projectRoot))
+ if (owner) markProjectOpened(owner.id)
+ }
  const ids = restored.map((s) => s.id)
  const focusIdx =
  typeof layout.focusedGroupTabIndex === 'number' &&
@@ -1523,7 +1651,30 @@ export default function App(): JSX.Element {
  console.warn('[truedeck] layout restore failed, using simple grid', layoutErr)
  pl = createLayout(ids, active?.id || null)
  }
- setPaneLayout(pl)
+ const nextLayouts: Record<string, PaneLayout> = {}
+ const roots = Array.from(
+ new Set(restored.map((s) => projectRootKey(s.projectRoot)))
+ )
+ for (const key of roots) {
+ const projIds = restored
+ .filter((s) => projectRootKey(s.projectRoot) === key)
+ .map((s) => s.id)
+ const ws = layout.workspaces?.[key]
+ const srcTree = ws?.paneTree || (proj && projectRootKey(proj.root) === key ? layout.paneTree : null)
+ let one: PaneLayout
+ try {
+ one = srcTree
+ ? deserializePaneTree(srcTree, ids, active?.id || null)
+ : createLayout(projIds, projIds[projIds.length - 1] || null)
+ one = filterLayoutToSessionIds(one, new Set(projIds))
+ one = syncSessions(one, projIds, projIds.includes(active?.id || '') ? active?.id || null : projIds[projIds.length - 1] || null)
+ } catch {
+ one = createLayout(projIds, projIds[projIds.length - 1] || null)
+ }
+ nextLayouts[key] = one
+ }
+ if (proj) nextLayouts[projectRootKey(proj.root)] = pl
+ setLayoutsByRoot(nextLayouts)
  setStatus(
  count === 1
  ? 'Restored 1 terminal session'
@@ -1536,7 +1687,10 @@ export default function App(): JSX.Element {
  const root = layout?.activeProjectRoot
  const proj =
  (root && list.find((p) => sameProjectRoot(p.root, root))) || list[0] || null
- if (proj) setActiveProject(proj.id)
+ if (proj) {
+ setActiveProject(proj.id)
+ markProjectOpened(proj.id)
+ }
  setStatus(proj ? `Opened ${proj.name} — launch an agent (Ctrl+T)` : 'Ready')
  }
  } catch (restoreErr) {
@@ -1656,10 +1810,10 @@ export default function App(): JSX.Element {
  seen.add(id)
  orderFinal.push(id)
  }
- // Also persist running sessions not yet in the tree (deferred restore / races)
+ // Also persist running sessions not yet in the tree — including other
+ // projects, so switching folders does not wipe background PTYs on disk.
  for (const s of running) {
  if (seen.has(s.id)) continue
- if (project && !sameProjectRoot(s.projectRoot, project.root)) continue
  seen.add(s.id)
  orderFinal.push(s.id)
  }
@@ -1713,6 +1867,26 @@ export default function App(): JSX.Element {
  st.activeSessionId && orderFinal.includes(st.activeSessionId)
  ? orderFinal.indexOf(st.activeSessionId)
  : null
+ const workspaces: NonNullable<
+ import('../electron/shared/types').SessionLayout['workspaces']
+ > = {}
+ for (const [key, lay] of Object.entries(layoutsByRoot)) {
+ const ids = orderFinal.filter((id) => {
+ const s = running.find((x) => x.id === id)
+ return Boolean(s && projectRootKey(s.projectRoot) === key)
+ })
+ if (!ids.length && allSessionIds(lay).length === 0) continue
+ const focusId =
+ (st.activeSessionId && ids.includes(st.activeSessionId) && st.activeSessionId) ||
+ ids[0] ||
+ null
+ workspaces[key] = {
+ paneTree: serializePaneTree(normalizeLayout(lay), orderFinal),
+ tabIndices: ids.map((id) => orderFinal.indexOf(id)).filter((i) => i >= 0),
+ splitRatio: lay.root.type === 'split' ? lay.root.ratio : 0.5,
+ focusedGroupTabIndex: focusId ? orderFinal.indexOf(focusId) : null
+ }
+ }
  return {
  activeProjectRoot,
  activeSessionId: st.activeSessionId,
@@ -1721,9 +1895,10 @@ export default function App(): JSX.Element {
  sessionOrder: orderFinal,
  tabs,
  paneTree: tree,
- focusedGroupTabIndex
+ focusedGroupTabIndex,
+ workspaces
  }
- }, [paneLayout, activeProject])
+ }, [paneLayout, activeProject, layoutsByRoot])
 
  buildPersistSnapshotRef.current = buildPersistSnapshot
 
@@ -1933,6 +2108,17 @@ export default function App(): JSX.Element {
  if (!once('o')) return
  raw.claim?.()
  ctx.addProjectFn?.()
+ return
+ }
+
+ if (letter === 'p' && !raw.shift && !raw.alt) {
+ if (!once('p')) return
+ raw.claim?.()
+ setPaletteOpen(false)
+ setSettingsOpen(false)
+ setProjectSwitcherQuery('')
+ setProjectSwitcherIndex(0)
+ setProjectSwitcherOpen((v) => !v)
  return
  }
 
@@ -2237,6 +2423,7 @@ export default function App(): JSX.Element {
  if (e.key === 'Escape') {
  setSettingsOpen(false)
  setPaletteOpen(false)
+ setProjectSwitcherOpen(false)
  return
  }
 
@@ -2383,6 +2570,7 @@ export default function App(): JSX.Element {
  if (!p) return
  await refreshProjects()
  setActiveProject(p.id)
+ markProjectOpened(p.id)
  setOnOpenProject(p)
  setStatus(`Project ${p.name}`)
  // Automatic backend context (silent)
@@ -2393,8 +2581,10 @@ export default function App(): JSX.Element {
  }
 
  const openProject = async (p: ProjectConfig): Promise<void> => {
+ setProjectSwitcherOpen(false)
  // setActiveProject also moves focus onto a tab in this folder (or clears it)
  setActiveProject(p.id)
+ markProjectOpened(p.id)
  setTerminalLoadMsg(`Opening ${p.name}…`)
  setStatus(`Opening ${p.name}…`)
  try {
@@ -2427,9 +2617,27 @@ export default function App(): JSX.Element {
  if (!st.ready) {
  await runProjectSetup(p.root, { silent: true })
  }
- setStatus(`${p.name}`)
+ const bg = useDeck
+ .getState()
+ .sessions.filter(
+ (s) => s.status === 'running' && !sameProjectRoot(s.projectRoot, p.root)
+ ).length
+ setStatus(
+ bg > 0
+ ? `${p.name} · ${bg} terminal${bg === 1 ? '' : 's'} still running in the background`
+ : `${p.name}`
+ )
  } catch {
- setStatus(`${p.name}`)
+ const bg = useDeck
+ .getState()
+ .sessions.filter(
+ (s) => s.status === 'running' && !sameProjectRoot(s.projectRoot, p.root)
+ ).length
+ setStatus(
+ bg > 0
+ ? `${p.name} · ${bg} terminal${bg === 1 ? '' : 's'} still running in the background`
+ : `${p.name}`
+ )
  }
  } catch (e) {
  setStatus(e instanceof Error ? e.message : String(e))
@@ -2468,10 +2676,35 @@ export default function App(): JSX.Element {
  }
  }
 
+ const closeProjectTab = (p: ProjectConfig): void => {
+ const rest = openedProjectIds.filter((id) => id !== p.id)
+ if (!rest.length) {
+ setStatus('Keep at least one project tab')
+ return
+ }
+ dismissedProjectIdsRef.current.add(p.id)
+ setOpenedProjectIds(rest)
+ if (activeProject?.id === p.id) {
+ const next =
+ projects.find((x) => x.id === rest[rest.length - 1]) ||
+ projects.find((x) => rest.includes(x.id))
+ if (next) void openProject(next)
+ }
+ const live = sessions.filter(
+ (s) => s.status === 'running' && sameProjectRoot(s.projectRoot, p.root)
+ ).length
+ setStatus(
+ live > 0
+ ? `Closed ${p.name} tab · ${live} terminal${live === 1 ? '' : 's'} still running (Ctrl+P to return)`
+ : `Closed ${p.name} tab`
+ )
+ }
+
  const removeProjectFromList = async (p: ProjectConfig): Promise<void> => {
  try {
  await window.truedeck.removeProject(p.id)
  await refreshProjects()
+ setOpenedProjectIds((prev) => prev.filter((id) => id !== p.id))
  if (activeProjectId === p.id) {
  const rest = useDeck.getState().projects
  if (rest[0]) setActiveProject(rest[0].id)
@@ -2498,6 +2731,14 @@ export default function App(): JSX.Element {
  if (!paletteOpen) return
  void refreshAgentProbes()
  }, [paletteOpen, refreshAgentProbes])
+
+ useEffect(() => {
+ if (!projectSwitcherOpen) return
+ const t = window.requestAnimationFrame(() => {
+ projectSwitcherSearchRef.current?.focus()
+ })
+ return () => window.cancelAnimationFrame(t)
+ }, [projectSwitcherOpen])
 
  /**
  * Ctrl+T / new-agent palette must own the keyboard.
@@ -2950,10 +3191,20 @@ export default function App(): JSX.Element {
  <>TRUEDECK{version ? ` ${version}` : ''}</>
  )}
  </span>
+ <ProjectTabBar
+ projects={projects}
+ openedIds={openedProjectIds}
+ activeProject={activeProject}
+ sessions={sessions}
+ onSelect={(p) => void openProject(p)}
+ onCloseTab={closeProjectTab}
+ />
  <ProjectMenu
  projects={projects}
  activeProject={activeProject}
+ sessions={sessions}
  shortPath={shortPath}
+ compact={openedProjectIds.length > 0}
  onOpenProject={(p) => void openProject(p)}
  onAddProject={() => void addProject()}
  onImportGit={() => setImportGitOpen(true)}
@@ -3145,7 +3396,54 @@ export default function App(): JSX.Element {
  title={terminalLoadMsg || 'Restoring…'}
  hint="Opening last workspace"
  />
- ) : projectSessions.length === 0 ? (
+ ) : isDetachedWindow ? (
+ <PaneWorkspace
+ layout={stageLayout}
+ sessions={stageSessions}
+ fontSize={fontSize}
+ dropTarget={null}
+ tabDragging={false}
+ onFocusSession={focusTab}
+ onRestoreSession={restoreMinimizedSession}
+ onCloseSession={(id) => void closeSession(id)}
+ closingTabIds={closingTabIds}
+ onReorderInGroup={() => {
+ /* pop-out is a single pane */
+ }}
+ onCloseGroup={() => {
+ /* pop-out */
+ }}
+ onDragActiveChange={setTabDragging}
+ onNewInGroup={() => setPaletteOpen(true)}
+ onGutterDown={() => {
+ /* pop-out */
+ }}
+ onOpenPath={(path) => {
+ if (typeof path === 'string' && path.trim()) void openDocumentTab(path.trim())
+ }}
+ openCliPathsInDocument={openCliPathsInDocument}
+ editorVimMode={editorVimMode}
+ inputLocked={paletteOpen || settingsOpen || projectSwitcherOpen}
+ />
+ ) : (
+ <>
+ {liveRootKeys.map((key) => {
+ const active = key === activeRootKey
+ const here = sessions.filter(
+ (s) =>
+ s.status === 'running' &&
+ !detachedIds.has(s.id) &&
+ projectRootKey(s.projectRoot) === key
+ )
+ const emptyActive = active && here.length === 0
+ return (
+ <div
+ key={key || 'none'}
+ className={`project-layer${active ? '' : ' parked'}`}
+ hidden={!active}
+ aria-hidden={!active}
+ >
+ {emptyActive ? (
  <div className="stage-empty">
  {terminalLoadMsg ? (
  <LoadingCard title={terminalLoadMsg} compact />
@@ -3155,9 +3453,8 @@ export default function App(): JSX.Element {
  <p>
  Terminal-first agent deck - between Codex and a plain CLI.
  <br />
- <kbd>Ctrl+O</kbd> project · <kbd>Ctrl+T</kbd> agent ·{' '}
- <kbd>Ctrl+B</kbd> explorer · <kbd>Ctrl+Shift+O</kbd> open file ·{' '}
- <kbd>Ctrl+W</kbd> close · <kbd>Ctrl+M</kbd> minimize
+ <kbd>Ctrl+P</kbd> switch project · <kbd>Ctrl+O</kbd> folder ·{' '}
+ <kbd>Ctrl+T</kbd> agent · <kbd>Ctrl+B</kbd> explorer
  </p>
  <div className="row" style={{ justifyContent: 'center' }}>
  <button type="button" className="primary" onClick={() => void addProject()}>
@@ -3173,7 +3470,9 @@ export default function App(): JSX.Element {
  </div>
  {projects.length > 0 && (
  <div className="stage-empty-recent">
- <div className="muted stage-empty-recent-label">recent</div>
+ <div className="muted stage-empty-recent-label">
+ recent · background terminals keep running
+ </div>
  {projects.slice(0, 5).map((p) => (
  <button
  key={p.id}
@@ -3195,34 +3494,40 @@ export default function App(): JSX.Element {
  </div>
  )}
  </div>
- ) : (
- <>
+ ) : here.length === 0 ? null : (
  <PaneWorkspace
- layout={stageLayout}
- sessions={stageSessions}
+ layout={
+ active
+ ? stageLayout
+ : layoutsByRoot[key] || createLayout(here.map((s) => s.id))
+ }
+ sessions={here}
  fontSize={fontSize}
- dropTarget={isDetachedWindow ? null : dropTarget}
- tabDragging={tabDragging}
+ dropTarget={active && !isDetachedWindow ? dropTarget : null}
+ tabDragging={active ? tabDragging : false}
  onFocusSession={focusTab}
  onRestoreSession={restoreMinimizedSession}
  onCloseSession={(id) => void closeSession(id)}
- closingTabIds={closingTabIds}
+ closingTabIds={active ? closingTabIds : undefined}
  onReorderInGroup={(groupId, sessionId, toIndex) => {
+ if (!active) return
  setPaneLayout((prev) => reorderInGroup(prev, groupId, sessionId, toIndex))
  if (activeProject) {
  moveSessionInProject(sessionId, toIndex, activeProject.root)
  }
  }}
  onCloseGroup={(groupId) => {
- // Kill tabs in the pane — never just relocate them to a neighbor
+ if (!active) return
  void closeGroupSessions(groupId)
  }}
  onDragActiveChange={setTabDragging}
  onNewInGroup={(groupId) => {
+ if (!active) return
  setPaneLayout((prev) => ({ ...prev, focusedGroupId: groupId }))
  setPaletteOpen(true)
  }}
  onGutterDown={(e, splitId, direction) => {
+ if (!active) return
  e.preventDefault()
  e.stopPropagation()
  const host = (e.currentTarget as HTMLElement).parentElement
@@ -3244,11 +3549,32 @@ export default function App(): JSX.Element {
  }}
  openCliPathsInDocument={openCliPathsInDocument}
  editorVimMode={editorVimMode}
- splitAnim={splitAnim}
- closeSplitAnim={closeSplitAnim}
- inputLocked={paletteOpen || settingsOpen}
+ splitAnim={active ? splitAnim : null}
+ closeSplitAnim={active ? closeSplitAnim : null}
+ inputLocked={
+ paletteOpen || settingsOpen || projectSwitcherOpen || !active
+ }
+ parked={!active}
  />
- {/* Never full-stage loading while panes are open — status bar carries launch text */}
+ )}
+ </div>
+ )
+ })}
+ {liveRootKeys.length === 0 && (
+ <div className="stage-empty">
+ <div className="stage-empty-frame">
+ <h2>truedeck</h2>
+ <p>
+ <kbd>Ctrl+O</kbd> open a folder · <kbd>Ctrl+P</kbd> switch project
+ </p>
+ <div className="row" style={{ justifyContent: 'center' }}>
+ <button type="button" className="primary" onClick={() => void addProject()}>
+ Open project
+ </button>
+ </div>
+ </div>
+ </div>
+ )}
  </>
  )}
  </div>
@@ -3259,8 +3585,8 @@ export default function App(): JSX.Element {
  <span title="Ctrl+T - new agent">
  <kbd>Ctrl+T</kbd> new agent
  </span>
- <span title="Ctrl+O - open project">
- <kbd>Ctrl+O</kbd> project
+ <span title="Ctrl+O open folder · Ctrl+P switch project (background stays running)">
+ <kbd>Ctrl+P</kbd> switch
  </span>
  <span title="Ctrl+W - close tab">
  <kbd>Ctrl+W</kbd> close
@@ -3280,6 +3606,24 @@ export default function App(): JSX.Element {
  </div>
  <div className="status-text">{status || 'Ready'}</div>
  </footer>
+
+ <ProjectSwitcher
+ open={projectSwitcherOpen}
+ projects={projects}
+ sessions={sessions}
+ activeProject={activeProject}
+ shortPath={shortPath}
+ query={projectSwitcherQuery}
+ highlight={projectSwitcherIndex}
+ onQuery={setProjectSwitcherQuery}
+ onHighlight={setProjectSwitcherIndex}
+ onPick={(p) => {
+ setProjectSwitcherOpen(false)
+ void openProject(p)
+ }}
+ onClose={() => setProjectSwitcherOpen(false)}
+ searchRef={projectSwitcherSearchRef}
+ />
 
  {/* Agent palette */}
  {paletteOpen && (

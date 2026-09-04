@@ -237,6 +237,7 @@ const api = {
  tabs?: SessionLayout['tabs']
  paneTree?: SessionLayout['paneTree']
  focusedGroupTabIndex?: number | null
+ workspaces?: SessionLayout['workspaces']
  }): Promise<SessionLayout> => ipcRenderer.invoke('sessions:persist', snapshot),
  /**
  * Blocking flush for quit / reload. Prefer this on pagehide so multi-pane
@@ -251,6 +252,7 @@ const api = {
  tabs?: SessionLayout['tabs']
  paneTree?: SessionLayout['paneTree']
  focusedGroupTabIndex?: number | null
+ workspaces?: SessionLayout['workspaces']
  }): SessionLayout | { error: string } =>
  ipcRenderer.sendSync('sessions:persist-sync', snapshot) as SessionLayout | { error: string },
  restoreSessions: (): Promise<{

@@ -14,6 +14,7 @@ import {
  resolvePathCandidate
 } from '../lib/path-links'
 import { PixelBlast } from './PixelBlast'
+import { xtermThemeFromSessionColor } from '../../electron/shared/session-color'
 import 'xterm/css/xterm.css'
 
 interface Props {
@@ -107,6 +108,8 @@ export function TerminalPane({
  const [introBlast, setIntroBlast] = useState(false)
  const sessionColor =
  useDeck((st) => st.sessions.find((s) => s.id === sessionId)?.color) || '#22d3ee'
+ const sessionColorRef = useRef(sessionColor)
+ sessionColorRef.current = sessionColor
 
  useEffect(() => {
  if (suppressIntroBlast) {
@@ -332,32 +335,7 @@ export function TerminalPane({
  cursorBlink: true,
  fontSize,
  fontFamily: '"Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace',
- theme: {
- // Full 16-color palette so agent TUIs (Claude/Codex/Grok/Cursor) match
- // their native CLI colors instead of falling back to washed defaults.
- background: '#05070a',
- foreground: '#e2e8f0',
- cursor: '#22d3ee',
- cursorAccent: '#05070a',
- selectionBackground: '#f0a05066',
- selectionForeground: '#f8fafc',
- black: '#0f172a',
- red: '#f87171',
- green: '#34d399',
- yellow: '#fbbf24',
- blue: '#60a5fa',
- magenta: '#c084fc',
- cyan: '#22d3ee',
- white: '#e2e8f0',
- brightBlack: '#64748b',
- brightRed: '#fca5a5',
- brightGreen: '#6ee7b7',
- brightYellow: '#fde68a',
- brightBlue: '#93c5fd',
- brightMagenta: '#d8b4fe',
- brightCyan: '#67e8f9',
- brightWhite: '#f8fafc'
- },
+ theme: xtermThemeFromSessionColor(sessionColorRef.current),
  allowProposedApi: true,
  scrollback: 5000,
  // Draw all rows each paint - less partial-frame sticky garbage on ConPTY redraws
@@ -1650,6 +1628,16 @@ export function TerminalPane({
  }
  // eslint-disable-next-line react-hooks/exhaustive-deps
  }, [visible, sessionId])
+
+ useEffect(() => {
+ const term = termRef.current
+ if (!term) return
+ try {
+ term.options.theme = xtermThemeFromSessionColor(sessionColor)
+ } catch {
+ /* ignore */
+ }
+ }, [sessionColor])
 
  // Move DOM focus when this terminal becomes the app's focused pane.
  useEffect(() => {

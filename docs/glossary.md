@@ -42,6 +42,10 @@ A leaf in the pane tree: its own tab bar and active tab. Multiple groups appear 
 
 Unified MCP configuration managed by TrueDeck and synced to agent clients. Built-in server id `truedeck-hub`. See [MCP](./mcp.md).
 
+## Agent bus
+
+File-backed mailbox plus live PTY inject so TrueDeck agents can message other terminals (and other PCs running TrueDeck with global memory synced). Tools: `truedeck_peers`, `truedeck_send`, `truedeck_inbox`. See [Agent bus](./agent-bus.md).
+
 ## Leaf
 
 A pane-tree node that holds tab indices and an active tab (not a split).

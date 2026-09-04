@@ -52,6 +52,11 @@ interface Props {
   closeSplitAnim?: SplitAnim | null
   /** When true, terminals must not steal keyboard (palette / settings open). */
   inputLocked?: boolean
+  /**
+   * Background project layer: keep PTYs mounted and feeding xterm, but never
+   * visible or focused. Switching folders then does not remount the TUI.
+   */
+  parked?: boolean
 }
 
 function isMin(s: SessionInfo): boolean {
@@ -82,7 +87,8 @@ export function PaneWorkspace({
   editorVimMode = false,
   splitAnim = null,
   closeSplitAnim = null,
-  inputLocked = false
+  inputLocked = false,
+  parked = false
 }: Props): JSX.Element {
   const byId = useMemo(() => new Map(sessions.map((s) => [s.id, s])), [sessions])
   const safe = useMemo(() => normalizeLayout(layout), [layout])
@@ -375,8 +381,8 @@ export function PaneWorkspace({
             ) : (
               groupSessions.map((s) => {
                 const isDoc = s.kind === 'document' || Boolean(s.documentPath)
-                const isVisible = !isMin(s) && activeId === s.id
-                const isFocused = focused && isVisible
+                const isVisible = !parked && !isMin(s) && activeId === s.id
+                const isFocused = !parked && focused && isVisible
                 if (isDoc) {
                   return (
                     <DocumentPane

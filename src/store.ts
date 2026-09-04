@@ -8,6 +8,7 @@ import type {
 } from '../electron/shared/types'
 import { sameProjectRoot } from './lib/paths'
 import { sanitizeSessionTitle } from './lib/session-label'
+import { ensureSessionColor } from '../electron/shared/session-color'
 
 interface DeckState {
  projects: ProjectConfig[]
@@ -96,7 +97,16 @@ export const useDeck = create<DeckState>((set, get) => ({
 
  addSession: (s, opts) =>
  set((state) => {
- const sessions = [...state.sessions.filter((x) => x.id !== s.id), s]
+ const taken = state.sessions.filter((x) => x.id !== s.id).map((x) => x.color)
+ const picked = ensureSessionColor(s.color, {
+ agentId: s.agentId,
+ taskId: s.taskId,
+ resumeToken: s.resumeToken,
+ seed: s.id,
+ taken
+ })
+ const colored = picked.hex !== s.color ? { ...s, color: picked.hex } : s
+ const sessions = [...state.sessions.filter((x) => x.id !== s.id), colored]
  const force = opts?.focus === true
  const never = opts?.focus === false
  if (never) {

@@ -161,7 +161,7 @@ export function listAllMcpEntries(): McpServerEntry[] {
  command: hub.command,
  args: hub.args || [],
  description:
- 'Built-in tools for agents: list/add/remove MCP servers and sync to all CLIs'
+ 'Built-in tools: MCP config, launch/show, and agent bus (peers/send/inbox)'
  })
  }
  const memMap = buildMcpServerMap()

@@ -9,6 +9,7 @@ Normal terminal keys (including **Ctrl+C**) still reach the PTY unless listed be
 | Shortcut | Action |
 |----------|--------|
 | **Ctrl+O** | Open / add project folder |
+| **Ctrl+P** | Switch project (background terminals keep running). Opened folders also appear as **title-bar project tabs**. |
 | **Ctrl+Shift+O** | Open file to **read** (markdown, plans, source) as a tab |
 | **Ctrl+T** | New agent (open agent palette) |
 | **Ctrl+N** | Pop focused pane into a **new window** (also: drag a tab outside the deck) |
@@ -93,7 +94,7 @@ TrueDeck intentionally leaves many combos to the shell / agent TUI, for example:
 
 Settings → Terminal shows a short hint:
 
-> **T** new agent · **O** project · **W** close · **M** minimize · **Shift+M** restore · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab · **+/-** font zoom
+> **T** new agent · **O** folder · **P** switch project · **W** close · **M** minimize · **Shift+M** restore · **S** settings · **D** v-split · **X** h-split · **N** shell · **1-9** jump tab · **+/-** font zoom
 
 ## Ownership (avoid fighting)
 

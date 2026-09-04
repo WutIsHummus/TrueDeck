@@ -73,6 +73,7 @@ export default defineConfig({
  items: [
  { text: 'Configuration', link: '/configuration' },
  { text: 'MCP', link: '/mcp' },
+          { text: 'Agent bus', link: '/agent-bus' },
  { text: 'Agents', link: '/agents' },
  { text: 'Memory', link: '/memory-providers' },
  { text: 'Troubleshooting', link: '/troubleshooting' }
@@ -112,6 +113,7 @@ export default defineConfig({
  { text: 'Agent chrome & frame', link: '/agent-frame' },
  { text: 'Configuration', link: '/configuration' },
  { text: 'MCP hub', link: '/mcp' },
+          { text: 'Agent bus', link: '/agent-bus' },
  { text: 'Memory providers', link: '/memory-providers' },
  { text: 'Troubleshooting', link: '/troubleshooting' }
  ]

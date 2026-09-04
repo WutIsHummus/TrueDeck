@@ -37,6 +37,7 @@ import {
  onProjectOpenGraphify
 } from './graphify-service'
 import { getSettingsPath } from './paths'
+import { agentBusEnv } from './agent-bus'
 import type {
  AppSettings,
  ProjectSetupCheck,
@@ -387,6 +388,7 @@ export async function writeAutoContext(projectRoot: string): Promise<string> {
  '- Durable facts: write short notes under `.memory/context/` or `.memory/decisions/`, and/or use MemPalace MCP when available.',
  '- Prefer facts over chat logs. Never store secrets.',
  '- Cross-project preferences live in the global memory path below.',
+ '- Other TrueDeck agents (other terminals, or another PC with TrueDeck + notes sync): `truedeck_peers`, `truedeck_send`, `truedeck_inbox`.',
  '',
  `## Project`,
  `- Root: \`${projectRoot}\``,
@@ -467,7 +469,8 @@ export function memoryEnv(projectRoot: string): Record<string, string> {
  TRUEDECK_AUTO_CONTEXT: ctx,
  TRUEDECK_MEMORY_WING: wingName(projectRoot),
  ...agentsEnv(projectRoot),
- ...graphifyEnv(projectRoot)
+ ...graphifyEnv(projectRoot),
+ ...agentBusEnv()
  }
 }
 
