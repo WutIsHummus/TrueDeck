@@ -54,10 +54,10 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      # node-gyp on current macOS runners needs distutils from setuptools.
-      - name: Python setuptools for node-gyp
-        if: runner.os != 'Windows'
-        run: python3 -m pip install --user setuptools
+      # node-gyp still imports distutils, which Python 3.12 removed.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: Install dependencies
         run: npm ci
