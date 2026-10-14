@@ -27,7 +27,7 @@ jobs:
       matrix:
         include:
           - name: windows-x64
-            os: windows-latest
+            os: windows-2022
             electron_args: --win --x64
             artifact: TrueDeck-windows-x64
             rust_target: ''
@@ -53,6 +53,11 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      # node-gyp on current macOS runners needs distutils from setuptools.
+      - name: Python setuptools for node-gyp
+        if: runner.os != 'Windows'
+        run: python3 -m pip install --user setuptools
 
       - name: Install dependencies
         run: npm ci
