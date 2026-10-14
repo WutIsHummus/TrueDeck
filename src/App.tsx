@@ -13,11 +13,15 @@ import { OnOpenModal } from './components/OnOpenModal'
 import { SettingsMenu } from './components/SettingsMenu'
 import { Onboarding } from './components/Onboarding'
 import { WindowControls } from './components/WindowControls'
+import { PhoneLink } from './components/PhoneLink'
+import { CodexAccountSwitcher } from './components/CodexAccounts'
 import { ProjectMenu } from './components/ProjectMenu'
 import { ProjectTabBar } from './components/ProjectTabBar'
 import { ProjectSwitcher } from './components/ProjectSwitcher'
 import { CloneRepoInput } from './components/CloneRepoInput'
 import { PaneWorkspace, type SplitAnim } from './components/PaneWorkspace'
+import { AssignTaskForm } from './components/AssignTaskForm'
+import { feedAgentOutput, noteAgentExited, noteAgentFocused, tickAgentActivity } from './lib/agent-activity'
 import { ProjectExplorer } from './components/ProjectExplorer'
 import { LoadingCard } from './components/LoadingCard'
 import { getDraggingTabId, setDraggingTabId } from './lib/tab-drag'
@@ -44,6 +48,7 @@ import {
  setPrimaryRatio,
  setSplitRatio,
  syncSessions,
+ splitSessionsIntoPanes,
  normalizeLayout,
  serializePaneTree,
  deserializePaneTree,
@@ -151,6 +156,22 @@ export default function App(): JSX.Element {
  select: (_a: AgentPreset) => {}
  })
  const [agentProbes, setAgentProbes] = useState<Record<string, AgentProbe>>({})
+ /** Lanes that should be peeled into their own panes once every spawn has arrived. */
+ const pendingSwarmsRef = useRef(new Map<string, { ids: string[]; size: number }>())
+ useEffect(() => {
+ const offData = window.truedeck.onPtyData(({ id, data }) => {
+ const agentId = useDeck.getState().sessions.find((s) => s.id === id)?.agentId || 'agent'
+ feedAgentOutput(id, agentId, data)
+ })
+ const timer = window.setInterval(() => tickAgentActivity(), 1000)
+ return () => {
+ offData()
+ window.clearInterval(timer)
+ }
+ }, [])
+ useEffect(() => {
+ if (activeSessionId) noteAgentFocused(activeSessionId)
+ }, [activeSessionId])
  const [onOpenProject, setOnOpenProject] = useState<ProjectConfig | null>(null)
  const [settingsOpen, setSettingsOpen] = useState(false)
  const [layoutsByRoot, setLayoutsByRoot] = useState<Record<string, PaneLayout>>({})
@@ -393,7 +414,7 @@ export default function App(): JSX.Element {
  /** Latest snapshot builder for close flush + immediate geometry saves. */
  // eslint-disable-next-line @typescript-eslint/no-explicit-any
  const buildPersistSnapshotRef = useRef<(() => any) | null>(null)
- /** Parked pane tree per project root so swipe is a Space switch, not a merge. */
+ /** Parked pane tree per project root so switching folders is a Space switch, not a merge. */
  const layoutByRootRef = useRef<Map<string, PaneLayout>>(new Map())
  const workspaceRootRef = useRef<string | null>(null)
 
@@ -469,15 +490,19 @@ export default function App(): JSX.Element {
  agentName: s.agentName,
  projectRoot: s.projectRoot,
  color: s.color,
- kind: (s.kind === 'document' || s.documentPath
+ kind: (s.kind === 'web' || s.agentId === 't3'
+ ? 'web'
+ : s.kind === 'document' || s.documentPath
  ? 'document'
  : s.kind === 'command'
  ? 'command'
- : 'agent') as 'agent' | 'command' | 'document',
+ : 'agent') as 'agent' | 'command' | 'document' | 'web',
  commandLine: s.kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
+ ...(s.webUrl ? { webUrl: s.webUrl } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(s.codexWorkspaceId ? { codexWorkspaceId: s.codexWorkspaceId } : {}),
  ...(minimized ? { uiMinimized: true } : {})
  }
  })
@@ -557,8 +582,8 @@ export default function App(): JSX.Element {
  for (const s of useDeck.getState().sessions) {
  if (s.status !== 'running') continue
  if (!sameProjectRoot(s.projectRoot, projectRoot)) continue
- if (s.kind === 'document' || s.kind === 'command') continue
- if (!s.agentId || s.agentId === 'shell' || s.agentId === 'document') continue
+ if (s.kind === 'document' || s.kind === 'command' || s.kind === 'web') continue
+ if (!s.agentId || s.agentId === 'shell' || s.agentId === 'document' || s.agentId === 't3') continue
  ids.add(s.agentId)
  }
  return Array.from(ids)
@@ -775,13 +800,33 @@ if (!activeRootKey) return true
  ? prev
  : normalizeLayout(prev)
  let next = syncSessions(base, ids, prefer)
+ for (const swarm of pendingSwarmsRef.current.values()) {
+ if (swarm.size < 2 || swarm.ids.length < swarm.size) continue
+ if (!swarm.ids.every((id) => ids.includes(id))) continue
+ const alreadySolo = swarm.ids.every((id) => {
+ const g = findGroup(next, id)
+ return Boolean(g && g.sessionIds.length === 1 && g.sessionIds[0] === id)
+ })
+ if (!alreadySolo) next = splitSessionsIntoPanes(next, swarm.ids)
+ }
  if (prefer && expanded.has(prefer) && findGroup(next, prefer)) {
  next = layoutFocusSession(next, prefer)
  }
  return next
  })
  // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional: not activeSessionId
-}, [sessionHydrated, sessions, detachedIds, activeProjectId, activeRootKey])
+ }, [sessionHydrated, sessions, detachedIds, activeProjectId, activeRootKey])
+
+ useEffect(() => {
+ for (const [swarmId, swarm] of pendingSwarmsRef.current) {
+ if (swarm.size < 2 || swarm.ids.length < swarm.size) continue
+ const solo = swarm.ids.every((id) => {
+ const g = findGroup(paneLayout, id)
+ return Boolean(g && g.sessionIds.length === 1 && g.sessionIds[0] === id)
+ })
+ if (solo) pendingSwarmsRef.current.delete(swarmId)
+ }
+ }, [paneLayout])
 
  const expandedSessionIds = useMemo(
  () =>
@@ -1097,7 +1142,7 @@ if (!activeRootKey) return true
    return next
   })
   setStatus('Tab closed')
-  if (victim?.kind === 'document' || victim?.documentPath) return
+  if (victim?.kind === 'document' || victim?.documentPath || victim?.kind === 'web') return
   try {
    await window.truedeck.killSession(id)
   } catch {
@@ -1527,6 +1572,13 @@ if (!activeRootKey) return true
 
  const offSpawn = window.truedeck.onPtySpawned((info) => {
  if (restoring) return
+ if (info.swarmId && info.kind !== 'document' && !info.documentPath) {
+ const map = pendingSwarmsRef.current
+ const cur = map.get(info.swarmId) || { ids: [] as string[], size: 0 }
+ if (!cur.ids.includes(info.id)) cur.ids.push(info.id)
+ if (typeof info.swarmSize === 'number' && info.swarmSize > 0) cur.size = info.swarmSize
+ map.set(info.swarmId, cur)
+ }
  // Document tabs from MCP truedeck_show / restore: dedupe by path and focus
  if (info.kind === 'document' || info.documentPath) {
  const path = (info.documentPath || '').toLowerCase()
@@ -1552,6 +1604,7 @@ if (!activeRootKey) return true
  addSession(info)
  })
  const offExit = window.truedeck.onPtyExit(({ id, exitCode }) => {
+ noteAgentExited(id)
  markSessionExited(id, exitCode)
  void window.truedeck.taskSessionExit(id, exitCode).catch(() => {
  // ignore
@@ -1936,15 +1989,19 @@ if (!activeRootKey) return true
  agentName: s.agentName,
  projectRoot: s.projectRoot,
  color: s.color,
- kind: (s.kind === 'document' || s.documentPath
+ kind: (s.kind === 'web' || s.agentId === 't3'
+ ? 'web'
+ : s.kind === 'document' || s.documentPath
  ? 'document'
  : s.kind === 'command'
  ? 'command'
- : 'agent') as 'agent' | 'command' | 'document',
+ : 'agent') as 'agent' | 'command' | 'document' | 'web',
  commandLine: s.kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
+ ...(s.webUrl ? { webUrl: s.webUrl } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(s.codexWorkspaceId ? { codexWorkspaceId: s.codexWorkspaceId } : {}),
  ...(minimized ? { uiMinimized: true } : {})
  }
  })
@@ -2033,7 +2090,6 @@ if (!activeRootKey) return true
  * Ctrl+N pop pane to new window · Ctrl+Shift+N shell
  * Ctrl+M minimize tab · Ctrl+Shift+M restore minimized
  * Ctrl+1-9 jump · Ctrl+←/→/↑/↓ panes · Ctrl+=/+/- /0 font zoom
- * Three-finger swipe / mouse back-forward → next/prev project
  */
  const shortcutCtxRef = useRef({
  activeSessionId,
@@ -2045,8 +2101,7 @@ if (!activeRootKey) return true
  persistLayoutSnapshot,
  restoreMinimizedSession: null as null | ((id: string) => void),
  addProjectFn: null as null | (() => void),
- launchAgentFn: null as null | ((id: string) => void),
- cycleProjectFn: null as null | ((dir: 1 | -1) => void)
+ launchAgentFn: null as null | ((id: string) => void)
  })
  /** Always-current layout for shortcuts (setState alone can lag one IPC event). */
  const paneLayoutRef = useRef(paneLayout)
@@ -2090,12 +2145,6 @@ if (!activeRootKey) return true
  repeat?: boolean
  claim?: () => void
  }): void => {
- if (raw.key === 'ProjectNext' || raw.key === 'ProjectPrev') {
- raw.claim?.()
- if (!once(`project-cycle:${raw.key}`, 400)) return
- shortcutCtxRef.current.cycleProjectFn?.(raw.key === 'ProjectNext' ? 1 : -1)
- return
- }
  if (!raw.ctrl) return
  try {
  const ctx = shortcutCtxRef.current
@@ -2652,24 +2701,8 @@ if (!activeRootKey) return true
  // Fallback path: capture-phase DOM (covers cases before-input does not fire)
  window.addEventListener('keydown', onKey, true)
 
- // Horizontal three-finger / precision-touchpad flick stays in this window.
- let wheelAt = 0
- const onWheel = (e: WheelEvent): void => {
- if (e.ctrlKey || e.altKey || e.metaKey) return
- if (Math.abs(e.deltaX) < 80) return
- if (Math.abs(e.deltaX) < Math.abs(e.deltaY) * 1.8) return
- e.preventDefault()
- e.stopPropagation()
- const now = Date.now()
- if (now - wheelAt < 450) return
- wheelAt = now
- shortcutCtxRef.current.cycleProjectFn?.(e.deltaX > 0 ? 1 : -1)
- }
- window.addEventListener('wheel', onWheel, { capture: true, passive: false })
-
  return () => {
  window.removeEventListener('keydown', onKey, true)
- window.removeEventListener('wheel', onWheel, true)
  offShortcut?.()
  }
  // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -2689,8 +2722,6 @@ if (!activeRootKey) return true
  shortcutCtxRef.current.addProjectFn = () => {
  void addProject()
  }
-
- const projectCycleOrderRef = useRef<string[]>([])
 
  const applyWorkspace = (root: string, parked?: SessionLayout | null): void => {
  const st = useDeck.getState()
@@ -2825,23 +2856,15 @@ setProjectSwitcherOpen(false)
  }
  }
 
- const cycleProject = (dir: 1 | -1): void => {
- const st = useDeck.getState()
- const ids = st.projects.map((p) => p.id)
- const order = projectCycleOrderRef.current.filter((id) => ids.includes(id))
- for (const id of ids) if (!order.includes(id)) order.push(id)
- projectCycleOrderRef.current = order
- if (order.length < 2) {
- setStatus('Add another project to swipe between them')
- return
- }
- const idx = Math.max(0, order.indexOf(st.activeProjectId || ''))
- const nextId = order[(idx + dir + order.length) % order.length]
- const next = st.projects.find((p) => p.id === nextId)
- if (!next || next.id === st.activeProjectId) return
- void openProject(next)
- }
- shortcutCtxRef.current.cycleProjectFn = cycleProject
+ const openProjectRef = useRef(openProject)
+ openProjectRef.current = openProject
+ useEffect(() => {
+ if (isDetachedWindow) return
+ return window.truedeck.onPhoneOpenProject((id) => {
+ const project = useDeck.getState().projects.find((item) => item.id === id)
+ if (project) void openProjectRef.current(project)
+ })
+ }, [isDetachedWindow])
 
  const importReposFromFolder = async (): Promise<void> => {
  setTerminalLoadMsg('Scanning for git repos…')
@@ -3494,6 +3517,14 @@ setProjectSwitcherOpen(false)
  Update{updateInfo.latestVersion ? ` v${updateInfo.latestVersion}` : ''}
  </button>
  )}
+ <PhoneLink />
+ <CodexAccountSwitcher
+ onStatus={setStatus}
+ onManage={() => {
+ setSettingsOpen(true)
+ window.dispatchEvent(new CustomEvent('truedeck:settings-tab', { detail: 'codex' }))
+ }}
+ />
  <button
  type="button"
  className="no-drag settings-gear"
@@ -3930,6 +3961,21 @@ setProjectSwitcherOpen(false)
  className="palette-menu-item"
  onClick={() => {
  setPaletteMenuOpen(false)
+ setCustomCliOpen(false)
+ document.querySelector<HTMLTextAreaElement>('.palette-fanout-input')?.focus()
+ }}
+ >
+ <span className="palette-menu-item-title">Assign a task</span>
+ <span className="palette-menu-item-sub">
+ A swarm, or one agent that is not waiting
+ </span>
+ </button>
+ <button
+ type="button"
+ role="menuitem"
+ className="palette-menu-item"
+ onClick={() => {
+ setPaletteMenuOpen(false)
  setCustomCliOpen(true)
  }}
  >
@@ -3982,6 +4028,16 @@ setProjectSwitcherOpen(false)
  )}
  </div>
  </div>
+
+ <AssignTaskForm
+ projectRoot={activeProject?.root || null}
+ agents={agents}
+ probes={agentProbes}
+ onClose={() => {
+ setPaletteOpen(false)
+ setPaletteMenuOpen(false)
+ }}
+ />
 
  <div className="palette-list">
  {filteredAgents.map((a, i) => {

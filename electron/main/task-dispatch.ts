@@ -28,13 +28,18 @@ import { scheduleGraphifySync } from './graphify-service'
 import { getRole } from './roles'
 import { ensureTaskWorktree, worktreeLabel } from './worktrees'
 import { getSettingsPath } from './paths'
+import { codexSpawnContext } from './codex-accounts'
 import type { SessionInfo, Task } from '../shared/types'
 
 function taskDir(projectRoot: string): string {
  return join(projectRoot, '.truedeck', 'tasks')
 }
 
-export function writeTaskFile(task: Task, cwdOverride?: string): string {
+export function writeTaskFile(
+ task: Task,
+ cwdOverride?: string,
+ opts?: { skipSharedFocus?: boolean }
+): string {
  const root = cwdOverride || task.projectRoot
  const dir = taskDir(task.projectRoot)
  mkdirSync(dir, { recursive: true })
@@ -65,16 +70,12 @@ export function writeTaskFile(task: Task, cwdOverride?: string): string {
  writeFileSync(path, body, 'utf8')
 
  try {
- const focusDir = join(task.projectRoot, '.truedeck')
- mkdirSync(focusDir, { recursive: true })
  const ideaBody = (task.body || '').replace(/\s+/g, ' ').trim()
  const ideaLine =
  ideaBody && ideaBody.toLowerCase() !== task.title.trim().toLowerCase()
  ? `${task.title.trim()} - ${ideaBody.slice(0, 140)}`
  : task.title.trim()
- writeFileSync(
- join(focusDir, 'current-focus.md'),
- [
+ const focusText = [
  `# ${task.title.trim()}`,
  '',
  ideaLine,
@@ -85,9 +86,19 @@ export function writeTaskFile(task: Task, cwdOverride?: string): string {
  ''
  ]
  .filter(Boolean)
- .join('\n'),
- 'utf8'
- )
+ .join('\n')
+ // Isolated lanes keep focus inside the worktree so parallel agents
+ // do not overwrite one shared current-focus.md.
+ if (cwdOverride && cwdOverride !== task.projectRoot) {
+ const laneFocus = join(cwdOverride, '.truedeck')
+ mkdirSync(laneFocus, { recursive: true })
+ writeFileSync(join(laneFocus, 'current-focus.md'), focusText, 'utf8')
+ }
+ if (!opts?.skipSharedFocus) {
+ const focusDir = join(task.projectRoot, '.truedeck')
+ mkdirSync(focusDir, { recursive: true })
+ writeFileSync(join(focusDir, 'current-focus.md'), focusText, 'utf8')
+ }
  } catch {
  /* ignore */
  }
@@ -95,17 +106,41 @@ export function writeTaskFile(task: Task, cwdOverride?: string): string {
  return path
 }
 
-function seedText(task: Task, taskFile: string, worktreePath?: string): string {
+function seedText(
+ task: Task,
+ taskFile: string,
+ worktreePath?: string,
+ lane?: { branch?: string }
+): string {
  const rel = taskFile.replace(task.projectRoot, '').replace(/^[\\/]/, '')
+ const fileHint = worktreePath ? taskFile : rel
  return [
  `TrueDeck task: ${task.title}`,
- `Read the task file: ${rel}`,
+ `Read the task file: ${fileHint}`,
  worktreePath ? `You are in isolated worktree: ${worktreePath}` : '',
- task.body ? `Details: ${task.body.slice(0, 500)}` : '',
+ lane?.branch ? `Your branch is ${lane.branch}. Commit only there.` : '',
+ worktreePath
+ ? 'Write comments and your summary in .truedeck/lane/notes.md in this worktree only.'
+ : '',
+ task.body ? `Details: ${task.body.slice(0, 2000)}` : '',
  'Work on this task. Prefer durable notes under .memory/ when relevant.'
  ]
  .filter(Boolean)
  .join('\n')
+}
+
+function writeLanePack(worktreePath: string, context: string): void {
+ const dir = join(worktreePath, '.truedeck', 'lane')
+ mkdirSync(dir, { recursive: true })
+ writeFileSync(join(dir, 'context.md'), context, 'utf8')
+ const notes = join(dir, 'notes.md')
+ if (!existsSync(notes)) {
+ writeFileSync(
+ notes,
+ '# Lane notes\n\nComments and the summary for this agent only. Keep them in this file.\n',
+ 'utf8'
+ )
+ }
 }
 
 function isolationDefault(): boolean {
@@ -126,6 +161,8 @@ export async function dispatchTask(
  opts?: {
  forceIsolation?: boolean
  pipelineRunId?: string
+ /** Parallel fan-out id. Skips the shared focus file and writes a private lane pack. */
+ swarmId?: string
  }
 ): Promise<{ task: Task; session: SessionInfo; runId: string; taskFile: string }> {
  const task = getTask(taskId)
@@ -139,6 +176,9 @@ export async function dispatchTask(
  const agents = loadAgents()
  const agent = agents.find((a) => a.id === agentId)
  if (!agent) throw new Error(`Unknown agent: ${agentId}`)
+ if (agent.id === 't3') {
+ throw new Error('T3 is not a terminal agent. Assign the task to a swarm or one agent that is not waiting.')
+ }
 
  let worktreePath =
  task.worktreePath && task.worktreePath.length > 0 ? task.worktreePath : undefined
@@ -147,12 +187,18 @@ export async function dispatchTask(
  isolationDefault() ||
  task.worktreePath !== undefined
 
+ let branch: string | undefined
  if (wantIsolation && !worktreePath) {
  try {
- const wt = await ensureTaskWorktree(task.projectRoot, task.id)
+ const wt = await ensureTaskWorktree(task.projectRoot, task.id, { agentId })
  worktreePath = wt.path
+ branch = wt.branch
  updateTask(task.id, { worktreePath })
- } catch {
+ } catch (e) {
+ if (opts?.swarmId) {
+ const msg = e instanceof Error ? e.message : String(e)
+ throw new Error(`${agent.name} worktree failed: ${msg}`)
+ }
  // Non-git or failure - fall back to main root
  worktreePath = undefined
  updateTask(task.id, { worktreePath: undefined })
@@ -171,7 +217,16 @@ export async function dispatchTask(
  worktreePath
  }
 
- const taskFile = writeTaskFile(taskForFile, cwd)
+ const taskFile = writeTaskFile(taskForFile, cwd, {
+ skipSharedFocus: Boolean(opts?.swarmId)
+ })
+ if (opts?.swarmId && worktreePath) {
+ try {
+ writeLanePack(worktreePath, taskForFile.body || task.title)
+ } catch {
+ /* ignore */
+ }
+ }
  const { env } = onAgentSpawnFast(task.projectRoot)
  const title = (task.title || 'Untitled').trim()
  const bodyOneLine = (task.body || '').replace(/\s+/g, ' ').trim()
@@ -211,8 +266,12 @@ export async function dispatchTask(
  }
  : {}),
  ...(role ? { TRUEDECK_ROLE: role.id, TRUEDECK_ROLE_LABEL: role.label } : {}),
- ...(opts?.pipelineRunId ? { TRUEDECK_PIPELINE_RUN: opts.pipelineRunId } : {})
+ ...(opts?.pipelineRunId ? { TRUEDECK_PIPELINE_RUN: opts.pipelineRunId } : {}),
+ ...(opts?.swarmId ? { TRUEDECK_SWARM: opts.swarmId } : {}),
+ ...(branch ? { TRUEDECK_BRANCH: branch } : {})
  }
+ const codex = codexSpawnContext({ agentId: agent.id, projectRoot: cwd })
+ Object.assign(extraEnv, codex.env)
 
  const resolved = resolveAgentCommand(agent.id, agent.command, agent.args || [])
  if (!resolved.available) {
@@ -237,12 +296,13 @@ export async function dispatchTask(
  ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command)
  }
  })
+ Object.assign(session, codex.fields)
  let resumeToken = prepared.resumeToken
  const kind = resumeAgentKind(agent.id, resolved.command)
  if (!resumeToken && prepared.needsDiscover && kind === 'codex') {
  resumeToken =
- (await discoverCodexSessionId(cwd, notBefore, 4000)) ||
- tryDiscoverCodexSessionId(cwd, notBefore)
+ (await discoverCodexSessionId(cwd, notBefore, 4000, codex.home)) ||
+ tryDiscoverCodexSessionId(cwd, notBefore, codex.home)
  } else if (!resumeToken && prepared.needsDiscover && kind === 'opencode') {
  resumeToken =
  (await discoverOpenCodeSessionId(cwd, notBefore, 2500)) ||
@@ -259,6 +319,8 @@ export async function dispatchTask(
  if (resumeToken) session.resumeToken = resumeToken
  if (role?.label) session.roleLabel = role.label
  if (worktreePath) session.worktreeLabel = worktreeLabel(worktreePath)
+ if (branch) session.gitBranch = branch
+ if (opts?.swarmId) session.swarmId = opts.swarmId
 
  const run = startRun({
  taskId: task.id,
@@ -280,7 +342,7 @@ export async function dispatchTask(
  })
  if (updated?.status) session.taskStatus = updated.status
 
- const seed = seedText(task, taskFile, worktreePath)
+ const seed = seedText(task, taskFile, worktreePath, branch ? { branch } : undefined)
  const colorLine =
  agent.id === 'claude' && !prepared.resumeToken ? claudeColorSeed(sessionColor.cliName) : ''
  setTimeout(() => {

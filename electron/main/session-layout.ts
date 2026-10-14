@@ -27,6 +27,18 @@ const EMPTY: SessionLayout = {
  savedAt: 0
 }
 
+function savedKind(t: {
+ kind?: string
+ documentPath?: string
+ commandLine?: string
+ agentId?: string
+}): NonNullable<SavedSessionTab['kind']> {
+ if (t.kind === 'web' || t.agentId === 't3') return 'web'
+ if (t.kind === 'document' || t.documentPath) return 'document'
+ if (t.kind === 'command' || t.commandLine) return 'command'
+ return 'agent'
+}
+
 /** Used to refuse empty overwrites that race startup restore. */
 const LAYOUT_BOOT_MS = Date.now()
 
@@ -319,16 +331,13 @@ export function loadSessionLayout(): SessionLayout {
  agentName: String(t.agentName || t.agentId),
  projectRoot: String(t.projectRoot),
  color: String(t.color || '#6cb6ff'),
- kind:
- t.kind === 'document' || t.documentPath
- ? 'document'
- : t.kind === 'command' || t.commandLine
- ? 'command'
- : 'agent',
+ kind: savedKind(t),
  commandLine: t.commandLine ? String(t.commandLine) : undefined,
  documentPath: t.documentPath ? String(t.documentPath) : undefined,
+ ...(t.webUrl ? { webUrl: String(t.webUrl) } : {}),
  ...(t.title ? { title: String(t.title) } : {}),
  ...(t.resumeToken ? { resumeToken: String(t.resumeToken) } : {}),
+ ...(t.codexWorkspaceId ? { codexWorkspaceId: String(t.codexWorkspaceId) } : {}),
  ...(t.uiMinimized ? { uiMinimized: true } : {})
  }))
  )
@@ -379,7 +388,7 @@ export function loadSessionLayout(): SessionLayout {
  }
  }
  seedBankFromLayout(fixed)
- return preferParkedLayout(fixed)
+ return fixed
  } catch {
  return { ...EMPTY }
  }
@@ -458,14 +467,10 @@ export function saveSessionLayout(
  agentName: String(t.agentName || t.agentId),
  projectRoot: String(t.projectRoot),
  color: String(t.color || '#6cb6ff'),
- kind:
- t.kind === 'document' || t.documentPath
- ? 'document'
- : t.kind === 'command' || t.commandLine
- ? 'command'
- : 'agent',
+ kind: savedKind(t),
  commandLine: t.commandLine ? String(t.commandLine) : undefined,
  documentPath: t.documentPath ? String(t.documentPath) : undefined,
+ ...(t.webUrl ? { webUrl: String(t.webUrl) } : {}),
  ...(t.title ? { title: String(t.title) } : {}),
  resumeToken: tok,
  ...(t.uiMinimized ? { uiMinimized: true } : {})
@@ -545,16 +550,13 @@ const mapIndex = (i: number | null | undefined): number | null => {
  agentName: t.agentName,
  projectRoot: t.projectRoot,
  color: t.color,
- kind:
- t.kind === 'document' || t.documentPath
- ? 'document'
- : t.kind === 'command' || t.commandLine
- ? 'command'
- : 'agent',
+ kind: savedKind(t),
  commandLine: t.commandLine,
  ...(t.documentPath ? { documentPath: t.documentPath } : {}),
+ ...(t.webUrl ? { webUrl: t.webUrl } : {}),
  ...(t.title ? { title: t.title } : {}),
  ...(t.resumeToken ? { resumeToken: t.resumeToken } : {}),
+ ...(t.codexWorkspaceId ? { codexWorkspaceId: t.codexWorkspaceId } : {}),
  ...(t.uiMinimized ? { uiMinimized: true } : {})
  })),
  paneTree: treeForWrite,
@@ -620,12 +622,7 @@ export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  s.title && s.title.trim() && s.title.trim().toLowerCase() !== (s.agentName || '').toLowerCase()
  ? s.title.trim()
  : undefined
- const kind: SavedSessionTab['kind'] =
- s.kind === 'document' || s.documentPath
- ? 'document'
- : s.kind === 'command'
- ? 'command'
- : 'agent'
+ const kind = savedKind(s)
  return {
  agentId: s.agentId,
  agentName: s.agentName,
@@ -634,8 +631,10 @@ export function sessionInfoToSavedTab(s: SessionInfo): SavedSessionTab {
  kind,
  commandLine: kind === 'command' ? s.commandLine : undefined,
  ...(s.documentPath ? { documentPath: s.documentPath } : {}),
+ ...(s.webUrl ? { webUrl: s.webUrl } : {}),
  ...(title ? { title } : {}),
  ...(s.resumeToken ? { resumeToken: s.resumeToken } : {}),
+ ...(s.codexWorkspaceId ? { codexWorkspaceId: s.codexWorkspaceId } : {}),
  ...(s.uiMinimized || s.uiHidden ? { uiMinimized: true } : {})
  }
 }
@@ -759,14 +758,12 @@ export function layoutFromPersistSnapshot(
  ? s.title
  : undefined)
  const resumeToken = fromMeta.resumeToken || s?.resumeToken
- const kind: SavedSessionTab['kind'] =
- fromMeta.kind === 'document' || fromMeta.documentPath || s?.documentPath
- ? 'document'
- : fromMeta.kind === 'agent'
- ? 'agent'
- : fromMeta.kind === 'command' || fromMeta.commandLine
- ? 'command'
- : 'agent'
+ const kind = savedKind({
+ kind: fromMeta.kind,
+ documentPath: fromMeta.documentPath || s?.documentPath,
+ commandLine: fromMeta.commandLine,
+ agentId: String(fromMeta.agentId)
+ })
  tab = {
  agentId: String(fromMeta.agentId),
  agentName: String(fromMeta.agentName || fromMeta.agentId),
@@ -782,8 +779,14 @@ export function layoutFromPersistSnapshot(
  documentPath: fromMeta.documentPath
  ? String(fromMeta.documentPath)
  : s?.documentPath,
+ ...(fromMeta.webUrl || s?.webUrl
+ ? { webUrl: String(fromMeta.webUrl || s?.webUrl) }
+ : {}),
  ...(title ? { title: String(title) } : {}),
  ...(resumeToken ? { resumeToken: String(resumeToken) } : {}),
+ ...(fromMeta.codexWorkspaceId || s?.codexWorkspaceId
+ ? { codexWorkspaceId: String(fromMeta.codexWorkspaceId || s?.codexWorkspaceId) }
+ : {}),
  ...(fromMeta.uiMinimized || s?.uiMinimized || s?.uiHidden ? { uiMinimized: true } : {})
  }
  } else if (s && s.status === 'running') {
@@ -801,14 +804,7 @@ export function layoutFromPersistSnapshot(
  const fromMeta = meta[i]
  if (!fromMeta?.projectRoot || !fromMeta.agentId) continue
  oldToNew.set(i, tabs.length)
- const kind: SavedSessionTab['kind'] =
- fromMeta.kind === 'document' || fromMeta.documentPath
- ? 'document'
- : fromMeta.kind === 'agent'
- ? 'agent'
- : fromMeta.kind === 'command' || fromMeta.commandLine
- ? 'command'
- : 'agent'
+ const kind = savedKind(fromMeta)
  tabs.push({
  agentId: String(fromMeta.agentId),
  agentName: String(fromMeta.agentName || fromMeta.agentId),
@@ -822,8 +818,12 @@ export function layoutFromPersistSnapshot(
  documentPath: fromMeta.documentPath
  ? String(fromMeta.documentPath)
  : undefined,
+ ...(fromMeta.webUrl ? { webUrl: String(fromMeta.webUrl) } : {}),
  ...(fromMeta.title ? { title: String(fromMeta.title) } : {}),
  ...(fromMeta.resumeToken ? { resumeToken: String(fromMeta.resumeToken) } : {}),
+ ...(fromMeta.codexWorkspaceId
+ ? { codexWorkspaceId: String(fromMeta.codexWorkspaceId) }
+ : {}),
  ...(fromMeta.uiMinimized ? { uiMinimized: true } : {})
  })
  keptIds.push(snapshot.sessionOrder?.[i] || `meta-${i}`)
@@ -1025,21 +1025,22 @@ function seedBankFromLayout(layout: SessionLayout): void {
  let changed = false
  for (const root of roots) {
  const slice = sliceLayoutForProject(layout, root)
- if (!slice?.tabs.length) continue
  const key = layoutRootKey(root)
-    const prev = bank.byRoot[key]
-    if (!prev || prev.tabs.length < slice.tabs.length) {
-      bank.byRoot[key] = slice
-      changed = true
-    } else if (
-      prev &&
-      slice.savedAt >= (prev.savedAt || 0) &&
-      slice.tabs.length === prev.tabs.length
-    ) {
-      // Same tab count: still take newer resume tokens / pane tree.
-      bank.byRoot[key] = slice
-      changed = true
-    }
+ if (!slice?.tabs.length) {
+ if (
+ layout.activeProjectRoot &&
+ sameProjectRoot(root, layout.activeProjectRoot) &&
+ bank.byRoot[key]
+ ) {
+ delete bank.byRoot[key]
+ changed = true
+ }
+ continue
+ }
+ // The open snapshot replaces history. A closed agent must not stay parked
+ // and come back the next time this project tab is selected.
+ bank.byRoot[key] = slice
+ changed = true
  }
  if (layout.activeProjectRoot) {
  bank.activeProjectRoot = layout.activeProjectRoot
@@ -1048,20 +1049,7 @@ function seedBankFromLayout(layout: SessionLayout): void {
  if (changed) saveProjectBank(bank)
 }
 
-function preferParkedLayout(layout: SessionLayout): SessionLayout {
- const root = layout.activeProjectRoot
- if (!root) return layout
- const parked = loadProjectLayout(root)
- if (!parked?.tabs?.length) return layout
- const here = layout.tabs.filter((t) => sameProjectRoot(t.projectRoot, root)).length
- if (parked.tabs.length <= here) return layout
- console.warn(
- `[layout] using parked ${parked.tabs.length} tab(s) for ${root} (active snapshot had ${here})`
- )
- return { ...parked, activeProjectRoot: root }
-}
-
-function upsertBankFromLayout(layout: SessionLayout, opts?: SaveLayoutOpts): void {
+function upsertBankFromLayout(layout: SessionLayout, _opts?: SaveLayoutOpts): void {
  const bank = loadProjectBank()
  const roots: string[] = []
  const seen: Record<string, true> = {}
@@ -1081,42 +1069,12 @@ function upsertBankFromLayout(layout: SessionLayout, opts?: SaveLayoutOpts): voi
  const slice = sliceLayoutForProject(layout, root)
  if (!slice?.tabs.length) {
  if (
- opts?.allowEmpty &&
  layout.activeProjectRoot &&
  sameProjectRoot(root, layout.activeProjectRoot)
  ) {
  delete bank.byRoot[key]
  }
  continue
- }
-        const prev = bank.byRoot[key]
-        // Never let a partial persist (project switch, deferred spawn) wipe a
-        // richer parked layout. Only allowEmpty (user closed every tab) shrinks.
-        if (prev && prev.tabs.length > slice.tabs.length && !opts?.allowEmpty) {
- // Startup partial persist: keep extra parked tabs (resumeToken / command line).
- const have = new Set(
- slice.tabs.map((t) => `${t.agentId}\0${t.resumeToken || ''}\0${t.commandLine || ''}`)
- )
- const extras = prev.tabs.filter((t) => {
- const k = `${t.agentId}\0${t.resumeToken || ''}\0${t.commandLine || ''}`
- if (have.has(k)) return false
- have.add(k)
- return true
- })
- if (extras.length) {
- const mergedTabs = [...slice.tabs, ...extras].slice(0, MAX_SAVED_TABS)
- const preferTree =
- prev.paneTree && collectTreeIndices(prev.paneTree).length >= mergedTabs.length
- ? prev.paneTree
- : slice.paneTree
- const re = compactTabsToPaneTree(mergedTabs, preferTree)
- bank.byRoot[key] = {
- ...slice,
- tabs: re.tabs,
- paneTree: re.paneTree || slice.paneTree
- }
- continue
- }
  }
  bank.byRoot[key] = slice
  }

@@ -105,13 +105,22 @@ function resolveCursorAgent(): { command: string; args: string[] } {
  return { command: 'cursor-agent', args: [] }
 }
 
+/** True when the resolved binary exists, so the desk does not open a stand-in shell. */
+export function canLaunch(agentId: string, command: string, args: string[]): boolean {
+ const resolved = resolveCommand(agentId, command, args)
+ if (!resolved.command) return false
+ if (existsSync(resolved.command)) return true
+ return Boolean(which(resolved.command))
+}
+
 export function resolveCommand(
  agentId: string,
  command: string,
  args: string[]
 ): { command: string; args: string[] } {
  if (agentId === 'cursor' || command.toLowerCase() === 'cursor') {
- return resolveCursorAgent()
+ const resolved = resolveCursorAgent()
+ return { command: resolved.command, args: [...resolved.args, ...args] }
  }
 
  if (isIdeBinary(command)) {

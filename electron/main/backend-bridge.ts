@@ -63,6 +63,15 @@ export class BackendBridge {
   version: string | null = null
   /** Incomplete UTF-8 tails per PTY session (same as RustPtyHost). */
   private utf8Carry = new Map<string, Buffer>()
+  private pushListeners = new Set<(channel: string, payload: unknown) => void>()
+
+  /** Extra listeners for the same pty events the windows receive. */
+  onPush(fn: (channel: string, payload: unknown) => void): () => void {
+    this.pushListeners.add(fn)
+    return () => {
+      this.pushListeners.delete(fn)
+    }
+  }
 
   get isReady(): boolean {
     return this.ready && this.proc !== null
@@ -84,6 +93,13 @@ export class BackendBridge {
         w.webContents.send(channel, payload)
       } catch {
         /* ignore closed */
+      }
+    }
+    for (const fn of this.pushListeners) {
+      try {
+        fn(channel, payload)
+      } catch {
+        /* ignore listener */
       }
     }
   }

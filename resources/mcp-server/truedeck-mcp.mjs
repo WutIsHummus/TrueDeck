@@ -239,7 +239,8 @@ function listAgentsLocal() {
     { id: 'gemini', name: 'Gemini' },
     { id: 'shell', name: 'Shell' },
     { id: 'opencode', name: 'OpenCode' },
-    { id: 'aider', name: 'Aider' }
+    { id: 'aider', name: 'Aider' },
+    { id: 't3', name: 'T3' }
   ]
   try {
     if (!existsSync(agentsPath())) return fallback
@@ -846,6 +847,39 @@ function toolList() {
         }
       },
       {
+        name: 'truedeck_fanout',
+        description:
+          'Give one task to every installed agent CLI at once. Each agent gets a fresh terminal and its own git worktree so edits and notes stay on that lane. TrueDeck must be running. Requires a git repo.',
+        inputSchema: {
+          type: 'object',
+          properties: {
+            title: {
+              type: 'string',
+              description: 'Shared goal for every lane'
+            },
+            body: {
+              type: 'string',
+              description: 'Shared details, files, constraints'
+            },
+            projectRoot: {
+              type: 'string',
+              description: 'Project path (defaults to TRUEDECK_PROJECT env)'
+            },
+            agentIds: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Optional subset (claude, codex, grok, cursor, …). Default: every installed agent except shell.'
+            },
+            wait: {
+              type: 'boolean',
+              description: 'Wait until the lanes have opened (default true, up to ~3 min)'
+            }
+          },
+          required: ['title'],
+          additionalProperties: false
+        }
+      },
+      {
         name: 'truedeck_dispatch',
         description:
           'Dispatch an existing task id to a live agent PTY in TrueDeck (app must be running).',
@@ -1265,6 +1299,49 @@ function callTool(name, args = {}) {
                     : status === 'error'
                       ? `Dispatch failed: ${finished?.error || 'unknown'}`
                       : 'Queued. Keep TrueDeck running — it opens the agent CLI when the queue is processed. Retry truedeck_launch or open TrueDeck if still pending.'
+              },
+              null,
+              2
+            )
+          }
+        ]
+      }
+    }
+    case 'truedeck_fanout': {
+      const projectRoot = args.projectRoot || process.env.TRUEDECK_PROJECT
+      if (!projectRoot) throw new Error('projectRoot required (or TRUEDECK_PROJECT env)')
+      if (!args.title) throw new Error('title is required')
+      const agentIds = Array.isArray(args.agentIds)
+        ? args.agentIds.map((id) => String(id)).filter(Boolean)
+        : []
+      const cmd = enqueueDeckCommand({
+        type: 'fanout',
+        projectRoot: String(projectRoot),
+        title: String(args.title),
+        body: args.body != null ? String(args.body) : undefined,
+        agentId: agentIds.length ? agentIds.join(',') : undefined
+      })
+      const shouldWait = args.wait !== false
+      const finished = shouldWait ? waitForCommand(cmd.id, 180000) : cmd
+      const status = finished?.status || cmd.status
+      return {
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify(
+              {
+                ok: status === 'done',
+                queued: true,
+                commandId: cmd.id,
+                status,
+                result: finished?.result,
+                error: finished?.error,
+                hint:
+                  status === 'done'
+                    ? 'Each installed agent opened in its own terminal and git worktree.'
+                    : status === 'error'
+                      ? `Fan-out failed: ${finished?.error || 'unknown'}`
+                      : 'Queued. Keep TrueDeck running until the lanes open.'
               },
               null,
               2

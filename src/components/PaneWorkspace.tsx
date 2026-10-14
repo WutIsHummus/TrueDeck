@@ -395,6 +395,18 @@ export function PaneWorkspace({
                     />
                   )
                 }
+                if (s.kind === 'web') {
+                  return (
+                    <div
+                      key={s.id}
+                      className={`term-slot${isVisible ? ' visible' : ' hidden'}`}
+                    >
+                      <div className="pane-minimized-body muted">
+                        Embedded T3 was removed. Close this tab, then assign the task from the agent palette.
+                      </div>
+                    </div>
+                  )
+                }
                 const isClosing = Boolean(closingTabIds?.has(s.id))
                 return (
                   <div

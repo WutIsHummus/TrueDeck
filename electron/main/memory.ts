@@ -9,6 +9,7 @@ import {
 } from 'fs'
 import { join, relative, basename } from 'path'
 import { getGlobalMemoryDir, getRepoMemoryDir } from './paths'
+import { ensureCheckoutWingFile } from './memory-wing'
 import type { MemoryNote, MemoryScope } from '../shared/types'
 
 const INDEX_TEMPLATE = `# Memory Index
@@ -68,6 +69,11 @@ Repo-specific facts belong in each project's \`.memory/\` folder.
 export function ensureRepoMemory(projectRoot: string): string {
   const dir = getRepoMemoryDir(projectRoot)
   ensureTree(dir)
+  try {
+    ensureCheckoutWingFile(projectRoot)
+  } catch {
+    // A locked gitignore must not block memory.
+  }
   return dir
 }
 
@@ -167,7 +173,10 @@ export function buildAgentBootstrapPrompt(projectRoot?: string): string {
       '  Project-specific facts, decisions, patterns. Commit with the repo when useful.',
       '',
       'At session start: skim both INDEX.md files for relevant context.',
-      'When you learn something durable, write a short markdown note (do not dump secrets).'
+      'When you learn something durable, write a short markdown note (do not dump secrets).',
+      'When the user teaches a job, file MemPalace room jobs (predicate done_by) before continuing.',
+      'When the user corrects a method, file room corrections (predicate corrected_to) and supersede the old fact. The newest correction is the current method.',
+      'Before repeating that kind of work, search rooms jobs and corrections and the knowledge graph.'
     )
   }
   return parts.join('\n')

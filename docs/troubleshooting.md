@@ -56,7 +56,7 @@ Workaround on an unfixed build: in Settings → Agents, clear extra args on the 
 
 **Symptom:** Resuming a Cursor Agent tab auto-scrolls through transcript history for a long time before you can type.
 
-**Cause:** `cursor-agent --resume` dumps the conversation into the terminal. TrueDeck now holds that dump off-screen for a moment, then paints the live prompt (no history marquee). The conversation is still in context; only the visual replay is skipped.
+**Cause:** `cursor-agent` prints the conversation into the normal buffer, and the load path used to send extra resizes for several seconds. Each resize made Cursor redraw, so the pane kept scrolling down. TrueDeck now holds that opening burst off-screen, jumps to the live bottom, then stops the extra resizes. The conversation is still in the buffer; only the scroll-through is skipped.
 
 ## Agent CLI not found
 

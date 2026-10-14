@@ -92,6 +92,7 @@ export function openDetachedPaneWindow(opts: {
       nodeIntegration: false,
       sandbox: false,
       backgroundThrottling: false,
+      webviewTag: false,
       // Reliable boot identity (URL query can be lost on file:// reloads)
       additionalArguments: [`--td-detached=${sessionId}`]
     }

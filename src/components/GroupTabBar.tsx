@@ -15,6 +15,7 @@ import { sessionTabLabel, sessionTabTitle } from '../lib/session-label'
 import { CloseIcon } from './CloseIcon'
 import { PixelBlast } from './PixelBlast'
 import { AgentIcon } from './AgentIcon'
+import { AgentPhaseMark } from './AgentPhaseMark'
 import { LanguageIcon } from './LanguageIcon'
 import { useDeck } from '../store'
 
@@ -340,6 +341,7 @@ export function GroupTabBar({
                   )}
                 </span>
                 <span className="label">{label}</span>
+                <AgentPhaseMark sessionId={s.id} exited={s.status === 'exited'} />
                 <button
                   type="button"
                   className="tab-eye-btn"

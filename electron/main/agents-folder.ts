@@ -57,6 +57,10 @@ function memoryPointerBlock(): string {
     'Canonical instructions: `.agents/AGENTS.md`. Project MCP: `.agents/mcp.json` (mirrored to root `.mcp.json`).',
     'TrueDeck hub (`truedeck-hub`): `truedeck_show`, `truedeck_launch`, `truedeck_peers`, `truedeck_send`, `truedeck_inbox` — app must be running.',
     'Message other TrueDeck agents (other terminals, or another PC running TrueDeck with notes sync) via those tools.',
+    'Use only this repo MemPalace wing (auto-context Wing line, or TRUEDECK_MEMORY_WING). Do not file into another repo wing.',
+    'When the user teaches how to do a job, file it before continuing: this project MemPalace wing, room jobs, knowledge-graph predicate done_by.',
+    'When the user corrects a method, file room corrections, predicate corrected_to, and supersede the old fact. The newest correction is the current method.',
+    'Before repeating that kind of work, search rooms jobs and corrections and the knowledge graph. Write a short .memory note too. Never store secrets.',
     'Do not ask the user to manage memory, Graphify, or MCP wiring.',
     `<!-- /${POINTER_MARK} -->`,
     ''
@@ -98,7 +102,8 @@ function hasCurrentAgentsPointer(content: string): boolean {
     content.includes(POINTER_MARK) &&
     content.includes('.agents/') &&
     (content.includes('.agents/AGENTS.md') || content.includes('**`.agents/`**')) &&
-    content.includes('truedeck_send')
+    content.includes('truedeck_send') &&
+    content.includes('room jobs')
   )
 }
 
@@ -292,6 +297,7 @@ export function writeGlobalAgentsMemoryNote(
       '- Project agent rules: `.agents/AGENTS.md` (unified folder).',
       `- MemPalace palace: \`${palace}\``,
       '- Durable notes: `.memory/` in the repo.',
+      '- When the user teaches a job or corrects a method, file MemPalace rooms jobs or corrections before continuing, and supersede the old graph fact. Search those rooms before repeating the work.',
       '- MCP is injected by TrueDeck (see project `.agents/mcp.json` + root `.mcp.json`).',
       projectRoot ? `- Last project: \`${projectRoot}\`` : '',
       '- Env (when spawned by TrueDeck): `TRUEDECK_AGENTS_DIR`, `TRUEDECK_AGENTS_MD`, `TRUEDECK_AGENTS_MCP`.',

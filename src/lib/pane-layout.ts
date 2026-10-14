@@ -865,6 +865,21 @@ export function addPane(
  return placeSession(layout, sessionId, edge, layout.focusedGroupId)
 }
 
+/**
+ * Give each session its own pane. Sessions already alone in a pane stay put.
+ * Existing neighboring panes stay; shared tab strips are peeled apart.
+ */
+export function splitSessionsIntoPanes(layout: PaneLayout, sessionIds: string[]): PaneLayout {
+ let next = normalizeLayout(layout)
+ for (const id of sessionIds) {
+ if (!allSessionIds(next).includes(id)) continue
+ const g = findGroup(next, id)
+ if (g && g.sessionIds.length === 1 && g.sessionIds[0] === id) continue
+ next = placeSession(next, id, 'right')
+ }
+ return next
+}
+
 export function fanOutSessions(
  _layout: PaneLayout,
  sessionIds: string[],

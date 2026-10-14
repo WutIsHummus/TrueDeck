@@ -116,9 +116,9 @@ export function ProjectMenu({
  className={`project-title ${open ? 'open' : ''} ${activeProject ? '' : 'empty'}${compact ? ' compact' : ''}`}
  title={
 compact
- ? 'Open or switch project · Ctrl+O folder · Ctrl+P switcher · swipe stays in this window'
+ ? 'Open or switch project · Ctrl+O folder · Ctrl+P switcher'
  : activeProject
- ? `${activeProject.root}\nClick to switch · three-finger swipe stays in this window · Ctrl+O folder · Ctrl+P switcher`
+ ? `${activeProject.root}\nClick to switch · Ctrl+O folder · Ctrl+P switcher`
  : 'Open a project folder (Ctrl+O)'
  }
  aria-haspopup="menu"
@@ -157,9 +157,6 @@ compact
  <div className="project-dropdown" role="menu">
  <div className="project-dropdown-head">
  {activeProject ? shortPath(activeProject.root) : 'No folder open'}
- <div className="muted" style={{ marginTop: 4, fontSize: 11, opacity: 0.7 }}>
- Three-finger swipe switches projects in this window
- </div>
  </div>
 
  <div className="project-dropdown-actions">

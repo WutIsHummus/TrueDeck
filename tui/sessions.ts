@@ -1,5 +1,9 @@
 import type { IPty } from 'node-pty'
+import { homedir } from 'os'
+import { join } from 'path'
 import { resolveCommand } from './resolve'
+import { ensureCodexTrust } from './codex-trust'
+import { defaultTrueDeckDataDir, readActiveCodexHome } from '../electron/main/codex-account-store'
 import type { AgentPreset } from './agents'
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -14,6 +18,13 @@ export interface Session {
   proc: IPty
   status: 'running' | 'exited'
   buf: string
+  /** Task this process was given. A second task does not reuse the same chat. */
+  task: string | null
+  worktree: string | null
+  /** Model id passed to the CLI, or null for the harness default. */
+  model: string | null
+  /** Named agent inside the harness, when the CLI supports --agent. */
+  namedAgent: string | null
   exitCode?: number
 }
 
@@ -27,11 +38,28 @@ export class SessionManager {
     return this.sessions.find((s) => s.id === this.activeId) || this.sessions[0] || null
   }
 
-  spawn(agent: AgentPreset, cwd: string, cols = 120, rows = 30): Session {
+  spawn(
+    agent: AgentPreset,
+    cwd: string,
+    cols = 120,
+    rows = 30,
+    initialPrompt: string | null = null
+  ): Session {
+    const codexHome =
+      agent.id === 'codex' ? readActiveCodexHome(defaultTrueDeckDataDir()) : null
+    if (agent.id === 'codex') {
+      try {
+        ensureCodexTrust(cwd, codexHome || join(homedir(), '.codex'))
+      } catch {
+        /* launch anyway; Codex will show its own trust prompt */
+      }
+    }
     const resolved = resolveCommand(agent.id, agent.command, [...(agent.args || [])])
+    const args = [...resolved.args]
+    if (initialPrompt && (agent.id === 'cursor' || agent.id === 'codex')) args.push(initialPrompt)
     let proc: IPty
     try {
-      proc = pty.spawn(resolved.command, resolved.args, {
+      proc = pty.spawn(resolved.command, args, {
         name: 'xterm-256color',
         cols,
         rows,
@@ -41,7 +69,8 @@ export class SessionManager {
           TRUEDECK: '1',
           TRUEDECK_PROJECT: cwd,
           TRUEDECK_AGENT: agent.id,
-          TRUEDECK_UI: 'tui'
+          TRUEDECK_UI: 'tui',
+          ...(codexHome ? { CODEX_HOME: codexHome } : {})
         } as Record<string, string>,
         useConpty: process.platform === 'win32'
       })
@@ -75,7 +104,11 @@ export class SessionManager {
       cwd,
       proc,
       status: 'running',
-      buf: ''
+      buf: '',
+      task: null,
+      worktree: null,
+      model: null,
+      namedAgent: null
     }
 
     proc.onData((data) => {

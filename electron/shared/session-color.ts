@@ -40,7 +40,8 @@ const BRAND_FALLBACK: Record<string, string> = {
   kiro: '#993ff5',
   shell: '#5391fe',
   opencode: '#cfcecd',
-  aider: '#0088ff'
+  aider: '#0088ff',
+  t3: '#8b7cff'
 }
 
 function fnv1a(s: string): number {

@@ -49,6 +49,7 @@ function resolveKey(agentId: string): string {
  if (id === 'shell' || id === 'command') return 'powershell'
  if (id === 'opencode' || id === 'aider') return 'github'
  if (id === 'kiro') return 'kiro'
+ if (id === 't3') return 't3'
  if (id.startsWith('custom-')) return 'default'
  if (PATHS[id]) return id
  return 'default'
@@ -56,6 +57,46 @@ function resolveKey(agentId: string): string {
 
 /** Official Kiro brand plate purple */
 export const KIRO_BRAND_COLOR = '#993FF5'
+
+/** T3 Code wordmark. The product has no single-path simple-icon. */
+function T3Mark({
+ size,
+ className,
+ title,
+ color
+}: {
+ size: number
+ className: string
+ title?: string
+ color?: string
+}): JSX.Element {
+ return (
+ <svg
+ width={size}
+ height={size}
+ viewBox="0 0 24 24"
+ className={`agent-icon agent-icon-t3 ${className}`.trim()}
+ xmlns="http://www.w3.org/2000/svg"
+ aria-hidden={title ? undefined : true}
+ role={title ? 'img' : undefined}
+ focusable={false}
+ >
+ {title ? <title>{title}</title> : null}
+ <rect x="1.5" y="1.5" width="21" height="21" rx="5" fill={color || '#8b7cff'} />
+ <text
+ x="12"
+ y="16.2"
+ textAnchor="middle"
+ fill="#0c0c0c"
+ fontFamily="ui-sans-serif, Segoe UI, sans-serif"
+ fontSize="11"
+ fontWeight="700"
+ >
+ t3
+ </text>
+ </svg>
+ )
+}
 
 /**
  * Official Kiro mark (rounded square + character).
@@ -123,6 +164,9 @@ export function AgentIcon({
  return (
  <KiroMark size={size} className={className} title={title} color={color} />
  )
+ }
+ if (key === 't3') {
+ return <T3Mark size={size} className={className} title={title} color={color} />
  }
  const d = PATHS[key]
 

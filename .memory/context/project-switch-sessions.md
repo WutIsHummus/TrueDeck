@@ -1,6 +1,6 @@
 # Project switch: macOS Spaces model (2026-08-25)
 
-Each project is a Space. Terminals stay running; swipe only changes which workspace is shown.
+Each project is a Space. Terminals stay running; switching folders only changes which workspace is shown.
 
 ## What was broken
 1. One global `session-layout.json` — leaving a folder overwrote its tabs with the next folder.
@@ -14,10 +14,7 @@ Each project is a Space. Terminals stay running; swipe only changes which worksp
 - Leaving a folder flushes that Space to `session-layouts.json` before the switch.
 - Returning applies the parked pane tree (in-memory cache, then bank, then spawn missing tabs).
 - Disk-tree / startup merge only apply when `activeProjectRoot` matches.
-- Three-finger swipe / mouse back-forward cycles Spaces.
-
-## Windows swipe (same window, not Switch apps)
-While TrueDeck is focused we set `ThreeFingerSlideEnabled=0` and refresh the shell cache so three-finger left/right is not Alt+Tab. WM_POINTER + horizontal wheel then cycle projects in this window. The previous OS setting is restored on blur/quit (`touchpad-claim.json` covers a crash). Do not ask the operator to change Touchpad settings.
+- Switch Spaces from the project tab bar, project menu, or Ctrl+P.
 
 ## Disk
 - `%APPDATA%/truedeck/data/session-layout.json` — last active Space

@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { AppSettings, ProjectConfig } from '../../electron/shared/types'
 import { CloseIcon } from './CloseIcon'
+import { CodexAccountsPanel } from './CodexAccounts'
 
 interface Props {
  open: boolean
@@ -24,7 +25,7 @@ interface Props {
  onReplayOnboarding?: () => void
 }
 
-type TabId = 'general' | 'mcp' | 'terminal' | 'project' | 'agents' | 'about'
+type TabId = 'general' | 'codex' | 'mcp' | 'terminal' | 'project' | 'agents' | 'about'
 
 type McpRow = {
  id: string
@@ -52,6 +53,7 @@ export function SettingsMenu({
  onReplayOnboarding
 }: Props): JSX.Element | null {
  const [tab, setTab] = useState<TabId>('general')
+ const pendingTab = useRef<TabId | null>(null)
  const [settings, setSettings] = useState<AppSettings | null>(null)
  const [exportText, setExportText] = useState<string | null>(null)
  const [busy, setBusy] = useState(false)
@@ -71,12 +73,26 @@ export function SettingsMenu({
  }
 
  useEffect(() => {
+ const onTab = (ev: Event): void => {
+ const id = (ev as CustomEvent<TabId>).detail
+ if (!id) return
+ pendingTab.current = id
+ setTab(id)
+ }
+ window.addEventListener('truedeck:settings-tab', onTab)
+ return () => window.removeEventListener('truedeck:settings-tab', onTab)
+ }, [])
+
+ useEffect(() => {
  if (!open) return
+ const next = pendingTab.current
+ pendingTab.current = null
+ if (next) setTab(next)
  void (async () => {
  const s = await window.truedeck.getSettings()
  setSettings(s)
  setExportText(null)
- setTab('general')
+ if (!next) setTab('general')
  void refreshMcp()
  try {
  const b = await window.truedeck.ptyBackend()
@@ -103,6 +119,7 @@ export function SettingsMenu({
 
  const tabs: { id: TabId; label: string }[] = [
  { id: 'general', label: 'General' },
+ { id: 'codex', label: 'Codex' },
  { id: 'mcp', label: 'MCP' },
  { id: 'terminal', label: 'Terminal' },
  { id: 'project', label: 'Project' },
@@ -298,6 +315,14 @@ export function SettingsMenu({
  )}
  </section>
  </>
+ )}
+
+ {tab === 'codex' && (
+ <CodexAccountsPanel
+ projectRoot={activeProject?.root || null}
+ onStatus={onStatus}
+ onSignedIn={onClose}
+ />
  )}
 
  {tab === 'mcp' && (

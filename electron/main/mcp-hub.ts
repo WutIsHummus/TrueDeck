@@ -19,6 +19,7 @@ import { getGlobalDataDir } from './paths'
 import { buildMcpServerMap, loadMemoryProviders } from './memory-providers'
 import { writeProjectMcpMap } from './agents-folder'
 import { getConfiguredPalacePath } from './agent-inject'
+import { codexHomes } from './codex-accounts'
 
 export interface McpStdioConfig {
  command: string
@@ -483,9 +484,18 @@ export function injectMcpToAllClients(opts?: {
  /* ignore */
  }
 
- // ── Codex (config note + optional mcp in config.toml if present) ──
+ // ── Codex (each account workspace has its own CODEX_HOME) ──
  try {
- const codexDir = join(home, '.codex')
+ const homes = new Set<string>([join(home, '.codex'), ...codexHomes()])
+ const block = [
+ '',
+ '# BEGIN TRUEDECK-MCP',
+ '# MCP servers are injected via TrueDeck; use Cursor/Claude JSON configs when possible.',
+ `# ${n} server(s) active in TrueDeck hub`,
+ '# END TRUEDECK-MCP',
+ ''
+ ].join('\n')
+ for (const codexDir of homes) {
  mkdirSync(codexDir, { recursive: true })
  const note = join(codexDir, 'truedeck-mcp.md')
  writeFileSync(
@@ -505,24 +515,11 @@ export function injectMcpToAllClients(opts?: {
  'utf8'
  )
  written.push(note)
-
- // If user has config.toml, append a TrueDeck block (idempotent marker)
  const configToml = join(codexDir, 'config.toml')
- const block = [
- '',
- '# BEGIN TRUEDECK-MCP',
- '# MCP servers are injected via TrueDeck; use Cursor/Claude JSON configs when possible.',
- `# ${n} server(s) active in TrueDeck hub`,
- '# END TRUEDECK-MCP',
- ''
- ].join('\n')
- if (existsSync(configToml)) {
+ if (!existsSync(configToml)) continue
  let cur = readFileSync(configToml, 'utf8')
  if (cur.includes('# BEGIN TRUEDECK-MCP')) {
- cur = cur.replace(
- /# BEGIN TRUEDECK-MCP[\s\S]*?# END TRUEDECK-MCP\n?/,
- block.trim() + '\n'
- )
+ cur = cur.replace(/# BEGIN TRUEDECK-MCP[\s\S]*?# END TRUEDECK-MCP\n?/, block.trim() + '\n')
  writeFileSync(configToml, cur, 'utf8')
  } else {
  appendFileSync(configToml, block, 'utf8')

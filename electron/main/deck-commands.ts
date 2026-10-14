@@ -9,6 +9,7 @@ import { getGlobalDataDir } from './paths'
 import { createTask, getTask } from './tasks'
 import { dispatchTask } from './task-dispatch'
 import { startPipeline } from './orchestrator'
+import { startFanout } from './fanout'
 import { getRole } from './roles'
 import {
   buildDocumentSession,
@@ -17,7 +18,7 @@ import {
 } from './document-viewer'
 import type { SessionInfo } from '../shared/types'
 
-export type DeckCommandType = 'launch' | 'dispatch' | 'pipeline' | 'show'
+export type DeckCommandType = 'launch' | 'dispatch' | 'pipeline' | 'fanout' | 'show'
 
 export interface DeckCommand {
   id: string
@@ -55,6 +56,19 @@ export interface DeckCommand {
     pipelineName?: string
     /** Full session after dispatch (for chrome stamp / UI re-emit). */
     session?: SessionInfo
+    /** Parallel fan-out lanes (type === 'fanout'). */
+    sessions?: SessionInfo[]
+    swarmId?: string
+    contextPath?: string
+    lanes?: Array<{
+      agentId: string
+      agentName?: string
+      taskId?: string
+      sessionId?: string
+      worktreePath?: string
+      branch?: string
+      error?: string
+    }>
     documentPath?: string
     written?: boolean
     popout?: boolean
@@ -177,6 +191,39 @@ async function executeCommand(cmd: DeckCommand): Promise<DeckCommand> {
     }
   }
 
+  if (cmd.type === 'fanout') {
+    if (!cmd.projectRoot) throw new Error('projectRoot required')
+    if (!cmd.title?.trim()) throw new Error('title required')
+    const fan = await startFanout({
+      projectRoot: cmd.projectRoot,
+      title: cmd.title.trim(),
+      body: cmd.body,
+      agentIds: cmd.agentId
+        ? cmd.agentId.split(',').map((s) => s.trim()).filter(Boolean)
+        : undefined
+    })
+    const sessions = fan.lanes.map((l) => l.session).filter((s): s is SessionInfo => Boolean(s))
+    return {
+      ...cmd,
+      status: 'done',
+      result: {
+        swarmId: fan.swarmId,
+        contextPath: fan.contextPath,
+        sessions,
+        session: sessions[0],
+        lanes: fan.lanes.map((l) => ({
+          agentId: l.agentId,
+          agentName: l.agentName,
+          taskId: l.taskId,
+          sessionId: l.session?.id,
+          worktreePath: l.worktreePath,
+          branch: l.branch,
+          error: l.error
+        }))
+      }
+    }
+  }
+
   if (cmd.type === 'pipeline') {
     if (!cmd.pipelineId) throw new Error('pipelineId required')
     if (!cmd.projectRoot) throw new Error('projectRoot required')
@@ -269,8 +316,13 @@ export function startDeckCommandWorker(opts?: {
         result: done.result,
         error: undefined
       })
-      if (done.result?.session && opts?.onSession) {
-        opts.onSession(done.result.session)
+      const sessions = done.result?.sessions?.length
+        ? done.result.sessions
+        : done.result?.session
+          ? [done.result.session]
+          : []
+      for (const session of sessions) {
+        opts?.onSession?.(session)
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)

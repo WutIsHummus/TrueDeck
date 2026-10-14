@@ -17,6 +17,16 @@ import { PixelBlast } from './PixelBlast'
 import { xtermThemeFromSessionColor } from '../../electron/shared/session-color'
 import 'xterm/css/xterm.css'
 
+/** Opening Cursor paint: a long normal-buffer transcript, not a short TUI frame. */
+function cursorOpeningBurst(text: string): 'dump' | 'live' {
+ const newlines = text.length - text.replace(/\n/g, '').length
+ // Transcript replay is many newlines. An alt-screen frame is the live TUI.
+ if (newlines > 40) return 'dump'
+ if (/\x1b\[\?(?:47|1047|1049)h/.test(text)) return 'live'
+ if (text.length > 4000) return 'dump'
+ return 'live'
+}
+
 interface Props {
  sessionId: string
  visible: boolean
@@ -252,6 +262,10 @@ export function TerminalPane({
  id === 'kiro'
  )
  }
+ // Set once Cursor's first real frame is up. Later rows-1 WINCH redraws
+ // the chat and the pane scrolls down again for the rest of the kick schedule.
+ let cursorSettled = false
+ const cursorMountAt = Date.now()
  const kickAgentTui = (reason: 'mount' | 'first-byte' | 'blank' | 'manual' = 'manual'): void => {
  const term = termRef.current
  const host = hostRef.current
@@ -261,6 +275,17 @@ export function TerminalPane({
  if (host && (host.clientWidth < 8 || host.clientHeight < 8)) return
  const now = Date.now()
  const cursor = isLaunchKickAgent()
+ // Once Cursor has painted, do not rows-1 resize. That redraw scrolls the chat.
+ if (cursorSettled && isCursorAgent()) {
+ fitAndResize(false)
+ forceRefresh()
+ try {
+ term.focus()
+ } catch {
+ /* ignore */
+ }
+ return
+ }
  // Tab switches used to re-kick every time → Grok flicker. Cooldown unless blank.
  // Cursor/OpenCode: shorter cooldown — they often need repeated WINCH to first paint.
  const cooldown = cursor ? 400 : 2500
@@ -560,6 +585,10 @@ export function TerminalPane({
  const kickTimers = kickSchedule.map((ms) =>
  window.setTimeout(() => {
  if (!termRef.current) return
+ if (cursorSettled) {
+ forceRefresh()
+ return
+ }
  // Soft fit after first kick; Cursor re-kicks longer (blank-until-type)
  if (ms <= (cursorLaunch ? 1200 : 400)) kickAgentTui('mount')
  else {
@@ -1144,51 +1173,116 @@ export function TerminalPane({
  let idleRefreshTimer: number | null = null
  let writing = false
 
- const sessAtMount = (() => {
- try {
- return useDeck.getState().sessions.find((s) => s.id === sessionId)
- } catch {
- return undefined
+ // Cursor on load prints the chat into the normal buffer. xterm follows that
+ // paint, so the pane scrolls down through history. Hold the bytes until the
+ // burst goes quiet, parse them with the screen hidden, then show the bottom.
+ let replayArmed = isCursorAgent()
+ const replayDeadline = replayArmed ? Date.now() + 8000 : 0
+ // Brief coalesce so a transcript split across chunks is one hidden paint.
+ // A short live frame is not held for the whole deadline.
+ const replayAccumulateUntil = replayArmed ? Date.now() + 400 : 0
+ let replayRelease = false
+ let replayTimer: number | null = null
+ let revealTimer: number | null = null
+
+ const stopCursorKicks = (): void => {
+ if (cursorSettled) return
+ cursorSettled = true
+ for (const t of kickTimers) window.clearTimeout(t)
  }
- })()
- // Cursor --resume dumps the whole transcript to the normal buffer. Painting
- // every chunk makes the pane auto-scroll through history for a long time.
- let resumeHold =
- isCursorAgent() && Boolean(sessAtMount?.resumeToken)
- const resumeHoldDeadline = resumeHold ? Date.now() + 2800 : 0
- let resumeHoldTimer: number | null = null
+
+ const revealCursor = (): void => {
+ if (revealTimer != null) window.clearTimeout(revealTimer)
+ revealTimer = window.setTimeout(() => {
+ revealTimer = null
+ if (writeBuf && Date.now() < replayDeadline) {
+ replayArmed = true
+ replayRelease = true
+ if (rafId == null) rafId = requestAnimationFrame(flushWrites)
+ return
+ }
+ try {
+ if (term.buffer.active.type !== 'alternate') term.scrollToBottom()
+ } catch {
+ /* ignore */
+ }
+ try {
+ hostRef.current?.classList.remove('cursor-replay-hold')
+ } catch {
+ /* ignore */
+ }
+ stopCursorKicks()
+ forceRefresh()
+ }, 160)
+ }
 
  const flushWrites = (): void => {
  rafId = null
  if (!writeBuf) return
- if (resumeHold && Date.now() < resumeHoldDeadline) {
- if (resumeHoldTimer != null) window.clearTimeout(resumeHoldTimer)
- resumeHoldTimer = window.setTimeout(() => {
- resumeHoldTimer = null
- resumeHold = false
+ // Don't start a second parse while the replay write is still running.
+ if (writing) return
+ if (replayArmed && !replayRelease && Date.now() < replayDeadline) {
+ const dump = cursorOpeningBurst(writeBuf) === 'dump'
+ const accumulating = Date.now() < replayAccumulateUntil
+ if (dump || accumulating) {
+ if (dump && lastKickAtRef.current > 0) {
+ // Further rows-1 WINCH makes Cursor reprint the transcript.
+ stopCursorKicks()
+ }
+ if (replayTimer != null) window.clearTimeout(replayTimer)
+ replayTimer = window.setTimeout(() => {
+ replayTimer = null
+ replayRelease = true
  if (rafId == null) rafId = requestAnimationFrame(flushWrites)
- }, 140)
+ }, 280)
  return
  }
- const wasHolding = resumeHold
- resumeHold = false
+ }
+ const holdOn = Boolean(
+ hostRef.current?.classList.contains('cursor-replay-hold')
+ )
+ const hiding =
+ (replayArmed || holdOn) && cursorOpeningBurst(writeBuf) === 'dump'
+ replayArmed = false
+ replayRelease = false
  const chunk = writeBuf
  writeBuf = ''
  writing = true
+ try {
+ hostRef.current?.classList.toggle('cursor-replay-hold', hiding)
+ } catch {
+ /* ignore */
+ }
  term.write(chunk, () => {
  writing = false
- if (wasHolding) {
+ if (hiding) {
  setAwaitingOutput(false)
  try {
- term.scrollToBottom()
+ // Alt screen owns its viewport. scrollToBottom there fights the TUI.
+ if (term.buffer.active.type !== 'alternate') term.scrollToBottom()
  } catch {
  /* ignore */
  }
  forceRefresh()
+ if (writeBuf && Date.now() < replayDeadline) {
+ replayArmed = true
+ replayRelease = true
+ if (rafId == null) rafId = requestAnimationFrame(flushWrites)
+ } else {
+ revealCursor()
+ }
  } else if (!isStreamingTui()) {
  scrollLiveIfFollowing()
  }
- if (writeBuf && rafId == null) {
+ if (
+ !hiding &&
+ isCursorAgent() &&
+ Date.now() - cursorMountAt >= 900 &&
+ (isAltScreen() || isMouseTrackingOn())
+ ) {
+ stopCursorKicks()
+ }
+ if (!hiding && writeBuf && rafId == null) {
  rafId = requestAnimationFrame(flushWrites)
  }
  })
@@ -1211,14 +1305,16 @@ export function TerminalPane({
  const offPty = window.truedeck.onPtyData(({ id, data }) => {
  if (id !== sessionId) return
  if (data) {
- if (!resumeHold) setAwaitingOutput(false)
+ if (!replayArmed) setAwaitingOutput(false)
  // First paint: Grok/Cursor alt-screen often lands before canvas has size
  scheduleIdleRefresh()
  if (!firstByteKicked) {
  firstByteKicked = true
  const cursor = isLaunchKickAgent()
- // Post-first-byte WINCH - Cursor TUI frequently stays blank until this
+ // Post-first-byte WINCH - Cursor TUI frequently stays blank until this.
+ // Skip once Cursor has painted: another rows-1 resize scrolls the chat.
  window.setTimeout(() => {
+ if (!termRef.current || cursorSettled) return
  fitAndResize(true)
  kickAgentTui('first-byte')
  forceRefresh()
@@ -1229,6 +1325,7 @@ export function TerminalPane({
  }
  }, 40)
  window.setTimeout(() => {
+ if (!termRef.current || cursorSettled) return
  fitAndResize(cursor)
  forceRefresh()
  try {
@@ -1238,11 +1335,13 @@ export function TerminalPane({
  }
  }, cursor ? 120 : 200)
  window.setTimeout(() => {
+ if (!termRef.current || cursorSettled) return
  forceRefresh()
  if (cursor) kickAgentTui('first-byte')
  }, cursor ? 350 : 600)
  if (cursor) {
  window.setTimeout(() => {
+ if (!termRef.current || cursorSettled) return
  fitAndResize(true)
  forceRefresh()
  try {
@@ -1261,7 +1360,14 @@ export function TerminalPane({
  // Quiet CLI (shell / Cursor before first paint): drop awaiting flag soon and
  // kick once — no full-pane loading UI.
  const connectTimeout = window.setTimeout(() => {
- if (resumeHold) return
+ // Cursor already painted or is still buffering its opening dump.
+ // More WINCH from here reprints the chat and scrolls it down.
+ if (isCursorAgent() && (cursorSettled || firstByteKicked)) {
+ setAwaitingOutput(false)
+ if (!cursorSettled && Date.now() - cursorMountAt >= 900) stopCursorKicks()
+ forceRefresh()
+ return
+ }
  setAwaitingOutput(false)
  fitAndResize(true)
  kickAgentTui('blank')
@@ -1595,7 +1701,13 @@ export function TerminalPane({
  window.clearTimeout(t1)
  window.clearTimeout(t2)
  window.removeEventListener('truedeck:terminals-settle', onTerminalsSettle)
- if (resumeHoldTimer != null) window.clearTimeout(resumeHoldTimer)
+ if (replayTimer != null) window.clearTimeout(replayTimer)
+ if (revealTimer != null) window.clearTimeout(revealTimer)
+ try {
+ hostRef.current?.classList.remove('cursor-replay-hold')
+ } catch {
+ /* ignore */
+ }
  if (resizeTimer != null) window.clearTimeout(resizeTimer)
  if (idleRefreshTimer != null) window.clearTimeout(idleRefreshTimer)
  if (tuiOwnerFitTimer != null) window.clearTimeout(tuiOwnerFitTimer)

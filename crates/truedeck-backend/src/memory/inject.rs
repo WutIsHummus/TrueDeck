@@ -140,7 +140,7 @@ pub fn inject_for_agent(
         ensure_dir(&dir);
         let note = dir.join("truedeck-memory.md");
         let body = format!(
-            "# TrueDeck memory (automatic)\n\nRead project `.truedeck/auto-context.md` and `.agents/AGENTS.md` when under TrueDeck.\nPalace: `{}`\n",
+            "# TrueDeck memory (automatic)\n\nRead project `.truedeck/auto-context.md` and `.agents/AGENTS.md` when under TrueDeck.\nWhen the user teaches a job or corrects a method, file MemPalace rooms jobs or corrections before continuing. Search those rooms before repeating the work.\nPalace: `{}`\n",
             palace.display()
         );
         if fs::write(&note, body).is_ok() {

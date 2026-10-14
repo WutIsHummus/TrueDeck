@@ -181,7 +181,36 @@ const api = {
  agentId: string
  cols?: number
  rows?: number
+ codexWorkspaceId?: string
  }): Promise<SessionInfo> => ipcRenderer.invoke('sessions:spawn', opts),
+ getCodexAccounts: (): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:get'),
+ setActiveCodexWorkspace: (workspaceId: string): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:setActive', workspaceId),
+ addCodexAccount: (label?: string): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:addAccount', label),
+ addCodexWorkspace: (
+ accountId: string,
+ label?: string
+ ): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:addWorkspace', accountId, label),
+ renameCodexProfile: (patch: {
+ accountId?: string
+ workspaceId?: string
+ label: string
+ }): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:rename', patch),
+ moveCodexWorkspace: (
+ workspaceId: string,
+ toAccountId: string
+ ): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:move', workspaceId, toAccountId),
+ removeCodexWorkspace: (workspaceId: string): Promise<import('../shared/types').CodexAccountsState> =>
+ ipcRenderer.invoke('codexAccounts:remove', workspaceId),
+ loginCodexWorkspace: (opts: {
+ workspaceId: string
+ projectRoot?: string
+ }): Promise<SessionInfo> => ipcRenderer.invoke('codexAccounts:login', opts),
  spawnCommand: (opts: {
  projectRoot: string
  label: string
@@ -347,6 +376,21 @@ const api = {
 
  gitReview: (projectRoot: string): Promise<import('../shared/types').GitReviewSnapshot> =>
  ipcRenderer.invoke('review:git', projectRoot),
+ gitCommit: (
+ projectRoot: string,
+ message: string
+ ): Promise<import('../shared/types').GitActionResult> =>
+ ipcRenderer.invoke('review:commit', projectRoot, message),
+ gitPush: (projectRoot: string): Promise<import('../shared/types').GitActionResult> =>
+ ipcRenderer.invoke('review:push', projectRoot),
+ gitCreatePr: (
+ projectRoot: string,
+ title: string,
+ body?: string
+ ): Promise<import('../shared/types').GitActionResult> =>
+ ipcRenderer.invoke('review:pr', projectRoot, title, body),
+ gitScripts: (projectRoot: string): Promise<string[]> =>
+ ipcRenderer.invoke('review:scripts', projectRoot),
  listMemorySpaces: (): Promise<MemorySpaceInfo[]> => ipcRenderer.invoke('memory:listSpaces'),
  pickMemorySpace: (): Promise<string | null> => ipcRenderer.invoke('memory:pickSpace'),
  getPalacePath: (): Promise<string> => ipcRenderer.invoke('memory:getPalacePath'),
@@ -516,6 +560,25 @@ const api = {
  agentId?: string
  ): Promise<{ task: unknown; session: unknown; runId: string; taskFile: string }> =>
  ipcRenderer.invoke('tasks:dispatch', taskId, agentId),
+ /** One task, one fresh CLI and git worktree per installed agent. */
+ fanoutTask: (input: {
+ projectRoot: string
+ title: string
+ body?: string
+ agentIds?: string[]
+ }): Promise<{
+ swarmId: string
+ contextPath: string
+ lanes: Array<{
+ agentId: string
+ agentName: string
+ taskId?: string
+ sessionId?: string
+ worktreePath?: string
+ branch?: string
+ error?: string
+ }>
+ }> => ipcRenderer.invoke('tasks:fanout', input),
  listRuns: (opts?: {
  projectRoot?: string
  taskId?: string
@@ -540,6 +603,11 @@ const api = {
  ): void => cb(payload)
  ipcRenderer.on('pty:exit', listener)
  return () => ipcRenderer.removeListener('pty:exit', listener)
+ },
+ onPhoneOpenProject: (cb: (projectId: string) => void): (() => void) => {
+ const listener = (_: Electron.IpcRendererEvent, projectId: string): void => cb(projectId)
+ ipcRenderer.on('phone:open-project', listener)
+ return () => ipcRenderer.removeListener('phone:open-project', listener)
  },
  onPtySpawned: (cb: (info: SessionInfo) => void): (() => void) => {
  const listener = (_: Electron.IpcRendererEvent, info: SessionInfo): void => cb(info)
@@ -571,7 +639,14 @@ const api = {
       ipcRenderer.removeListener('layout:rehydrate', listener)
     }
   },
-  onAppShortcut: (
+  phoneDeck: (): Promise<{
+ enabled: boolean
+ port: number | null
+ token: string
+ urls: { url: string; label: string }[]
+ error?: string
+ }> => ipcRenderer.invoke('phone:info'),
+ onAppShortcut: (
  cb: (payload: {
  key: string
  shift: boolean

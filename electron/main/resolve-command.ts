@@ -210,6 +210,35 @@ export function resolveAgentCommand(
  return resolved
 }
 
+function resolveDeskCommand(): ResolvedCommand {
+ const entry = [
+ join(__dirname, '../../tui/index.ts'),
+ join(__dirname, '../../../tui/index.ts'),
+ join(process.cwd(), 'tui/index.ts')
+ ].find((p) => existsSync(p))
+ const tsx = [
+ join(__dirname, '../../node_modules/tsx/dist/cli.mjs'),
+ join(__dirname, '../../../node_modules/tsx/dist/cli.mjs'),
+ join(process.cwd(), 'node_modules/tsx/dist/cli.mjs')
+ ].find((p) => existsSync(p))
+ const node = which('node') || which('node.exe')
+ if (!entry || !tsx || !node) {
+ return {
+ command: 'node',
+ args: [],
+ resolvedFrom: 'desk',
+ available: false,
+ installCommand: 'Desk runs from a TrueDeck checkout (node + tsx).'
+ }
+ }
+ return {
+ command: node,
+ args: [tsx, entry],
+ resolvedFrom: 'desk',
+ available: true
+ }
+}
+
 function resolveAgentCommandUncached(
  agentId: string,
  command: string,
@@ -219,6 +248,10 @@ function resolveAgentCommandUncached(
 
  if (agentId === 'cursor') {
  return resolveCursorAgent()
+ }
+
+ if (agentId === 'desk') {
+ return resolveDeskCommand()
  }
 
  // Built-in shell is always available

@@ -174,6 +174,9 @@ export function sessionTabLabel(s: SessionInfo, max = 28): string {
  // Free agent CLI: ignore OSC session.title - Codex/Cursor rewrite it during
  // startup and make tabs/header flicker.
  if (s.kind !== 'command') {
+ if (s.agentId === 'codex' && s.codexLabel) {
+ return truncate(`Codex · ${s.codexLabel}`, max)
+ }
  return truncate(agent, max)
  }
 

@@ -55,12 +55,14 @@ export interface SessionInfo {
  createdAt: number
  title: string
  exitCode?: number
- /** agent = CLI · command = shell command · document = readable text/code/markdown tab */
- kind?: 'agent' | 'command' | 'document'
+ /** agent = CLI · command = shell command · document = readable file · web = embedded local app */
+ kind?: 'agent' | 'command' | 'document' | 'web'
  /** Shell command for kind === 'command' (used to restore the tab). */
  commandLine?: string
  /** Absolute path for kind === 'document' (plans, markdown, source). */
  documentPath?: string
+ /** Local origin for kind === 'web' (T3 Code). */
+ webUrl?: string
  /** Board task title (agent chrome / focus). */
  focusTitle?: string
  /** Main idea line for agent chrome (title + summary). */
@@ -76,10 +78,24 @@ export interface SessionInfo {
  /** Short worktree label when isolated. */
  worktreeLabel?: string
  /**
+  * Set when this session was opened as one lane of a parallel fan-out.
+  * The renderer splits these into separate panes once `swarmSize` lanes exist.
+  */
+ swarmId?: string
+ /** How many lanes were opened for `swarmId` (successful spawns only). */
+ swarmSize?: number
+ /**
   * CLI conversation / chat id when known (for restore --resume).
   * Optional; most restores fall back to each CLI's --continue / --last.
   */
  resumeToken?: string
+ /**
+  * Codex profile this tab was started with. Restore must keep the same
+  * CODEX_HOME or the session opens on the wrong ChatGPT login.
+  */
+ codexWorkspaceId?: string
+ /** Short account/workspace name for the tab strip. */
+ codexLabel?: string
  /**
   * UI-only: minimize the tab to a compact chip without killing the PTY.
   * Click the chip (or eye) to restore. Replaces the old "hidden" veil.
@@ -95,10 +111,12 @@ export interface SavedSessionTab {
  agentName: string
  projectRoot: string
  color: string
- kind?: 'agent' | 'command' | 'document'
+ kind?: 'agent' | 'command' | 'document' | 'web'
  commandLine?: string
  /** Absolute path for document tabs. */
  documentPath?: string
+ /** Local origin for a web tab (T3 Code). */
+ webUrl?: string
  /**
   * Last known OSC / prompt title - used on restore so agents that match by
   * title (e.g. Grok `--resume <title>`) reattach the right conversation.
@@ -106,8 +124,42 @@ export interface SavedSessionTab {
  title?: string
  /** CLI session / chat id when known (Claude/Cursor/Codex UUID, etc.). */
  resumeToken?: string
+ /** Codex profile id. New launches of this tab use that CODEX_HOME. */
+ codexWorkspaceId?: string
  /** Minimized to a chip; paneTree still holds the home group/index. */
  uiMinimized?: boolean
+}
+
+/** One ChatGPT workspace inside a Codex account. Isolated CODEX_HOME. */
+export interface CodexWorkspaceProfile {
+ id: string
+ label: string
+ /** User renamed this. Identity refresh will not overwrite the label. */
+ labelLocked?: boolean
+ /** Absolute CODEX_HOME for this workspace. */
+ home: string
+ /** Machine default ~/.codex. Never deleted. */
+ builtin?: boolean
+ signedIn: boolean
+ email?: string
+ plan?: string
+ /** ChatGPT account id for this workspace login (not a token). */
+ accountId?: string
+ workspaceTitle?: string
+}
+
+/** A ChatGPT login. One login can have more than one workspace. */
+export interface CodexAccountProfile {
+ id: string
+ label: string
+ labelLocked?: boolean
+ workspaces: CodexWorkspaceProfile[]
+}
+
+export interface CodexAccountsState {
+ version: 1
+ activeWorkspaceId: string
+ accounts: CodexAccountProfile[]
 }
 
 /**
@@ -263,6 +315,11 @@ export interface GitReviewSnapshot {
  diff: string
  clean: boolean
  error?: string
+}
+
+export interface GitActionResult {
+ ok: boolean
+ output: string
 }
 
 /** Optional isolation flag on create/dispatch */

@@ -18,6 +18,15 @@ import type { AgentPreset } from '../shared/types'
  */
 const DEFAULT_AGENTS: AgentPreset[] = [
  {
+ id: 'desk',
+ name: 'Desk',
+ command: 'truedeck-desk',
+ args: [],
+ color: '#22d3ee',
+ icon: '▣',
+ description: 'One chat for many agents. Pick a harness and model for each run.'
+ },
+ {
  id: 'grok',
  name: 'Grok',
  command: 'grok',
@@ -150,8 +159,10 @@ function mergeAgents(stored: AgentPreset[]): AgentPreset[] {
  out.push({ ...d })
  }
  }
- // User-defined CLIs (and any unknown saved ids) stay after built-ins
+ // User-defined CLIs (and any unknown saved ids) stay after built-ins.
+ // `t3` was an embedded web stub. Drop it so a saved agents.json cannot bring it back.
  for (const [, s] of byId) {
+ if (s.id === 't3') continue
  const isBuiltin = DEFAULT_AGENTS.some((d) => d.id === s.id)
  out.push({
  ...s,
@@ -222,7 +233,8 @@ export function loadAgents(): AgentPreset[] {
  !raw.some((a) => a.id === 'kiro') ||
  !kiroColorOk ||
  // Re-save when built-in order changed (Kiro high in list)
- raw.findIndex((a) => a.id === 'kiro') > 3
+ raw.findIndex((a) => a.id === 'kiro') > 3 ||
+ raw.some((a) => a.id === 't3')
  ) {
  saveAgents(merged)
  }

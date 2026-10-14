@@ -8,6 +8,8 @@ import {
 } from '../lib/session-label'
 import { setDraggingTabId } from '../lib/tab-drag'
 import { AgentIcon } from './AgentIcon'
+import { AgentPhaseMark } from './AgentPhaseMark'
+import { ChangeReview } from './ChangeReview'
 import { LanguageIcon } from './LanguageIcon'
 import { CloseIcon } from './CloseIcon'
 import { PixelBlast } from './PixelBlast'
@@ -99,6 +101,8 @@ export function AgentChromeBar({
  const patchSession = useDeck((s) => s.patchSession)
  const setStatus = useDeck((s) => s.setStatus)
  const [branch, setBranch] = useState<string | null>(session.gitBranch || null)
+ const [reviewHost, setReviewHost] = useState<HTMLElement | null>(null)
+ const [changeCount, setChangeCount] = useState<number | null>(null)
  const [linkedTask, setLinkedTask] = useState<{
  id: string
  title: string
@@ -144,6 +148,29 @@ export function AgentChromeBar({
  cancelled = true
  }
  }, [session.id, session.projectRoot, session.gitBranch])
+
+ useEffect(() => {
+ if (!focused || !session.projectRoot || session.kind === 'document') {
+ return
+ }
+ let cancelled = false
+ const tick = (): void => {
+ void window.truedeck
+ .gitReview(session.projectRoot)
+ .then((snap) => {
+ if (!cancelled) setChangeCount(snap.error || snap.clean ? 0 : snap.files.length)
+ })
+ .catch(() => {
+ /* badge stays at the last count */
+ })
+ }
+ tick()
+ const timer = window.setInterval(tick, 8000)
+ return () => {
+ cancelled = true
+ window.clearInterval(timer)
+ }
+ }, [focused, session.projectRoot, session.kind, session.id])
 
  useEffect(() => {
  let cancelled = false
@@ -511,10 +538,12 @@ export function AgentChromeBar({
  </span>
  )}
 
- {!live && (
+ {!live ? (
  <span className="agent-chrome-status exit" title="Exited">
  exit
  </span>
+ ) : (
+ <AgentPhaseMark sessionId={session.id} />
  )}
 
  {taskStatus && !taskIsNoise && (
@@ -575,6 +604,20 @@ export function AgentChromeBar({
  )}
 
  <span className="agent-chrome-spacer" />
+ <button
+ type="button"
+ className={`agent-chrome-text-btn${reviewHost ? ' active-eye' : ''}${changeCount ? ' has-changes' : ''}`}
+ draggable={false}
+ title="Review changes, commit, push, or open a pull request"
+ onClick={(e) => {
+ e.stopPropagation()
+ const host = (e.currentTarget.closest('.pane-group') as HTMLElement | null) || null
+ setReviewHost((cur) => (cur ? null : host))
+ }}
+ onMouseDown={(e) => e.stopPropagation()}
+ >
+ {changeCount ? `${changeCount} changes` : 'Changes'}
+ </button>
  <span className="agent-chrome-elapsed muted" title="Session age">
  {elapsed}
  </span>
@@ -662,6 +705,13 @@ export function AgentChromeBar({
  background: minimizedOnly ? 'var(--border)' : isDoc ? '#a78bfa' : accent
  }}
  />
+ {reviewHost && session.projectRoot && session.kind !== 'document' && (
+ <ChangeReview
+ projectRoot={session.projectRoot}
+ host={reviewHost}
+ onClose={() => setReviewHost(null)}
+ />
+ )}
  </div>
  )
 }

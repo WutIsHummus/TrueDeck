@@ -25,15 +25,28 @@ export async function isGitRepo(projectRoot: string): Promise<boolean> {
  }
 }
 
+/** Branch for one isolated task lane. Unique per task so parallel agents do not share a branch. */
+export function taskBranchName(taskId: string, agentId?: string): string {
+ const short = taskId.replace(/-/g, '').slice(0, 8)
+ const agent =
+ (agentId || 'agent')
+ .toLowerCase()
+ .replace(/[^a-z0-9]+/g, '-')
+ .replace(/^-|-$/g, '')
+ .slice(0, 20) || 'agent'
+ return `truedeck/${agent}-${short}`
+}
+
 /**
  * Create (or reuse) a worktree for a task. Returns absolute path.
  */
 export async function ensureTaskWorktree(
  projectRoot: string,
- taskId: string
+ taskId: string,
+ opts?: { agentId?: string }
 ): Promise<{ path: string; branch: string; created: boolean }> {
  const short = taskId.replace(/-/g, '').slice(0, 8)
- const branch = `truedeck/${short}`
+ const branch = taskBranchName(taskId, opts?.agentId)
  const dir = join(worktreesRoot(projectRoot), short)
  mkdirSync(worktreesRoot(projectRoot), { recursive: true })
 

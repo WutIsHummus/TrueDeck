@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, clipboard } from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, shell, clipboard, screen } from 'electron'
 import { ensureDetachedIpc, setDetachedMainGetter } from './detached-windows'
 import { join, dirname, normalize } from 'path'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, statSync, readdirSync } from 'fs'
@@ -38,6 +38,17 @@ import {
  tryDiscoverOpenCodeSessionId,
  discoverOpenCodeSessionId
 } from './agent-resume'
+import { homedir } from 'os'
+import {
+ codexSpawnContext,
+ createCodexAccount,
+ createCodexWorkspace,
+ deleteCodexWorkspace,
+ getCodexAccounts,
+ moveCodexWorkspaceTo,
+ renameCodex,
+ setActiveCodexWorkspaceId
+} from './codex-accounts'
 import {
  listProjects,
  upsertProject,
@@ -59,6 +70,7 @@ import {
  buildAgentBootstrapPrompt
 } from './memory'
 import { getGlobalDataDir, getSettingsPath, getSessionLayoutPath } from './paths'
+import { setPhoneWindow, startPhoneDeck, stopPhoneDeck } from './phone-deck'
 import {
  loadSessionLayout,
  MAX_SAVED_TABS,
@@ -74,7 +86,6 @@ import {
  type PersistSnapshot
 } from './session-layout'
 import { runFirstRunSeed } from './first-run'
-import { attachProjectSwipe, restoreProjectSwipeOnQuit } from './win-project-swipe'
 import { getMemPalaceStatus, ensureMemPalace, mempalaceMcpSnippet } from './mempalace'
 import {
  loadMemoryProviders,
@@ -128,6 +139,7 @@ import {
 } from './tasks'
 import { listRuns, endRun } from './runs'
 import { dispatchTask } from './task-dispatch'
+import { startFanout } from './fanout'
 import { startDeckCommandWorker } from './deck-commands'
 import { startAgentBus } from './agent-bus'
 import { setDocumentViewerParent } from './document-viewer'
@@ -155,7 +167,13 @@ import {
  getNamedLayout,
  presetTree
 } from './layouts'
-import { getGitReview } from './review'
+import {
+  getGitReview,
+  commitGitChanges,
+  pushGitBranch,
+  createGitPullRequest,
+  listNpmScripts
+} from './review'
 import type { AgentRole, NamedLayout, TaskStatus } from '../shared/types'
 import { checkForUpdates } from './update-check'
 import {
@@ -306,8 +324,67 @@ function resolveAppIcon(): string | undefined {
  return undefined
 }
 
+type SavedWindowBounds = {
+ x: number
+ y: number
+ width: number
+ height: number
+ maximized: boolean
+}
+
+function windowStatePath(): string {
+ return join(getGlobalDataDir(), 'window-state.json')
+}
+
+/** Last place the user left the main window. Invalid or off-screen boxes are ignored. */
+function loadWindowBounds(): SavedWindowBounds | null {
+ try {
+ const raw = JSON.parse(readFileSync(windowStatePath(), 'utf8')) as Partial<SavedWindowBounds>
+ const width = Number(raw.width)
+ const height = Number(raw.height)
+ const x = Number(raw.x)
+ const y = Number(raw.y)
+ if (![width, height, x, y].every((n) => Number.isFinite(n))) return null
+ if (width < 960 || height < 600) return null
+ const box = { x, y, width, height }
+ const visible = screen.getAllDisplays().some((d) => {
+ const a = d.workArea
+ const overlapW = Math.min(box.x + box.width, a.x + a.width) - Math.max(box.x, a.x)
+ const overlapH = Math.min(box.y + box.height, a.y + a.height) - Math.max(box.y, a.y)
+ return overlapW > 160 && overlapH > 120
+ })
+ if (!visible) return null
+ return { x, y, width, height, maximized: Boolean(raw.maximized) }
+ } catch {
+ return null
+ }
+}
+
+let windowBoundsTimer: ReturnType<typeof setTimeout> | null = null
+
+function saveWindowBounds(win: BrowserWindow): void {
+ if (win.isDestroyed()) return
+ try {
+ const maximized = win.isMaximized()
+ const b = maximized ? win.getNormalBounds() : win.getBounds()
+ mkdirSync(getGlobalDataDir(), { recursive: true })
+ writeFileSync(
+ windowStatePath(),
+ JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, maximized })
+ )
+ } catch {
+ /* ignore */
+ }
+}
+
+function scheduleSaveWindowBounds(win: BrowserWindow): void {
+ if (windowBoundsTimer) clearTimeout(windowBoundsTimer)
+ windowBoundsTimer = setTimeout(() => saveWindowBounds(win), 400)
+}
+
 function createWindow(): void {
  const iconPath = resolveAppIcon()
+ const savedBounds = loadWindowBounds()
  /** Set after renderer layout flush on close - allows the real destroy pass. */
  let layoutFlushDone = false
  let shown = false
@@ -315,18 +392,17 @@ function createWindow(): void {
  if (shown || !mainWindow || mainWindow.isDestroyed()) return
  shown = true
  mainWindow.show()
- mainWindow.focus()
  }
 
  mainWindow = new BrowserWindow({
- width: 1440,
- height: 900,
+ width: savedBounds?.width ?? 1440,
+ height: savedBounds?.height ?? 900,
  minWidth: 960,
  minHeight: 600,
  // Show immediately so the window is never "running but invisible"
  show: true,
- x: 80,
- y: 60,
+ x: savedBounds?.x ?? 80,
+ y: savedBounds?.y ?? 60,
  title: 'TrueDeck',
  backgroundColor: '#0c0c0c',
  // Custom title bar - no native Windows frame
@@ -334,51 +410,29 @@ function createWindow(): void {
  titleBarStyle: process.platform === 'darwin' ? 'hiddenInset' : undefined,
  autoHideMenuBar: true,
  icon: iconPath,
- center: true,
- alwaysOnTop: true, // brief: force visible above other apps, cleared after load
  paintWhenInitiallyHidden: true,
  webPreferences: {
  preload: join(__dirname, '../preload/index.js'),
  contextIsolation: true,
  nodeIntegration: false,
  sandbox: false,
- backgroundThrottling: true
+ backgroundThrottling: true,
+ webviewTag: false
  }
  })
 
- // Ensure visible + focused even if Windows lost the HWND
+ if (savedBounds?.maximized) mainWindow.maximize()
  showMain()
- mainWindow.setAlwaysOnTop(true)
- mainWindow.once('ready-to-show', () => {
- showMain()
- mainWindow?.setAlwaysOnTop(true)
- mainWindow?.focus()
+ mainWindow.once('ready-to-show', showMain)
+ mainWindow.webContents.once('did-finish-load', showMain)
+ // If the first show was swallowed, try once more. Never move or raise the window.
+ setTimeout(showMain, 3000)
+ mainWindow.on('move', () => {
+ if (mainWindow && !mainWindow.isDestroyed()) scheduleSaveWindowBounds(mainWindow)
  })
- mainWindow.webContents.once('did-finish-load', () => {
- showMain()
- // Drop always-on-top after UI is up so it behaves normally
- setTimeout(() => {
- try {
- if (mainWindow && !mainWindow.isDestroyed()) {
- mainWindow.setAlwaysOnTop(false)
- mainWindow.focus()
- }
- } catch {
- /* ignore */
- }
- }, 1500)
+ mainWindow.on('resize', () => {
+ if (mainWindow && !mainWindow.isDestroyed()) scheduleSaveWindowBounds(mainWindow)
  })
- // Safety net
- setTimeout(() => {
- showMain()
- try {
- mainWindow?.setAlwaysOnTop(false)
- mainWindow?.center()
- mainWindow?.focus()
- } catch {
- /* ignore */
- }
- }, 3000)
 
  mainWindow.webContents.on('did-fail-load', (_e, code, desc, url) => {
  console.error('[renderer] did-fail-load', code, desc, url)
@@ -400,23 +454,6 @@ function createWindow(): void {
  console.warn(`[renderer console] ${message} (${sourceId}:${line})`)
  }
  })
-
- // Precision-touchpad three-finger swipe is "browser back/forward" on Windows.
- mainWindow.on('app-command', (e, cmd) => {
- if (cmd !== 'browser-backward' && cmd !== 'browser-forward') return
- e.preventDefault()
- const win = mainWindow
- if (!win || win.isDestroyed() || win.webContents.isDestroyed()) return
- win.webContents.send('app:shortcut', {
- key: cmd === 'browser-forward' ? 'ProjectNext' : 'ProjectPrev',
- shift: false,
- alt: false,
- ctrl: false,
- repeat: false
- })
- })
- // While focused: keep three-finger swipe in this window (do not Alt+Tab).
- attachProjectSwipe(mainWindow)
 
  // Terminal font uses Ctrl+/- (see app:shortcut). Never use Chromium page zoom —
  // old Ctrl+- left partition zoom_levels (e.g. localhost: -2.5) and the whole
@@ -557,6 +594,7 @@ function createWindow(): void {
  // tabs restored but paneTree collapsed to a single leaf / default ratios.
  // Block close until a sync flush (sendSync from renderer) finishes.
  mainWindow.on('close', (e) => {
+ saveWindowBounds(mainWindow!)
  console.log('[window] close event, layoutFlushDone=', layoutFlushDone)
  if (layoutFlushDone) return
  if (!mainWindow || mainWindow.isDestroyed()) return
@@ -600,12 +638,14 @@ function createWindow(): void {
  })
 
  setSessionsWindow(mainWindow)
+ setPhoneWindow(mainWindow)
  rustBackend?.setWindow(mainWindow)
  setDocumentViewerParent(mainWindow)
 
  mainWindow.on('closed', () => {
  try {
  setSessionsWindow(null)
+ setPhoneWindow(null)
  } catch {
  /* ignore */
  }
@@ -1154,7 +1194,7 @@ function registerIpc(): void {
 
  ipcMain.handle(
  'sessions:spawn',
- async (_e, opts: { projectRoot: string; agentId: string; cols?: number; rows?: number }) => {
+ async (_e, opts: { projectRoot: string; agentId: string; cols?: number; rows?: number; codexWorkspaceId?: string }) => {
  // Always resolve in TS first - block IDE fallbacks and missing CLIs before Rust/node spawn
  const agents = loadAgents()
  const agent = agents.find((a) => a.id === opts.agentId)
@@ -1164,6 +1204,11 @@ function registerIpc(): void {
  const install = resolved.installCommand || agent.installCommand || '(unknown)'
  throw new Error(
  `${agent.name} CLI not installed (${agent.command}). Install: ${install}`
+ )
+ }
+ if (agent.id === 't3') {
+ throw new Error(
+ 'The embedded T3 tab was removed. Assign a task to a swarm or one agent that is not waiting.'
  )
  }
  // Extra guard: never launch Cursor/VS Code IDE binaries
@@ -1199,6 +1244,12 @@ function registerIpc(): void {
  TRUEDECK_PROJECT: opts.projectRoot
  }
 Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.command))
+ const codex = codexSpawnContext({
+ agentId: agent.id,
+ projectRoot: opts.projectRoot,
+ workspaceId: opts.codexWorkspaceId
+ })
+ Object.assign(extraEnv, codex.env)
  if (prepared.resumeToken) {
  extraEnv.TRUEDECK_CLI_SESSION = prepared.resumeToken
  }
@@ -1243,13 +1294,14 @@ Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.c
  let resumeToken = prepared.resumeToken || viaRust.resumeToken
  const spawnKind = resumeAgentKind(agent.id, resolved.command)
  if (!resumeToken && prepared.needsDiscover && spawnKind === 'codex') {
- void discoverCodexSessionId(opts.projectRoot, notBefore, 5000)
+ void discoverCodexSessionId(opts.projectRoot, notBefore, 5000, codex.home)
  .then((token) => {
- const found = token || tryDiscoverCodexSessionId(opts.projectRoot, notBefore)
+ const found = token || tryDiscoverCodexSessionId(opts.projectRoot, notBefore, codex.home)
  if (!found) return
  console.log(`[spawn] codex discovered session ${found}`)
  mainWindow?.webContents.send('pty:spawned', {
  ...viaRust,
+ ...codex.fields,
  resumeToken: found
  })
  })
@@ -1289,7 +1341,8 @@ Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.c
  typeof extraEnv.TRUEDECK_WORKTREE_LABEL === 'string'
  ? extraEnv.TRUEDECK_WORKTREE_LABEL
  : undefined,
- resumeToken: resumeToken || undefined
+ resumeToken: resumeToken || undefined,
+ ...codex.fields
  }
  mainWindow?.webContents.send('pty:spawned', withFocus)
  return withFocus
@@ -1304,6 +1357,66 @@ Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.c
  const info = await rustSpawnCommand(opts)
  mainWindow?.webContents.send('pty:spawned', info)
  return info
+ }
+ )
+ ipcMain.handle('codexAccounts:get', () => getCodexAccounts())
+ ipcMain.handle('codexAccounts:setActive', (_e, workspaceId: string) =>
+ setActiveCodexWorkspaceId(String(workspaceId || ''))
+ )
+ ipcMain.handle('codexAccounts:addAccount', (_e, label?: string) => createCodexAccount(label))
+ ipcMain.handle('codexAccounts:addWorkspace', (_e, accountId: string, label?: string) =>
+ createCodexWorkspace(String(accountId || ''), label)
+ )
+ ipcMain.handle(
+ 'codexAccounts:rename',
+ (
+ _e,
+ patch: { accountId?: string; workspaceId?: string; label: string }
+ ) => renameCodex(patch)
+ )
+ ipcMain.handle('codexAccounts:move', (_e, workspaceId: string, toAccountId: string) =>
+ moveCodexWorkspaceTo(String(workspaceId || ''), String(toAccountId || ''))
+ )
+ ipcMain.handle('codexAccounts:remove', (_e, workspaceId: string) =>
+ deleteCodexWorkspace(String(workspaceId || ''))
+ )
+ ipcMain.handle(
+ 'codexAccounts:login',
+ async (_e, raw: { workspaceId?: string; projectRoot?: string }) => {
+ const workspaceId = String(raw?.workspaceId || '')
+ if (!workspaceId) throw new Error('Choose a Codex workspace to sign in.')
+ const projectRoot =
+ raw?.projectRoot && existsSync(raw.projectRoot) ? raw.projectRoot : homedir()
+ const agents = loadAgents()
+ const agent = agents.find((a) => a.id === 'codex')
+ const resolved = resolveAgentCommand('codex', agent?.command || 'codex', [])
+ if (!resolved.available) {
+ throw new Error('Codex CLI is not installed. Install: npm install -g @openai/codex')
+ }
+ const codex = codexSpawnContext({
+ agentId: 'codex',
+ projectRoot,
+ workspaceId
+ })
+ const info = await rustSpawnAgent({
+ projectRoot,
+ agentId: 'codex',
+ command: resolved.command,
+ args: ['login'],
+ agentName: 'Codex',
+ color: agent?.color || '#10a37f',
+ env: {
+ ...codex.env,
+ TRUEDECK_PROJECT: projectRoot
+ }
+ })
+ const stamped = {
+ ...info,
+ ...codex.fields,
+ title: codex.fields.codexLabel ? `Sign in · ${codex.fields.codexLabel}` : 'Codex sign-in'
+ }
+ mainWindow?.webContents.send('pty:spawned', stamped)
+ return stamped
  }
  )
  ipcMain.handle('sessions:list', async () => listSessions())
@@ -1378,6 +1491,31 @@ Object.assign(extraEnv, cliSessionEnv(agent.id, prepared.resumeToken, resolved.c
  const result = await dispatchTask(taskId, agentId)
  mainWindow?.webContents.send('pty:spawned', result.session)
  return result
+ }
+ )
+ ipcMain.handle(
+ 'tasks:fanout',
+ async (
+ _e,
+ input: { projectRoot: string; title: string; body?: string; agentIds?: string[] }
+ ) => {
+ const fan = await startFanout(input)
+ for (const lane of fan.lanes) {
+ if (lane.session) mainWindow?.webContents.send('pty:spawned', lane.session)
+ }
+ return {
+ swarmId: fan.swarmId,
+ contextPath: fan.contextPath,
+ lanes: fan.lanes.map((l) => ({
+ agentId: l.agentId,
+ agentName: l.agentName,
+ taskId: l.taskId,
+ sessionId: l.session?.id,
+ worktreePath: l.worktreePath,
+ branch: l.branch,
+ error: l.error
+ }))
+ }
  }
  )
  ipcMain.handle('runs:list', (_e, opts?: { projectRoot?: string; taskId?: string; limit?: number }) =>
@@ -1483,6 +1621,11 @@ async function spawnSavedTab(
  return info
  }
 
+ if (tab.kind === 'web' || tab.agentId === 't3') {
+ console.warn('[layout] skip removed t3 tab')
+ return null
+ }
+
  if (tab.kind === 'command' || tab.commandLine) {
  const existing = liveAll.find((s) =>
  isCommandSessionRunning([s], tab.projectRoot, {
@@ -1586,6 +1729,12 @@ async function spawnSavedTab(
  }
 
  const { env } = onAgentSpawnFast(tab.projectRoot)
+ const codex = codexSpawnContext({
+ agentId: agent.id,
+ projectRoot: tab.projectRoot,
+ workspaceId: tab.codexWorkspaceId,
+ fallback: tab.codexWorkspaceId ? 'active' : 'builtin'
+ })
  const info = await rustSpawnAgent({
  projectRoot: tab.projectRoot,
  agentId: agent.id,
@@ -1595,6 +1744,7 @@ async function spawnSavedTab(
  color: agent.color,
  env: {
  ...env,
+ ...codex.env,
  ...cliSessionEnv(agent.id, resumeToken, resolved.command)
  }
  })
@@ -1602,8 +1752,8 @@ async function spawnSavedTab(
  if (!resumeToken && needsDiscover) {
  if (kind === 'codex') {
  resumeToken =
- (await discoverCodexSessionId(tab.projectRoot, notBefore, 800)) ||
- tryDiscoverCodexSessionId(tab.projectRoot, notBefore)
+ (await discoverCodexSessionId(tab.projectRoot, notBefore, 800, codex.home)) ||
+ tryDiscoverCodexSessionId(tab.projectRoot, notBefore, codex.home)
  } else if (kind === 'opencode') {
  resumeToken =
  (await discoverOpenCodeSessionId(tab.projectRoot, notBefore, 1200)) ||
@@ -1614,6 +1764,7 @@ async function spawnSavedTab(
 
  const withTitle: SessionInfo = {
  ...info,
+ ...codex.fields,
  title: tab.title || info.title,
  resumeToken: resumeToken || info.resumeToken,
  uiMinimized: Boolean(tab.uiMinimized)
@@ -1875,6 +2026,11 @@ function scheduleDeferredRestore(
  continue
  }
 
+ if (tab.kind === 'web' || tab.agentId === 't3') {
+ console.warn('[layout] skip removed t3 tab')
+ continue
+ }
+
  const liveAll = [...sessions, ...backendLive]
 
  if (tab.kind === 'command' || tab.commandLine) {
@@ -2012,6 +2168,12 @@ function scheduleDeferredRestore(
           )
         }
 
+        const codex = codexSpawnContext({
+          agentId: agent.id,
+          projectRoot: tab.projectRoot,
+          workspaceId: tab.codexWorkspaceId,
+          fallback: tab.codexWorkspaceId ? 'active' : 'builtin'
+        })
         const info = await rustSpawnAgent({
           projectRoot: tab.projectRoot,
           agentId: agent.id,
@@ -2021,14 +2183,15 @@ function scheduleDeferredRestore(
           color: agent.color,
           env: {
             ...env,
+            ...codex.env,
             ...cliSessionEnv(agent.id, resumeToken, resolved.command)
           }
         })
 
         if (!resumeToken && needsDiscover && restoreKind === 'codex') {
           resumeToken =
-            (await discoverCodexSessionId(tab.projectRoot, notBefore, 800)) ||
-            tryDiscoverCodexSessionId(tab.projectRoot, notBefore)
+            (await discoverCodexSessionId(tab.projectRoot, notBefore, 800, codex.home)) ||
+            tryDiscoverCodexSessionId(tab.projectRoot, notBefore, codex.home)
           if (resumeToken) claimedResumeTokens.add(resumeToken)
         } else if (!resumeToken && needsDiscover && restoreKind === 'opencode') {
           resumeToken =
@@ -2039,6 +2202,7 @@ function scheduleDeferredRestore(
 
         const withTitle: SessionInfo = {
           ...info,
+          ...codex.fields,
           title: tab.title || info.title,
           resumeToken: resumeToken || info.resumeToken,
           uiMinimized: Boolean(tab.uiMinimized)
@@ -2191,35 +2355,10 @@ function scheduleDeferredRestore(
  const onOpenLaunched = await ensureOnOpenCommands(project.root, liveHere)
  for (const info of onOpenLaunched) launched.push(info.id)
 
- // Re-open from the projects list should bring back this folder's parked
- // agent tabs (app launch only restores the last active project).
- const parked = loadProjectLayout(project.root)
- if (parked?.tabs?.length) {
- const claimed = new Set<string>()
- for (const t of parked.tabs) {
- const tok = (t.resumeToken || '').trim()
- if (tok) claimed.add(tok)
- }
- for (const tab of parked.tabs) {
- if (launched.length + liveHere.length >= MAX_RESTORE_TABS) break
- try {
- const info = await spawnSavedTab(tab, claimed, liveHere)
- if (!info) continue
- const already = liveHere.find((s) => s.id === info.id)
- if (already) {
- if (!reused.includes(info.id) && !launched.includes(info.id)) {
- reused.push(info.id)
- }
- continue
- }
- launched.push(info.id)
- liveHere.push(info)
- } catch (e) {
- console.warn('[openProject] parked tab skip', tab.agentId, e)
- }
- await new Promise((r) => setTimeout(r, RESTORE_SPAWN_GAP_MS))
- }
- }
+ // Switching a project tab must not start agents that were already closed.
+ // Live PTYs stay in the background and show up again. A new process starts
+ // only for an on-open command or a project default agent that is not running,
+ // and on app launch for tabs that were still open at quit.
 
  const agents = loadAgents()
  const { env } = onAgentSpawnFast(project.root)
@@ -2251,6 +2390,10 @@ function scheduleDeferredRestore(
  taken: liveColorsOpen
  })
  liveColorsOpen.push(sessionColor.hex)
+ const codex = codexSpawnContext({
+ agentId: agent.id,
+ projectRoot: project.root
+ })
  const info = await rustSpawnAgent({
  projectRoot: project.root,
  agentId: agent.id,
@@ -2260,6 +2403,7 @@ function scheduleDeferredRestore(
  color: sessionColor.hex,
  env: {
  ...env,
+ ...codex.env,
 ...cliSessionEnv(agent.id, prepared.resumeToken, resolved.command),
  ...agentColorEnv(agent.id, sessionColor),
  ...(prepared.resumeToken ? { TRUEDECK_CLI_SESSION: prepared.resumeToken } : {})
@@ -2279,8 +2423,8 @@ function scheduleDeferredRestore(
  const kind = resumeAgentKind(agent.id, resolved.command)
  if (!resumeToken && prepared.needsDiscover && kind === 'codex') {
  resumeToken =
- (await discoverCodexSessionId(project.root, notBefore, 4000)) ||
- tryDiscoverCodexSessionId(project.root, notBefore)
+ (await discoverCodexSessionId(project.root, notBefore, 4000, codex.home)) ||
+ tryDiscoverCodexSessionId(project.root, notBefore, codex.home)
  } else if (!resumeToken && prepared.needsDiscover && kind === 'opencode') {
  resumeToken =
  (await discoverOpenCodeSessionId(project.root, notBefore, 2500)) ||
@@ -2288,6 +2432,7 @@ function scheduleDeferredRestore(
  }
  const withToken: SessionInfo = {
  ...info,
+ ...codex.fields,
  resumeToken: resumeToken || info.resumeToken
  }
  mainWindow?.webContents.send('pty:spawned', withToken)
@@ -2395,6 +2540,14 @@ function scheduleDeferredRestore(
 
  // ── Review (git) ──
  ipcMain.handle('review:git', (_e, projectRoot: string) => getGitReview(projectRoot))
+ ipcMain.handle('review:commit', (_e, projectRoot: string, message: string) =>
+ commitGitChanges(projectRoot, message)
+ )
+ ipcMain.handle('review:push', (_e, projectRoot: string) => pushGitBranch(projectRoot))
+ ipcMain.handle('review:pr', (_e, projectRoot: string, title: string, body?: string) =>
+ createGitPullRequest(projectRoot, title, body || '')
+ )
+ ipcMain.handle('review:scripts', (_e, projectRoot: string) => listNpmScripts(projectRoot || ''))
  /** Lightweight branch name for agent chrome (no full review snapshot). */
  ipcMain.handle('git:branch', async (_e, projectRoot: string) => {
  if (!projectRoot || typeof projectRoot !== 'string') return null
@@ -2514,6 +2667,20 @@ function scheduleDeferredRestore(
  ipcMain.handle('shell:showItem', (_e, p: string) => {
  shell.showItemInFolder(p)
  })
+
+ ipcMain.handle('phone:info', async () => {
+ try {
+ return await startPhoneDeck()
+ } catch (e) {
+ return {
+ enabled: false,
+ port: null,
+ token: '',
+ urls: [] as { url: string; label: string }[],
+ error: e instanceof Error ? e.message : String(e)
+ }
+ }
+ })
 }
 
 app.whenReady().then(() => {
@@ -2536,17 +2703,17 @@ app.whenReady().then(() => {
  let stopAgentBus: (() => void) | null = null
  const cleanupOnQuit = (): void => {
  try {
- restoreProjectSwipeOnQuit()
- } catch {
- /* ignore */
- }
- try {
  stopDeckWorker?.()
  } catch {
  /* ignore */
  }
  try {
  stopAgentBus?.()
+ } catch {
+ /* ignore */
+ }
+ try {
+ stopPhoneDeck()
  } catch {
  /* ignore */
  }
@@ -2570,6 +2737,7 @@ app.whenReady().then(() => {
  if (rustBackend) {
  if (mainWindow && !mainWindow.isDestroyed()) {
  setSessionsWindow(mainWindow)
+ setPhoneWindow(mainWindow)
  rustBackend.setWindow(mainWindow)
  }
  console.log('[backend] ready', `${Date.now() - bootT0}ms`)
@@ -2621,6 +2789,9 @@ app.whenReady().then(() => {
  } catch (e) {
  console.warn('[agent-bus] start failed', e)
  }
+ void startPhoneDeck().catch((e) => {
+ console.warn('[phone] start failed', e)
+ })
  }, deferMs)
 
  app.on('activate', () => {
@@ -2635,6 +2806,7 @@ function persistAndDisposeSessions(): void {
  shuttingDown = true
  try {
  setSessionsWindow(null)
+ setPhoneWindow(null)
  // Renderer owns full paneTree + sessionOrder via sessions:persist.
  // Do not rebuild layout from live PTY order on quit.
  } catch {

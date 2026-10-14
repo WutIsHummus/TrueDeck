@@ -144,16 +144,8 @@ async function mempalaceWakeUp(projectRoot: string): Promise<string> {
  })
  return (stdout || '').trim().slice(0, 4000)
  } catch {
- try {
- const { stdout } = await execFileAsync(cli, mempalaceArgs(['wake-up']), {
- windowsHide: true,
- timeout: 12000,
- encoding: 'utf8'
- })
- return (stdout || '').trim().slice(0, 4000)
- } catch {
+ // No unscoped fallback: a palace-wide wake-up mixes other repos into this one.
  return ''
- }
  }
 }
 
@@ -386,6 +378,8 @@ export async function writeAutoContext(projectRoot: string): Promise<string> {
  '- At session start: treat this file as wake-up context.',
  '- Read shared agent rules from **`.agents/AGENTS.md`** (unified for all CLIs).',
  '- Durable facts: write short notes under `.memory/context/` or `.memory/decisions/`, and/or use MemPalace MCP when available.',
+ '- When the user teaches a job, file MemPalace room jobs (predicate done_by) before continuing. When the user corrects a method, file room corrections (predicate corrected_to) and supersede the old fact.',
+ '- Before repeating that kind of work, search rooms jobs and corrections and the knowledge graph. The newest correction is the current method. Never store secrets.',
  '- Prefer facts over chat logs. Never store secrets.',
  '- Cross-project preferences live in the global memory path below.',
  '- Other TrueDeck agents (other terminals, or another PC with TrueDeck + notes sync): `truedeck_peers`, `truedeck_send`, `truedeck_inbox`.',

@@ -295,24 +295,26 @@ const sleep = (ms: number): Promise<void> =>
 export async function discoverCodexSessionId(
   projectRoot: string,
   notBeforeMs: number,
-  timeoutMs = 5000
+  timeoutMs = 5000,
+  codexHome?: string | null
 ): Promise<string | null> {
   const root = normRoot(projectRoot)
   const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
-    const hit = scanCodexSessions(root, notBeforeMs)
+    const hit = scanCodexSessions(root, notBeforeMs, codexHome)
     if (hit) return hit.id
     await sleep(200)
   }
   // Last chance: any recent session for this cwd (slightly older)
-  return scanCodexSessions(root, notBeforeMs - 30_000)?.id || null
+  return scanCodexSessions(root, notBeforeMs - 30_000, codexHome)?.id || null
 }
 
 function scanCodexSessions(
   projectRootNorm: string,
-  notBeforeMs: number
+  notBeforeMs: number,
+  codexHome?: string | null
 ): { id: string; t: number } | null {
-  const base = join(homedir(), '.codex', 'sessions')
+  const base = join(codexHome || join(homedir(), '.codex'), 'sessions')
   if (!existsSync(base)) return null
   let best: { id: string; t: number } | null = null
 
@@ -375,9 +377,10 @@ function scanCodexSessions(
  */
 export function tryDiscoverCodexSessionId(
   projectRoot: string,
-  notBeforeMs: number
+  notBeforeMs: number,
+  codexHome?: string | null
 ): string | null {
-  return scanCodexSessions(normRoot(projectRoot), notBeforeMs)?.id || null
+  return scanCodexSessions(normRoot(projectRoot), notBeforeMs, codexHome)?.id || null
 }
 
 /** Claude project dir encoding: C:\foo\bar → C--foo-bar under ~/.claude/projects */
