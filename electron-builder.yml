@@ -17,6 +17,7 @@ win:
 mac:
   icon: resources/icon.svg
   category: public.app-category.developer-tools
+  artifactName: ${productName}-${version}-${arch}.${ext}
   target:
     - dmg
   hardenedRuntime: true

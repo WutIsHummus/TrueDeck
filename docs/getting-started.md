@@ -13,7 +13,7 @@ Get TrueDeck running, open a project, and launch your first coding agent.
 | **TrueDeck Setup … .exe** | Windows installer (recommended) |
 | **TrueDeck … .exe** | Windows portable (no installer) |
 | **TrueDeck-…-arm64.dmg** | macOS Apple Silicon (M1/M2/M3/…) |
-| **TrueDeck-….dmg** (no arm64 in name) | macOS Intel (x64) |
+| **TrueDeck-…-x64.dmg** | macOS Intel |
 
 Run the app, then install any coding CLIs you want on `PATH` (`grok`, `codex`, `claude`, `cursor-agent`, …).
 
